@@ -1,0 +1,40 @@
+{
+  "name": "machine-perfect",
+  "version": "0.5.0",
+  "description": "State machines and s-expressions in HTML. JavaScript-optional frontend framework with tier-1 performance.",
+  "main": "src/machine-perfect.js",
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md",
+    "REFERENCE.md"
+  ],
+  "scripts": {
+    "dev": "npx serve .",
+    "test": "echo 'Open tests/test.html in a browser'",
+    "minify": "npx terser src/machine-perfect.js -o dist/machine-perfect.min.js -c -m"
+  },
+  "keywords": [
+    "state-machine",
+    "fsm",
+    "ui",
+    "framework",
+    "html",
+    "declarative",
+    "s-expressions",
+    "components",
+    "no-build",
+    "reactive",
+    "dependency-tracking"
+  ],
+  "author": "Andrew Lewis",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "bugs": {
+    "url": ""
+  },
+  "homepage": ""
+}

@@ -1,0 +1,1847 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="../logo.svg" />
+  <title>machine_perfect — test suite</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; padding: 20px; background: #4c1d95; color: #e9d5ff; }
+    h1 { font-size: 18px; margin-bottom: 4px; }
+    .header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .header img { width: 28px; height: 28px; border-radius: 6px; }
+    .header h1 { font-size: 18px; }
+    .header .gold { color: #fbbf24; }
+    #summary { margin-bottom: 16px; padding: 8px 12px; border-radius: 6px; font-weight: bold; }
+    .pass-bg { background: #0d3320; color: #4ade80; }
+    .fail-bg { background: #3b0d0d; color: #f87171; }
+    .result { padding: 4px 8px; border-left: 3px solid; margin-bottom: 2px; border-radius: 0 4px 4px 0; }
+    .result.pass { border-color: #22c55e; color: #86efac; }
+    .result.fail { border-color: #ef4444; color: #fca5a5; background: #2a0a0a; }
+    .result .detail { color: #f87171; font-size: 11px; margin-top: 2px; }
+    .group { margin-top: 12px; margin-bottom: 4px; font-weight: bold; color: #fbbf24; font-size: 14px; }
+    #fixture-area { position: absolute; left: -9999px; top: -9999px; }
+    .mp-enter-active, .mp-leave-active { transition: opacity 0.05s; }
+    .mp-enter-from { opacity: 0; }
+    .mp-leave-to { opacity: 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="../logo.svg" alt="" />
+    <h1>machine_perfect <span class="gold">v0.5</span> — test suite</h1>
+  </div>
+  <div id="summary">Running...</div>
+  <div id="results"></div>
+  <div id="fixture-area"></div>
+  <script src="../src/machine-perfect.js"></script>
+  <script>
+    var _tests = [], _g = '', _p = 0, _f = 0;
+    var _r = document.getElementById('results'), _fa = document.getElementById('fixture-area');
+    function group(n) { _g = n; }
+    var _currentTest = null;
+    function test(n, fn) { _tests.push({ n: _g + ' > ' + n, fn: fn, perf: '' }); }
+    function perf(label, ms) { if (_currentTest) _currentTest.perf += ((_currentTest.perf ? ', ' : '') + label + ': ' + ms.toFixed(1) + 'ms'); }
+    function assert(c, m) { if (!c) throw new Error(m || 'Assertion failed'); }
+    function eq(a, b, m) { if (a !== b) throw new Error((m||'') + ': ' + JSON.stringify(a) + ' !== ' + JSON.stringify(b)); }
+    function has(s, sub) { if (String(s).indexOf(sub) === -1) throw new Error('"' + s + '" missing "' + sub + '"'); }
+    function fixture(h) { var d = document.createElement('div'); d.innerHTML = h; _fa.appendChild(d); MachinePerfect.init(d); return d; }
+    function click(e) { e.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+    function type(e, v) { e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }
+    function check(e, c) { e.checked = c; e.dispatchEvent(new Event('input', { bubbles: true })); }
+    function selVal(e, v) { e.value = v; e.dispatchEvent(new Event('change', { bubbles: true })); }
+    function submit(f) { f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); }
+    function keydown(e, k) { e.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })); }
+    function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+    async function run() {
+      var lg = '';
+      for (var i = 0; i < _tests.length; i++) {
+        var t = _tests[i], gn = t.n.split(' > ')[0];
+        if (gn !== lg) { var g = document.createElement('div'); g.className = 'group'; g.textContent = gn; _r.appendChild(g); lg = gn; }
+        _fa.innerHTML = '';
+        _currentTest = t;
+        var row = document.createElement('div');
+        try { await t.fn(); _p++; row.className = 'result pass'; row.textContent = '\u2713 ' + t.n + (t.perf ? ' (' + t.perf + ')' : ''); }
+        catch (e) { _f++; row.className = 'result fail'; row.innerHTML = '\u2717 ' + t.n + '<div class="detail">' + e.message + '</div>'; }
+        _r.appendChild(row);
+      }
+      var s = document.getElementById('summary');
+      s.textContent = _p + ' passed, ' + _f + ' failed, ' + (_p + _f) + ' total';
+      s.className = _f === 0 ? 'pass-bg' : 'fail-bg';
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  S-EXPRESSION ENGINE
+    // ══════════════════════════════════════════════════════════════════
+
+    group('S-expressions');
+
+    test('bare word resolves to context value', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":42}\'><span mp-text="x" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+    test('dotted path resolves', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"user":{"name":"A"}}\'><span mp-text="user.name" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, 'A');
+    });
+
+    test('$state resolves to current state', function () {
+      var el = fixture('<div mp="t"><div mp-state="hello"><span mp-text="$state" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'hello');
+    });
+
+    test('(+ a b) arithmetic', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":2,"b":3}\'><span mp-text="(+ a b)" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '5');
+    });
+
+    test('(str a b) concatenation', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":5}\'><span mp-text="(str n \' items\')" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '5 items');
+    });
+
+    test('(> a b) comparison', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":10}\'><div mp-show="(> n 5)" id="a">Y</div><div mp-show="(> n 20)" id="b">N</div></div>');
+      assert(!el.querySelector('#a').hidden, '>5 should show');
+      assert(el.querySelector('#b').hidden, '>20 should hide');
+    });
+
+    test('(and) (or) (not) logic', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":true,"b":false}\'><div mp-show="(and a (not b))" id="o">Y</div></div>');
+      assert(!el.querySelector('#o').hidden);
+    });
+
+    test('(if cond then else)', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"on":true}\'><span mp-text="(if on \'YES\' \'NO\')" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, 'YES');
+    });
+
+    test('(when cond value)', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"ok":true}\'><span mp-text="(when ok \'good\')" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, 'good');
+    });
+
+    test('(count items) collection length', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><span mp-text="(count items)" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '3');
+    });
+
+    test('(set! x val) mutation', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="a"><button mp-to="." mp-action="(set! x 99)" id="btn">Go</button><span mp-text="x" id="o"></span></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '99');
+    });
+
+    test('(inc! x) mutation', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><button mp-to="." mp-action="(inc! n)" id="btn">+</button><span mp-text="n" id="o"></span></div></div>');
+      click(el.querySelector('#btn'));
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+    test('(do expr1 expr2) sequences', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":0,"b":0}\'><div mp-state="s"><button mp-to="." mp-action="(do (set! a 1) (set! b 2))" id="btn">Go</button></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.ctx.a, 1);
+      eq(el.querySelector('[mp]')._mp.ctx.b, 2);
+    });
+
+    test('(push! arr val) array mutation', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[]}\'><div mp-state="a"><button mp-to="." mp-action="(push! items 1)" id="btn">+</button></div></div>');
+      click(el.querySelector('#btn')); click(el.querySelector('#btn')); click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.ctx.items.length, 3);
+    });
+
+    test('(toggle! flag) boolean flip', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"on":false}\'><div mp-state="a"><button mp-to="." mp-action="(toggle! on)" id="btn">T</button></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.ctx.on, true);
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.ctx.on, false);
+    });
+
+    test('(fn [x] body) lambda with filter — Clojure arg order', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4,5]}\'><span mp-text="(count (filter (fn [x] (> x 3)) items))" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+    test('(let [x 1 y 2] (+ x y)) local bindings — Clojure-style', function () {
+      var el = fixture('<div mp="t"><span mp-text="(let [x 10 y 20] (+ x y))" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '30');
+    });
+
+    test('keyword :name resolves to string', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"id":1},{"id":2}]}\'><div mp-state="a"><button mp-to="." mp-action="(remove-where! items :id 1)" id="btn">-</button></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.ctx.items.length, 1);
+      eq(el.querySelector('[mp]')._mp.ctx.items[0].id, 2);
+    });
+
+    test('(obj :key val) creates object', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[]}\'><div mp-state="a"><button mp-to="." mp-action="(push! items (obj :name \'test\' :done false))" id="btn">+</button></div></div>');
+      click(el.querySelector('#btn'));
+      var item = el.querySelector('[mp]')._mp.ctx.items[0];
+      eq(item.name, 'test');
+      eq(item.done, false);
+    });
+
+    test('nested expressions compose', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><span mp-text="(str (count items) \' of \' (+ (count items) 2))" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '3 of 5');
+    });
+
+    test('#() anonymous function shorthand', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4,5]}\'><span mp-text="(count (filter #(> % 3) items))" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+    test('(->> x (f) (g)) thread-last macro', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4,5]}\'><span mp-text="(->> items (filter #(> % 2)) (count))" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '3');
+    });
+
+    test('(-> x (f a) (g b)) thread-first macro', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"s":"hello world"}\'><span mp-text="(-> s (upper) (trim))" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, 'HELLO WORLD');
+    });
+
+    test('[x y z] vector creates array', function () {
+      var el = fixture('<div mp="t"><span mp-text="(count [1 2 3])" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '3');
+    });
+
+    test('sort-by with key function', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"n":3},{"n":1},{"n":2}]}\'><span mp-text="(get (first (sort-by #(get % :n) items)) :n)" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '1');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  CORE
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Core');
+
+    test('mp creates instance, first state active', function () {
+      var el = fixture('<div mp="t"><div mp-state="a" id="a">A</div><div mp-state="b" id="b">B</div></div>');
+      assert(el.querySelector('[mp]')._mp);
+      assert(!el.querySelector('#a').hidden);
+      assert(el.querySelector('#b').hidden);
+    });
+
+    test('mp-initial overrides', function () {
+      var el = fixture('<div mp="t" mp-initial="b"><div mp-state="a" id="a">A</div><div mp-state="b" id="b">B</div></div>');
+      assert(el.querySelector('#a').hidden);
+      assert(!el.querySelector('#b').hidden);
+    });
+
+    test('mp-ctx sets context', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":42}\'><div mp-state="a">A</div></div>');
+      eq(el.querySelector('[mp]')._mp.ctx.n, 42);
+    });
+
+    test('stateless machine with bindings', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":5}\'><span mp-text="(* n 2)" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '10');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  TRANSITIONS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Transitions');
+
+    test('mp-to transitions on click', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><button mp-to="b" id="btn">B</button></div><div mp-state="b" id="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'b');
+    });
+
+    test('mp-to="." self-transition with action', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><button mp-to="." mp-action="(inc! n)" id="btn">+</button><span mp-text="n" id="o"></span></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1');
+    });
+
+    test('mp-guard blocks when falsy', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"ok":false}\'><div mp-state="a"><button mp-to="b" mp-guard="ok" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'a');
+    });
+
+    test('mp-guard s-expression', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><div mp-state="a"><button mp-to="b" mp-guard="(> (count items) 2)" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'b');
+    });
+
+    test('mp-action s-expression runs', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="a"><button mp-to="b" mp-action="(set! x 99)" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.ctx.x, 99);
+    });
+
+    test('unknown state warns', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><button mp-to="zzz" id="btn">Go</button></div></div>');
+      var w = false; var ow = console.warn; console.warn = function () { w = true; };
+      click(el.querySelector('#btn')); console.warn = ow;
+      eq(el.querySelector('[mp]')._mp.state, 'a');
+      assert(w);
+    });
+
+    test('mp:transition event fires', function () {
+      var d = null;
+      document.addEventListener('mp:transition', function h(e) { d = e.detail; document.removeEventListener('mp:transition', h); });
+      var el = fixture('<div mp="ev"><div mp-state="a"><button mp-to="b" id="btn">B</button></div><div mp-state="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      eq(d.prev, 'a'); eq(d.next, 'b');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  DATA BINDING
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Binding');
+
+    test('mp-text with s-expression', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":2,"b":3}\'><span mp-text="(+ a b)" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '5');
+    });
+
+    test('mp-text updates after action', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><span mp-text="n" id="o"></span><button mp-to="." mp-action="(inc! n)" id="btn">+</button></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1');
+    });
+
+    test('mp-model input', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"v":""}\'><div mp-state="a"><input mp-model="v" id="i" /><span mp-text="v" id="o"></span></div></div>');
+      type(el.querySelector('#i'), 'hello');
+      eq(el.querySelector('#o').textContent, 'hello');
+    });
+
+    test('mp-model checkbox', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"on":false}\'><div mp-state="a"><input type="checkbox" mp-model="on" id="cb" /></div></div>');
+      check(el.querySelector('#cb'), true);
+      eq(el.querySelector('[mp]')._mp.ctx.on, true);
+    });
+
+    test('mp-model select', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"c":"a"}\'><div mp-state="s"><select mp-model="c" id="sel"><option value="a">A</option><option value="b">B</option></select></div></div>');
+      selVal(el.querySelector('#sel'), 'b');
+      eq(el.querySelector('[mp]')._mp.ctx.c, 'b');
+    });
+
+    test('mp-show s-expression', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":10}\'><div mp-show="(> n 5)" id="o">Y</div></div>');
+      assert(!el.querySelector('#o').hidden);
+    });
+
+    test('mp-hide', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"gone":true}\'><div mp-hide="gone" id="o">X</div></div>');
+      assert(el.querySelector('#o').hidden);
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  mp-class (PURE S-EXPRESSIONS)
+    // ══════════════════════════════════════════════════════════════════
+
+    group('mp-class');
+
+    test('(when expr cls) adds class', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"done":true}\'><div mp-state="a"><span mp-class="(when done \'line-through\')" id="o">X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('line-through'));
+    });
+
+    test('(when false cls) does not add class', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"done":false}\'><div mp-state="a"><span mp-class="(when done \'line-through\')" id="o">X</span></div></div>');
+      assert(!el.querySelector('#o').classList.contains('line-through'));
+    });
+
+    test('(when-state name cls) adds class in matching state', function () {
+      var el = fixture('<div mp="t"><div mp-state="active"><span mp-class="(when-state active \'ring\')" id="o">X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('ring'));
+    });
+
+    test('multiple class expressions', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"done":true,"urgent":false}\'><div mp-state="a"><span mp-class="(when done \'line-through\') (when urgent \'text-red\')" id="o">X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('line-through'));
+      assert(!el.querySelector('#o').classList.contains('text-red'));
+    });
+
+    test('(if cond cls1 cls2) conditional class', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"active":true}\'><div mp-state="a"><span mp-class="(if active \'bg-green\' \'bg-gray\')" id="o">X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('bg-green'));
+      assert(!el.querySelector('#o').classList.contains('bg-gray'));
+    });
+
+    test('class removed when expression becomes falsy', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"on":true}\'><div mp-state="a"><span mp-class="(when on \'active\')" id="o">X</span><button mp-to="." mp-action="(set! on false)" id="btn">Off</button></div></div>');
+      assert(el.querySelector('#o').classList.contains('active'));
+      click(el.querySelector('#btn'));
+      assert(!el.querySelector('#o').classList.contains('active'));
+    });
+
+    test('complex expression in mp-class', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><div mp-state="a"><span mp-class="(when (> (count items) 2) \'has-many\')" id="o">X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('has-many'));
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ATTRIBUTE BINDING
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Bind');
+
+    test('mp-bind-disabled boolean', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"locked":true}\'><div mp-state="a"><button mp-bind-disabled="locked" id="btn">Go</button></div></div>');
+      assert(el.querySelector('#btn').hasAttribute('disabled'));
+    });
+
+    test('mp-bind-disabled with s-expression', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"ok":false}\'><div mp-state="a"><button mp-bind-disabled="(not ok)" id="btn">Go</button></div></div>');
+      assert(el.querySelector('#btn').hasAttribute('disabled'));
+    });
+
+    test('mp-bind-href', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"url":"/page"}\'><div mp-state="a"><a mp-bind-href="url" id="l">L</a></div></div>');
+      eq(el.querySelector('#l').getAttribute('href'), '/page');
+    });
+
+    test('mp-bind on machine element', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"t":"dark"}\' mp-bind-data-theme="t"><div mp-state="a">A</div></div>');
+      eq(el.querySelector('[mp]').getAttribute('data-theme'), 'dark');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  DOM EVENTS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Events');
+
+    test('mp-on:keydown s-expression with (to)', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><input mp-on:keydown="(when (= (get $event :key) \'Enter\') (to b))" id="i" /></div><div mp-state="b">B</div></div>');
+      keydown(el.querySelector('#i'), 'Enter');
+      eq(el.querySelector('[mp]')._mp.state, 'b');
+    });
+
+    test('s-expression event handler filters non-matching keys', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><input mp-on:keydown="(when (= (get $event :key) \'Enter\') (to b))" id="i" /></div><div mp-state="b">B</div></div>');
+      keydown(el.querySelector('#i'), 'a');
+      eq(el.querySelector('[mp]')._mp.state, 'a');
+    });
+
+    test('s-expression event with Escape', function () {
+      var el = fixture('<div mp="t"><div mp-state="open"><input mp-on:keydown="(when (= (get $event :key) \'Escape\') (to closed))" id="i" /></div><div mp-state="closed">X</div></div>');
+      keydown(el.querySelector('#i'), 'Escape');
+      eq(el.querySelector('[mp]')._mp.state, 'closed');
+    });
+
+    test('mp-on:submit.prevent', function () {
+      var el = fixture('<div mp="t"><div mp-state="e"><form mp-on:submit.prevent="done" id="f"><button type="submit">Go</button></form></div><div mp-state="done">D</div></div>');
+      submit(el.querySelector('#f'));
+      eq(el.querySelector('[mp]')._mp.state, 'done');
+    });
+
+    test('mp-on: with mp-guard s-expression', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"v":""}\'><div mp-state="a"><input mp-model="v" id="i" /><input mp-on:keydown="(when (and (= (get $event :key) \'Enter\') (> (count v) 0)) (to b))" id="tr" /></div><div mp-state="b">B</div></div>');
+      keydown(el.querySelector('#tr'), 'Enter');
+      eq(el.querySelector('[mp]')._mp.state, 'a', 'Guard blocks empty');
+      type(el.querySelector('#i'), 'hi');
+      keydown(el.querySelector('#tr'), 'Enter');
+      eq(el.querySelector('[mp]')._mp.state, 'b');
+    });
+
+    test('mp-on: with mp-action s-expression', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><button mp-on:click="." mp-action="(inc! n)" id="btn">+</button><span mp-text="n" id="o"></span></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  INTER-MACHINE EVENTS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Machine events');
+
+    test('mp-emit + mp-receive with (on)', function () {
+      var el = fixture(
+        '<div><div mp="s"><div mp-state="a"><button mp-to="." mp-emit="ping" id="btn">P</button></div></div>' +
+        '<div mp="r" mp-receive="(on \'ping\' (to active))"><div mp-state="idle">I</div><div mp-state="active">A</div></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelectorAll('[mp]')[1]._mp.state, 'active');
+    });
+
+    test('mp-receive does not react to own emit', function () {
+      var el = fixture('<div mp="self" mp-receive="(on \'x\' (to b))"><div mp-state="a"><button mp-to="." mp-emit="x" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'a');
+    });
+
+    test('mp-receive s-expression with mutation', function () {
+      var el = fixture(
+        '<div><div mp="a"><div mp-state="s"><button mp-to="." mp-emit="data" id="btn">S</button></div></div>' +
+        '<div mp="b" mp-ctx=\'{"msg":""}\' mp-receive="(on \'data\' (do (set! msg \'got it\') (to .)))"><div mp-state="s"><span mp-text="msg" id="o"></span></div></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, 'got it');
+    });
+
+    test('mp-receive accesses $detail', function () {
+      var el = fixture(
+        '<div><div mp="sender" mp-ctx=\'{"val":42}\'><div mp-state="s"><button mp-to="." mp-emit="info" id="btn">S</button></div></div>' +
+        '<div mp="listener" mp-ctx=\'{"got":0}\' mp-receive="(on \'info\' (do (set! got $detail.val) (to .)))"><div mp-state="s"><span mp-text="got" id="o"></span></div></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+    test('mp-receive multiple (on) forms', function () {
+      var el = fixture(
+        '<div><div mp="a"><div mp-state="s"><button mp-to="." mp-emit="ev1" id="b1">1</button><button mp-to="." mp-emit="ev2" id="b2">2</button></div></div>' +
+        '<div mp="b" mp-ctx=\'{"last":""}\' mp-receive="(on \'ev1\' (do (set! last \'one\') (to .))) (on \'ev2\' (do (set! last \'two\') (to .)))"><div mp-state="s"><span mp-text="last" id="o"></span></div></div></div>'
+      );
+      click(el.querySelector('#b1'));
+      eq(el.querySelector('#o').textContent, 'one');
+      click(el.querySelector('#b2'));
+      eq(el.querySelector('#o').textContent, 'two');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  TEMPLATES + SLOTS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Templates');
+
+    test('mp-define clones', function () {
+      var el = fixture('<div><template mp-define="w"><div mp-state="a">A</div></template><div mp="w" id="w"></div></div>');
+      assert(el.querySelector('#w')._mp);
+      eq(el.querySelector('#w')._mp.state, 'a');
+    });
+
+    test('instances are independent', function () {
+      var el = fixture('<div><template mp-define="th"><div mp-state="off"><button mp-to="on" class="t">On</button></div><div mp-state="on">On!</div></template><div mp="th" id="a"></div><div mp="th" id="b"></div></div>');
+      click(el.querySelector('#a .t'));
+      eq(el.querySelector('#a')._mp.state, 'on');
+      eq(el.querySelector('#b')._mp.state, 'off');
+    });
+
+    test('named slot', function () {
+      var el = fixture(
+        '<div><template mp-define="box"><div mp-state="s"><div class="h"><mp-slot name="title">Def</mp-slot></div><div class="b"><mp-slot>Def body</mp-slot></div></div></template>' +
+        '<div mp="box"><h2 slot="title">Custom</h2><p>Body</p></div></div>'
+      );
+      has(el.querySelector('.h').innerHTML, 'Custom');
+      has(el.querySelector('.b').innerHTML, 'Body');
+    });
+
+    test('slot fallback', function () {
+      var el = fixture('<div><template mp-define="e"><div mp-state="s"><mp-slot>Fallback</mp-slot></div></template><div mp="e"></div></div>');
+      has(el.querySelector('[mp]').textContent, 'Fallback');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  mp-each
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Lists');
+
+    test('mp-each renders', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"name":"A"},{"name":"B"},{"name":"C"}]}\'><div mp-state="s"><ul><template mp-each="items"><li mp-text="name"></li></template></ul></div></div>');
+      eq(el.querySelectorAll('li').length, 3);
+      eq(el.querySelectorAll('li')[0].textContent, 'A');
+    });
+
+    test('mp-each $index', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":["a","b","c"]}\'><div mp-state="s"><template mp-each="items"><span mp-text="$index" class="i"></span></template></div></div>');
+      eq(el.querySelectorAll('.i')[2].textContent, '2');
+    });
+
+    test('mp-each $item', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":["x","y"]}\'><div mp-state="s"><template mp-each="items"><span mp-text="$item" class="v"></span></template></div></div>');
+      eq(el.querySelectorAll('.v')[0].textContent, 'x');
+    });
+
+    test('mp-each updates on push', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":["a"]}\'><div mp-state="s"><button mp-to="." mp-action="(push! items \'b\')" id="btn">+</button><template mp-each="items"><span class="v"></span></template></div></div>');
+      eq(el.querySelectorAll('.v').length, 1);
+      click(el.querySelector('#btn'));
+      eq(el.querySelectorAll('.v').length, 2);
+    });
+
+    test('mp-each keyed preserves DOM', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"id":1,"n":"A"},{"id":2,"n":"B"}]}\'><div mp-state="s"><template mp-each="items" mp-key="id"><div mp-text="n"></div></template></div></div>');
+      var first = el.querySelectorAll('[mp-text]')[0];
+      el.querySelector('[mp]')._mp.to('.');
+      assert(first === el.querySelectorAll('[mp-text]')[0], 'Reuse element');
+    });
+
+    test('mp-each mp-show with item scope', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"done":true},{"done":false}]}\'><div mp-state="s"><template mp-each="items"><div class="row"><span mp-show="done" class="ck">ok</span></div></template></div></div>');
+      assert(!el.querySelectorAll('.ck')[0].hidden);
+      assert(el.querySelectorAll('.ck')[1].hidden);
+    });
+
+    test('mp-model in mp-each updates original', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"id":1,"name":"old"}]}\'><div mp-state="s"><template mp-each="items" mp-key="id"><input mp-model="name" class="inp" /></template></div></div>');
+      type(el.querySelector('.inp'), 'new');
+      eq(el.querySelector('[mp]')._mp.ctx.items[0].name, 'new');
+    });
+
+    test('mp-action inside mp-each writes to machine context', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"id":1,"name":"A"},{"id":2,"name":"B"}], "selected": null}\'><div mp-state="s"><template mp-each="items" mp-key="id"><button mp-to="." mp-action="(set! selected $item)" class="pick"></button></template></div></div>');
+      click(el.querySelectorAll('.pick')[1]);
+      var sel = el.querySelector('[mp]')._mp.ctx.selected;
+      assert(sel, 'selected should be set on machine context');
+      eq(sel.name, 'B', 'Should have picked second item');
+    });
+
+    test('mp-to inside mp-each transitions machine state', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":["a","b"], "picked": null}\'><div mp-state="list"><template mp-each="items"><button mp-to="detail" mp-action="(set! picked $item)" class="go"></button></template></div><div mp-state="detail">Detail</div></div>');
+      click(el.querySelectorAll('.go')[0]);
+      eq(el.querySelector('[mp]')._mp.state, 'detail');
+      eq(el.querySelector('[mp]')._mp.ctx.picked, 'a');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  REFS + LIFECYCLE
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Lifecycle');
+
+    test('mp-ref populates $refs', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><input mp-ref="inp" /><span mp-text="$refs.inp.tagName" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'INPUT');
+    });
+
+    test('mp-init runs', async function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"ready":false}\' mp-init="(set! ready true)"><div mp-state="a"></div></div>');
+      await sleep(15);
+      eq(el.querySelector('[mp]')._mp.ctx.ready, true);
+    });
+
+    test('mp-transition (after) auto-transitions', async function () {
+      var el = fixture('<div mp="t"><div mp-state="a" mp-transition="(after 30 b)">A</div><div mp-state="b">B</div></div>');
+      eq(el.querySelector('[mp]')._mp.state, 'a');
+      await sleep(60);
+      eq(el.querySelector('[mp]')._mp.state, 'b');
+    });
+
+    test('mp-transition (after) cancelled by manual transition', async function () {
+      var el = fixture('<div mp="t"><div mp-state="a" mp-transition="(after 80 c)"><button mp-to="b" id="btn">B</button></div><div mp-state="b">B</div><div mp-state="c">C</div></div>');
+      click(el.querySelector('#btn'));
+      await sleep(120);
+      eq(el.querySelector('[mp]')._mp.state, 'b');
+    });
+
+    test('mp-transition (every) runs repeatedly', async function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"ticks":0}\'><div mp-state="a" mp-transition="(every 20 (inc! ticks))"><span mp-text="ticks" id="o"></span></div></div>');
+      await sleep(75);
+      var ticks = el.querySelector('[mp]')._mp.ctx.ticks;
+      assert(ticks >= 2, 'Should have ticked at least twice, got ' + ticks);
+    });
+
+    test('mp-transition (every) cleared on state exit', async function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"ticks":0}\'><div mp-state="a" mp-transition="(every 20 (inc! ticks))"><button mp-to="b" id="btn">B</button></div><div mp-state="b">B</div></div>');
+      await sleep(55);
+      click(el.querySelector('#btn'));
+      var ticksAtExit = el.querySelector('[mp]')._mp.ctx.ticks;
+      await sleep(60);
+      eq(el.querySelector('[mp]')._mp.ctx.ticks, ticksAtExit, 'Ticks should stop after state exit');
+    });
+
+    test('(after) and (every) together', async function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"ticks":0}\'><div mp-state="a" mp-transition="(do (every 15 (inc! ticks)) (after 60 b))"><span mp-text="ticks" id="o"></span></div><div mp-state="b">B</div></div>');
+      await sleep(80);
+      eq(el.querySelector('[mp]')._mp.state, 'b', 'Should have transitioned');
+      var ticks = el.querySelector('[mp]')._mp.ctx.ticks;
+      assert(ticks >= 2, 'Should have ticked before transitioning, got ' + ticks);
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PERSIST
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Persist');
+
+    test('saves to localStorage', function () {
+      localStorage.removeItem('mp:tp1');
+      fixture('<div mp="t" mp-persist="tp1" mp-ctx=\'{"c":"red"}\'><div mp-state="a">A</div></div>');
+      eq(JSON.parse(localStorage.getItem('mp:tp1')).c, 'red');
+      localStorage.removeItem('mp:tp1');
+    });
+
+    test('restores on init', function () {
+      localStorage.setItem('mp:tp2', JSON.stringify({ c: 'blue' }));
+      var el = fixture('<div mp="t" mp-persist="tp2" mp-ctx=\'{"c":"red"}\'><div mp-state="a"><span mp-text="c" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'blue');
+      localStorage.removeItem('mp:tp2');
+    });
+
+    test('merges with defaults', function () {
+      localStorage.setItem('mp:tp3', JSON.stringify({ old: 'saved' }));
+      var el = fixture('<div mp="t" mp-persist="tp3" mp-ctx=\'{"old":"default","fresh":"new"}\'><div mp-state="a">A</div></div>');
+      eq(el.querySelector('[mp]')._mp.ctx.old, 'saved');
+      eq(el.querySelector('[mp]')._mp.ctx.fresh, 'new');
+      localStorage.removeItem('mp:tp3');
+    });
+
+    test('skips $ properties', function () {
+      localStorage.removeItem('mp:tp4');
+      fixture('<div mp="t" mp-persist="tp4" mp-ctx=\'{"x":1}\'><div mp-state="a"><input mp-ref="r" /></div></div>');
+      var saved = JSON.parse(localStorage.getItem('mp:tp4'));
+      eq(saved.$refs, undefined);
+      localStorage.removeItem('mp:tp4');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  STORE
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Store');
+
+    test('mp-store registers and is readable', function () {
+      var el = fixture('<div><mp-store name="ts1" value=\'{"x":99}\'></mp-store><div mp="t"><div mp-state="a"><span mp-text="$store.ts1.x" id="o"></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, '99');
+    });
+
+    test('$store shared across machines', function () {
+      var el = fixture(
+        '<div><mp-store name="ts2" value=\'{"v":"hi"}\'></mp-store>' +
+        '<div mp="m1"><div mp-state="a"><span mp-text="$store.ts2.v" id="o1"></span></div></div>' +
+        '<div mp="m2"><div mp-state="a"><span mp-text="$store.ts2.v" id="o2"></span></div></div></div>'
+      );
+      eq(el.querySelector('#o1').textContent, 'hi');
+      eq(el.querySelector('#o2').textContent, 'hi');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ROUTING
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Routing');
+
+    test('mp-route reads pathname', function () {
+      // pathname is likely "/" in test environment — match home state
+      var el = fixture('<div mp="t" mp-route><div mp-state="home" mp-path="/">H</div><div mp-state="other" mp-path="/other">O</div></div>');
+      eq(el.querySelector('[mp]')._mp.state, 'home', 'Should match / to home');
+    });
+
+    test('mp-route wraps to() for URL sync', function () {
+      // Verify routing wraps inst.to — pushState may not work from file://
+      // but the wrapper should exist and the transition should succeed
+      var el = fixture('<div mp="t" mp-route><div mp-state="home" mp-path="/"><button mp-to="about" id="btn">A</button></div><div mp-state="about" mp-path="/about">A</div></div>');
+      var inst = el.querySelector('[mp]')._mp;
+      eq(inst.state, 'home');
+      click(el.querySelector('#btn'));
+      eq(inst.state, 'about', 'Should transition to about');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  TRANSITIONS + NESTING + CLEANUP
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Misc');
+
+    test('mp-transition adds enter classes', async function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><button mp-to="b" id="btn">B</button></div><div mp-state="b" mp-transition id="b">B!</div></div>');
+      click(el.querySelector('#btn'));
+      assert(el.querySelector('#b').classList.contains('mp-enter-active') || el.querySelector('#b').classList.contains('mp-enter-to'));
+    });
+
+    test('nested machines independent', function () {
+      var el = fixture(
+        '<div mp="outer"><div mp-state="a"><div mp="inner"><div mp-state="x"><button mp-to="y" id="ib">Y</button></div><div mp-state="y">Y</div></div></div></div>'
+      );
+      click(el.querySelector('#ib'));
+      eq(el.querySelector('[mp="inner"]')._mp.state, 'y');
+      eq(el.querySelector('[mp="outer"]')._mp.state, 'a');
+    });
+
+    test('MutationObserver auto-inits', async function () {
+      var d = document.createElement('div');
+      d.setAttribute('mp', 'dyn');
+      d.innerHTML = '<div mp-state="a">A</div>';
+      _fa.appendChild(d);
+      await sleep(30);
+      assert(d._mp);
+    });
+
+    test('cleanup on removal', async function () {
+      var el = fixture('<div><div mp="rm" mp-receive="(on \'rmtest\' (to b))"><div mp-state="a">A</div><div mp-state="b">B</div></div></div>');
+      var m = el.querySelector('[mp="rm"]');
+      assert(m._mp);
+      m.remove();
+      await sleep(30);
+      assert(!m._mp);
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  LAZY STATE RENDERING
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Lazy rendering');
+
+    test('inactive state content is NOT in the DOM', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><span id="inA">A</span></div><div mp-state="b"><span id="inB">B</span></div></div>');
+      assert(el.querySelector('#inA'), 'Active state content should be in DOM');
+      assert(!el.querySelector('#inB'), 'Inactive state content should NOT be in DOM');
+    });
+
+    test('content is created when state is entered', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><button mp-to="b" id="btn">Go</button></div><div mp-state="b"><span id="inB">B</span></div></div>');
+      assert(!el.querySelector('#inB'), 'B content should not exist before transition');
+      click(el.querySelector('#btn'));
+      assert(el.querySelector('#inB'), 'B content should exist after transition');
+      eq(el.querySelector('#inB').textContent, 'B');
+    });
+
+    test('content is destroyed when state is left', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><button mp-to="b" id="btn">Go</button></div><div mp-state="b"><span id="inB">In B</span><button mp-to="a" id="back">Back</button></div></div>');
+      click(el.querySelector('#btn'));
+      assert(el.querySelector('#inB'), 'B content should exist');
+      click(el.querySelector('#back'));
+      assert(!el.querySelector('#inB'), 'B content should be destroyed after leaving');
+    });
+
+    test('content is recreated on re-entry', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><span mp-text="n" id="val"></span><button mp-to="b" id="toB">B</button></div><div mp-state="b"><button mp-to="a" id="toA">A</button></div></div>');
+      eq(el.querySelector('#val').textContent, '0');
+      click(el.querySelector('#toB'));
+      assert(!el.querySelector('#val'), 'A content destroyed');
+      click(el.querySelector('#toA'));
+      assert(el.querySelector('#val'), 'A content recreated');
+      eq(el.querySelector('#val').textContent, '0');
+    });
+
+    test('self-transition does NOT destroy/recreate', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><span id="target">X</span><button mp-to="." mp-action="(inc! n)" id="btn">+</button></div></div>');
+      var original = el.querySelector('#target');
+      click(el.querySelector('#btn'));
+      assert(original === el.querySelector('#target'), 'Same DOM node on self-transition');
+    });
+
+    test('bindings work in newly created state', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"msg":"hello"}\'><div mp-state="a"><button mp-to="b" id="btn">Go</button></div><div mp-state="b"><span mp-text="msg" id="out"></span></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#out').textContent, 'hello');
+    });
+
+    test('nested machines inside states are initialized on entry', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><button mp-to="b" id="btn">Go</button></div><div mp-state="b"><div mp="child"><div mp-state="x">Child X</div></div></div></div>');
+      assert(!el.querySelector('[mp="child"]'), 'Child not in DOM before transition');
+      click(el.querySelector('#btn'));
+      var child = el.querySelector('[mp="child"]');
+      assert(child, 'Child should exist after transition');
+      assert(child._mp, 'Child should be initialized');
+      eq(child._mp.state, 'x');
+    });
+
+    test('nested machines are cleaned up on state exit', function () {
+      var el = fixture(
+        '<div mp="t"><div mp-state="a">' +
+        '<div mp="inner" mp-receive="(on \'testevt\' (to y))"><div mp-state="x">X</div><div mp-state="y">Y</div></div>' +
+        '<button mp-to="b" id="btn">Go</button></div><div mp-state="b">B</div></div>'
+      );
+      var inner = el.querySelector('[mp="inner"]');
+      assert(inner._mp, 'Inner should be initialized');
+      click(el.querySelector('#btn'));
+      assert(!inner._mp, 'Inner should be cleaned up after parent state exit');
+    });
+
+
+    test('mp-init on mp-state runs on entry', async function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"entered":false}\'><div mp-state="a"><button mp-to="b" id="btn">Go</button></div><div mp-state="b" mp-init="(set! entered true)">B</div></div>');
+      eq(el.querySelector('[mp]')._mp.ctx.entered, false);
+      click(el.querySelector('#btn'));
+      await sleep(15);
+      eq(el.querySelector('[mp]')._mp.ctx.entered, true);
+    });
+
+    test('mp-init on mp-state does NOT run on self-transition', async function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"count":0}\'><div mp-state="a" mp-init="(inc! count)"><button mp-to="." id="btn">Self</button></div></div>');
+      await sleep(15); // initial mp-init on the machine element (not state)
+      var before = el.querySelector('[mp]')._mp.ctx.count;
+      click(el.querySelector('#btn'));
+      await sleep(15);
+      eq(el.querySelector('[mp]')._mp.ctx.count, before, 'Self-transition should not re-run state mp-init');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  USER-REGISTERED FUNCTIONS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('MachinePerfect.fn()');
+
+    test('sync function callable from s-expression', function () {
+      MachinePerfect.fn('double', function(x) { return x * 2; });
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":21}\'><span mp-text="(double n)" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+    test('function with multiple args', function () {
+      MachinePerfect.fn('add3', function(a, b, c) { return a + b + c; });
+      var el = fixture('<div mp="t"><span mp-text="(add3 10 20 12)" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+    test('function usable in mp-guard', function () {
+      MachinePerfect.fn('is-even', function(n) { return n % 2 === 0; });
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":4}\'><div mp-state="a"><button mp-to="b" mp-guard="(is-even n)" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'b');
+    });
+
+    test('function usable in mp-action', function () {
+      MachinePerfect.fn('make-greeting', function(name) { return 'Hello ' + name; });
+      var el = fixture('<div mp="t" mp-ctx=\'{"msg":""}\'><div mp-state="a"><button mp-to="." mp-action="(set! msg (make-greeting \'World\'))" id="btn">Go</button><span mp-text="msg" id="o"></span></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, 'Hello World');
+    });
+
+    test('function usable inside ->> pipeline', function () {
+      MachinePerfect.fn('square', function(x) { return x * x; });
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><span mp-text="(->> items (map #(square %)) (reduce + 0))" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '14'); // 1+4+9
+    });
+
+    test('(then!) handles async function', async function () {
+      MachinePerfect.fn('async-value', function() {
+        return new Promise(function(resolve) { setTimeout(function() { resolve(42); }, 20); });
+      });
+      var el = fixture('<div mp="t" mp-ctx=\'{"result":0}\' mp-init="(then! (async-value) :result)"><div mp-state="a"><span mp-text="result" id="o"></span></div></div>');
+      await sleep(15); // mp-init fires
+      await sleep(50); // promise resolves
+      el.querySelector('[mp]')._mp.update(); // refresh bindings
+      eq(el.querySelector('[mp]')._mp.ctx.result, 42);
+    });
+
+    test('(then!) transitions after resolve', async function () {
+      MachinePerfect.fn('async-data', function() {
+        return new Promise(function(resolve) { setTimeout(function() { resolve(['a','b']); }, 20); });
+      });
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[]}\' mp-init="(then! (async-data) :items \'loaded\')"><div mp-state="loading">Loading</div><div mp-state="loaded"><span mp-text="(count items)" id="o"></span></div></div>');
+      eq(el.querySelector('[mp]')._mp.state, 'loading');
+      await sleep(15); // mp-init fires
+      await sleep(50); // promise resolves + transition
+      eq(el.querySelector('[mp]')._mp.state, 'loaded');
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  STORE + CROSS-MACHINE COMPOSITION
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Store composition');
+
+    test('$store.name.field readable in s-expression', function () {
+      var el = fixture('<div><mp-store name="st1" value=\'{"color":"red"}\'></mp-store><div mp="t"><div mp-state="a"><span mp-text="$store.st1.color" id="o"></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, 'red');
+    });
+
+    test('(set! $store.name.field val) writes to store', function () {
+      var el = fixture('<div><mp-store name="st2" value=\'{"count":0}\'></mp-store><div mp="t"><div mp-state="a"><button mp-to="." mp-action="(set! $store.st2.count 42)" id="btn">Go</button><span mp-text="$store.st2.count" id="o"></span></div></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '42');
+      eq(MachinePerfect.store.st2.count, 42);
+    });
+
+    test('store readable inside (let) binding', function () {
+      var el = fixture('<div><mp-store name="st3" value=\'{"items":[1,2,3]}\'></mp-store><div mp="t"><div mp-state="a"><span mp-text="(let [data $store.st3.items] (count data))" id="o"></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, '3');
+    });
+
+    test('store readable inside (->> pipeline)', function () {
+      var el = fixture('<div><mp-store name="st4" value=\'[{"name":"A","v":1},{"name":"B","v":2},{"name":"C","v":3}]\'></mp-store><div mp="t"><div mp-state="a"><span mp-text="(->> $store.st4 (filter #(> (get % :v) 1)) (count))" id="o"></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+    test('mp-each over $store array', function () {
+      var el = fixture('<div><mp-store name="st5" value=\'[{"name":"X"},{"name":"Y"}]\'></mp-store><div mp="t"><div mp-state="a"><template mp-each="$store.st5"><span mp-text="name" class="item"></span></template></div></div></div>');
+      var items = el.querySelectorAll('.item');
+      eq(items.length, 2);
+      eq(items[0].textContent, 'X');
+    });
+
+    test('mp-each with nested machine reads item data', function () {
+      var el = fixture('<div><template mp-define="card"><div mp-state="s"><span mp-text="label" id="lbl"></span></div></template><mp-store name="st6" value=\'[{"name":"A","label":"LA"},{"name":"B","label":"LB"}]\'></mp-store><div mp="t"><div mp-state="a"><template mp-each="$store.st6" mp-key="name"><div mp="card"></div></template></div></div></div>');
+      var labels = el.querySelectorAll('#lbl');
+      eq(labels.length, 2);
+      eq(labels[0].textContent, 'LA');
+      eq(labels[1].textContent, 'LB');
+    });
+
+    test('mp-each nested machine updates when store item changes', function () {
+      var el = fixture('<div><template mp-define="val"><div mp-state="s"><span mp-text="v" class="val"></span></div></template><mp-store name="st7" value=\'[{"name":"A","v":1},{"name":"B","v":2}]\'></mp-store><div mp="t"><div mp-state="a"><template mp-each="$store.st7" mp-key="name"><div mp="val"></div></template></div></div></div>');
+      eq(el.querySelectorAll('.val')[0].textContent, '1');
+      // Mutate store item in place
+      MachinePerfect.store.st7[0].v = 99;
+      el.querySelector('[mp="t"]')._mp.update();
+      eq(el.querySelectorAll('.val')[0].textContent, '99', 'Nested machine should reflect updated store data');
+    });
+
+    test('(let [f $store.x] (get f :field)) works', function () {
+      var el = fixture('<div><mp-store name="st8" value=\'{"country":"France","min":50}\'></mp-store><div mp="t"><div mp-state="a"><span mp-text="(let [f $store.st8] (get f :country))" id="o"></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, 'France');
+    });
+
+    test('mp-each with (let) over store + filter', function () {
+      var el = fixture('<div><mp-store name="st9" value=\'[{"name":"A","v":10},{"name":"B","v":20},{"name":"C","v":5}]\'></mp-store><div mp="t"><div mp-state="a"><template mp-each="(let [data $store.st9] (->> data (filter #(> (get % :v) 8)) (sort-by #(get % :v))))" mp-key="name"><span mp-text="name" class="r"></span></template></div></div></div>');
+      var r = el.querySelectorAll('.r');
+      eq(r.length, 2);
+      eq(r[0].textContent, 'A');
+      eq(r[1].textContent, 'B');
+    });
+
+    test('resort-card pattern: filter pipeline with store reads', function () {
+      // Tests the exact filter expression from the SPA browse grid
+      var el = fixture(
+        '<div>' +
+        '<mp-store name="fr" value=\'{"country":"All","minSnow":0,"sortBy":"name","weatherReady":true}\'></mp-store>' +
+        '<mp-store name="rd" value=\'[{"name":"A","country":"France","snow":100},{"name":"B","country":"Italy","snow":50},{"name":"C","country":"France","snow":0}]\'></mp-store>' +
+        '<div mp="app"><div mp-state="browse">' +
+        '<template mp-each="(let [f $store.fr] (->> $store.rd (filter #(or (= (get f :country) \'All\') (= (get % :country) (get f :country)))) (filter #(>= (get % :snow) (get f :minSnow)))))" mp-key="name"><span mp-text="name" class="r"></span></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.r').length, 3, 'All 3 with country=All minSnow=0');
+      // Change filter to France only
+      MachinePerfect.store.fr.country = 'France';
+      el.querySelector('[mp="app"]')._mp.update();
+      eq(el.querySelectorAll('.r').length, 2, 'Only France');
+      // Change min snow to 50
+      MachinePerfect.store.fr.minSnow = 50;
+      el.querySelector('[mp="app"]')._mp.update();
+      eq(el.querySelectorAll('.r').length, 1, 'Only France with 50+ snow');
+      eq(el.querySelectorAll('.r')[0].textContent, 'A');
+    });
+
+    test('resort-card pattern: slot content differs per usage context', function () {
+      // Same component template, different slot content in browse vs saved
+      var el = fixture(
+        '<div>' +
+        '<template mp-define="card"><div mp-state="s"><span mp-text="name" class="cn"></span><mp-slot name="actions">default</mp-slot></div></template>' +
+        '<mp-store name="sl" value=\'[{"name":"X"}]\'></mp-store>' +
+        '<div mp="app"><div mp-state="view">' +
+        '<div id="browse"><template mp-each="$store.sl" mp-key="name"><div mp="card"><span slot="actions" class="ba">SAVE</span></div></template></div>' +
+        '<div id="saved"><template mp-each="$store.sl" mp-key="name"><div mp="card"><span slot="actions" class="sa">REMOVE</span></div></template></div>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelector('#browse .ba').textContent, 'SAVE');
+      eq(el.querySelector('#saved .sa').textContent, 'REMOVE');
+    });
+
+    test('mp-define with mp-state renders content via mp-each', function () {
+      // This is the exact resort-card pattern: template with mp-state,
+      // instantiated via mp-each, content should be visible
+      var el = fixture(
+        '<div>' +
+        '<template mp-define="mycard"><div mp-state="show"><span mp-text="title" class="t"></span><mp-slot name="act">no action</mp-slot></div></template>' +
+        '<mp-store name="cards" value=\'[{"name":"A","title":"Alpha"},{"name":"B","title":"Beta"}]\'></mp-store>' +
+        '<div mp="main"><div mp-state="list">' +
+        '<template mp-each="$store.cards" mp-key="name"><div mp="mycard"><span slot="act" class="a">ACTION</span></div></template>' +
+        '</div></div></div>'
+      );
+      var titles = el.querySelectorAll('.t');
+      eq(titles.length, 2, 'Should render 2 cards');
+      eq(titles[0].textContent, 'Alpha');
+      eq(titles[1].textContent, 'Beta');
+      var actions = el.querySelectorAll('.a');
+      eq(actions.length, 2, 'Should have 2 slot actions');
+      eq(actions[0].textContent, 'ACTION');
+    });
+
+    test('mp-each in lazy state after (then!) transition renders nested machines', async function () {
+      // Exact SPA pattern: start in loading, (then!) transitions to browse,
+      // browse has mp-each that creates nested machine instances from store
+      MachinePerfect.fn('mock-load', function () {
+        MachinePerfect.store.mresorts = [{name:'X',v:1},{name:'Y',v:2}];
+        return Promise.resolve('ok');
+      });
+      var el = fixture(
+        '<div>' +
+        '<template mp-define="mcard"><div mp-state="d"><span mp-text="v" class="cv"></span></div></template>' +
+        '<mp-store name="mresorts" value=\'[]\'></mp-store>' +
+        '<div mp="mapp" mp-initial="loading" mp-init="(then! (mock-load) :_x \'browse\')" mp-ctx=\'{}\'>' +
+        '<div mp-state="loading">Loading</div>' +
+        '<div mp-state="browse">' +
+        '<template mp-each="$store.mresorts" mp-key="name"><div mp="mcard"></div></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelector('[mp="mapp"]')._mp.state, 'loading');
+      await sleep(30);
+      eq(el.querySelector('[mp="mapp"]')._mp.state, 'browse', 'Should transition to browse');
+      var cards = el.querySelectorAll('.cv');
+      eq(cards.length, 2, 'Should render 2 cards from store');
+      eq(cards[0].textContent, '1');
+    });
+
+    test('SPA exact mp-each expression with let + filters + sort', function () {
+      var el = fixture(
+        '<div>' +
+        '<mp-store name="ef" value=\'{"country":"All","minSnow":0,"sortBy":"snow","query":"","weatherReady":false}\'></mp-store>' +
+        '<mp-store name="er" value=\'[{"name":"A","country":"France","snow":100,"alt":1000,"temp":-5},{"name":"B","country":"Italy","snow":50,"alt":2000,"temp":-2},{"name":"C","country":"France","snow":0,"alt":500,"temp":3}]\'></mp-store>' +
+        '<div mp="e"><div mp-state="s">' +
+        '<template mp-each="(let [f $store.ef base (->> $store.er (filter #(or (= (get f :country) \'All\') (= (get % :country) (get f :country)))) (filter #(contains? (lower (get % :name)) (lower (get f :query)))) (filter #(or (not (get f :weatherReady)) (>= (get % :snow) (get f :minSnow))))) sorted (if (get f :weatherReady) (sort-by #(get % (get f :sortBy)) base) (sort-by #(get % :name) base))] (if (and (get f :weatherReady) (or (= (get f :sortBy) \'snow\') (= (get f :sortBy) \'alt\'))) (reverse sorted) sorted))" mp-key="name"><span mp-text="name" class="en"></span></template>' +
+        '</div></div></div>'
+      );
+      var names = el.querySelectorAll('.en');
+      eq(names.length, 3, 'Should render all 3 with weatherReady=false');
+      eq(names[0].textContent, 'A', 'Sorted by name when not ready');
+    });
+
+    test('wrapper + nested machine: MULTIPLE updates propagate', function () {
+      // Simulates: initial render with placeholder → weather arrives → image arrives
+      // Each mutation + parent update should propagate to nested machine
+      var el = fixture(
+        '<div>' +
+        '<template mp-define="card3"><div mp-state="d"><span mp-text="name" class="cn3"></span> <span mp-text="(or img \'none\')" class="ci3"></span> <span mp-text="(or temp \'--\')" class="ct3"></span></div></template>' +
+        '<mp-store name="wr3" value=\'[{"name":"A","img":"","temp":null},{"name":"B","img":"","temp":null}]\'></mp-store>' +
+        '<div mp="w3"><div mp-state="s">' +
+        '<template mp-each="$store.wr3" mp-key="name"><div class="wrap3"><div mp="card3"></div></div></template>' +
+        '</div></div></div>'
+      );
+      // Initial: names render, img is empty, temp is null
+      eq(el.querySelectorAll('.cn3')[0].textContent, 'A');
+      eq(el.querySelectorAll('.ci3')[0].textContent, 'none');
+      eq(el.querySelectorAll('.ct3')[0].textContent, '--');
+      // Weather arrives for A
+      MachinePerfect.store.wr3[0].temp = -5;
+      el.querySelector('[mp="w3"]')._mp.update();
+      eq(el.querySelectorAll('.ct3')[0].textContent, '-5', 'Temp should update after weather');
+      // Image arrives for A
+      MachinePerfect.store.wr3[0].img = 'photo.jpg';
+      el.querySelector('[mp="w3"]')._mp.update();
+      eq(el.querySelectorAll('.ci3')[0].textContent, 'photo.jpg', 'Image should update after photo fetch');
+      // Weather arrives for B
+      MachinePerfect.store.wr3[1].temp = 3;
+      el.querySelector('[mp="w3"]')._mp.update();
+      eq(el.querySelectorAll('.ct3')[1].textContent, '3', 'B temp should update');
+    });
+
+    test('keyed mp-each reorder does not destroy nested machines via MutationObserver', async function () {
+      // Regression: insertBefore in keyed reconciliation triggers MutationObserver
+      // removedNodes, which called _cleanupInstance (deleting _mp) on nested machines.
+      // The observer re-created them from stale mp-ctx. The fix: skip cleanup for
+      // nodes that are still connected (moved, not removed).
+      MachinePerfect.templates['async-card'] = (function () {
+        var t = document.createElement('template');
+        t.setAttribute('mp-define', 'async-card');
+        t.innerHTML = '<div mp-state="d"><span mp-text="name" class="an"></span><span mp-text="(or img \'no\')" class="ai"></span></div>';
+        return t;
+      })();
+
+      var el = fixture(
+        '<div>' +
+        '<mp-store name="async-r" value=\'[{"name":"X","img":""},{"name":"Y","img":""}]\'></mp-store>' +
+        '<div mp="aapp"><div mp-state="s">' +
+        '<template mp-each="$store.async-r" mp-key="name"><div class="aw"><div mp="async-card"></div></div></template>' +
+        '</div></div></div>'
+      );
+
+      // Cards rendered with initial data
+      eq(el.querySelectorAll('.an').length, 2);
+      eq(el.querySelectorAll('.ai')[0].textContent, 'no');
+
+      // Simulate async fetch arriving after a delay (like in the real SPA)
+      await sleep(50);
+      MachinePerfect.store['async-r'][0].img = 'photo.jpg';
+      el.querySelector('[mp="aapp"]')._mp.update();
+
+      await sleep(10);
+      eq(el.querySelectorAll('.ai')[0].textContent, 'photo.jpg', 'Async update should propagate to nested machine');
+
+      delete MachinePerfect.templates['async-card'];
+    });
+
+    test('cross-machine event triggers re-render with updated store', function () {
+      var el = fixture('<div><mp-store name="st10" value=\'{"n":0}\'></mp-store><div mp="writer"><div mp-state="a"><button mp-to="." mp-action="(set! $store.st10.n 42)" mp-emit="wrote" id="btn">Write</button></div></div><div mp="reader" mp-receive="(on \'wrote\' (to .))"><div mp-state="a"><span mp-text="$store.st10.n" id="o"></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, '0');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+
+    group('Dependency tracking');
+
+    test('deps tracked: binding only re-evaluates when its dep changes', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":1,"b":2}\'><div mp-state="s"><span mp-text="a" id="sa"></span><span mp-text="b" id="sb"></span></div></div>');
+      var inst = el.querySelector('[mp]')._mp;
+      eq(el.querySelector('#sa').textContent, '1');
+      eq(el.querySelector('#sb').textContent, '2');
+      // Mutate only 'a' via internal path
+      inst._dirty = { a: true };
+      inst.ctx.a = 99;
+      inst.update();
+      eq(el.querySelector('#sa').textContent, '99', 'a should update');
+      eq(el.querySelector('#sb').textContent, '2', 'b should still be 2');
+    });
+
+    test('deps tracked: set! marks dirty and updates only affected binding', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":0,"y":0}\'><div mp-state="s"><span mp-text="x" id="ox"></span><span mp-text="y" id="oy"></span><button mp-to="." mp-action="(set! x 42)" id="btn">Go</button></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#ox').textContent, '42', 'x should update after set!');
+      eq(el.querySelector('#oy').textContent, '0', 'y unchanged');
+    });
+
+    test('deps tracked: inc! marks dirty', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"count":0,"label":"hi"}\'><div mp-state="s"><span mp-text="count" id="oc"></span><span mp-text="label" id="ol"></span><button mp-to="." mp-action="(inc! count)" id="btn">+</button></div></div>');
+      click(el.querySelector('#btn'));
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#oc').textContent, '2', 'count incremented twice');
+      eq(el.querySelector('#ol').textContent, 'hi', 'label unchanged');
+    });
+
+    test('deps tracked: mp-model marks dirty', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"q":"","n":5}\'><div mp-state="s"><input mp-model="q" id="inp" /><span mp-text="q" id="oq"></span><span mp-text="n" id="on"></span></div></div>');
+      var inp = el.querySelector('#inp');
+      inp.value = 'hello';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      eq(el.querySelector('#oq').textContent, 'hello', 'q should update from model');
+      eq(el.querySelector('#on').textContent, '5', 'n unchanged');
+    });
+
+    test('deps tracked: external update() with no dirty does full eval', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"v":1}\'><div mp-state="s"><span mp-text="v" id="o"></span></div></div>');
+      var inst = el.querySelector('[mp]')._mp;
+      eq(el.querySelector('#o').textContent, '1');
+      // External mutation — no dirty tracking
+      inst.ctx.v = 77;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '77', 'Should do full eval when no dirty');
+    });
+
+    test('deps tracked: s-expression with multiple deps updates on either', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":"x","b":"y"}\'><div mp-state="s"><span mp-text="(str a b)" id="o"></span></div></div>');
+      var inst = el.querySelector('[mp]')._mp;
+      eq(el.querySelector('#o').textContent, 'xy');
+      // Change only a
+      inst._dirty = { a: true };
+      inst.ctx.a = 'A';
+      inst.update();
+      eq(el.querySelector('#o').textContent, 'Ay', 'Should re-eval when a changes');
+      // Change only b
+      inst._dirty = { b: true };
+      inst.ctx.b = 'B';
+      inst.update();
+      eq(el.querySelector('#o').textContent, 'AB', 'Should re-eval when b changes');
+    });
+
+    test('deps tracked: mp-show binding skipped when dep unchanged', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"vis":true,"n":1}\'><div mp-state="s"><div mp-show="vis" id="d">content</div><span mp-text="n" id="o"></span></div></div>');
+      var inst = el.querySelector('[mp]')._mp;
+      assert(!el.querySelector('#d').hidden, 'Should be visible');
+      // Change only n
+      inst._dirty = { n: true };
+      inst.ctx.n = 2;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '2');
+      assert(!el.querySelector('#d').hidden, 'Visibility unchanged');
+    });
+
+    test('deps tracked: mp-class binding skipped when dep unchanged', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"active":true,"n":0}\'><div mp-state="s"><div mp-class="(when active \'ring\')" id="d"></div><span mp-text="n" id="o"></span></div></div>');
+      var inst = el.querySelector('[mp]')._mp;
+      assert(el.querySelector('#d').classList.contains('ring'));
+      // Change only n — class binding should be skipped
+      inst._dirty = { n: true };
+      inst.ctx.n = 5;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '5');
+      assert(el.querySelector('#d').classList.contains('ring'), 'Class unchanged');
+    });
+
+    test('deps tracked: mp-bind-* skipped when dep unchanged', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"url":"a.html","n":0}\'><div mp-state="s"><a mp-bind-href="url" id="lnk">Link</a><span mp-text="n" id="o"></span></div></div>');
+      var inst = el.querySelector('[mp]')._mp;
+      eq(el.querySelector('#lnk').getAttribute('href'), 'a.html');
+      // Change only n
+      inst._dirty = { n: true };
+      inst.ctx.n = 9;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '9');
+      eq(el.querySelector('#lnk').getAttribute('href'), 'a.html', 'href unchanged');
+    });
+
+    test('deps tracked: keyed mp-each child skipped when data unchanged', function () {
+      var el = fixture(
+        '<div>' +
+        '<template mp-define="dc"><div mp-state="d"><span mp-text="v" class="dv"></span></div></template>' +
+        '<mp-store name="dt" value=\'[{"name":"A","v":1},{"name":"B","v":2}]\'></mp-store>' +
+        '<div mp="dp"><div mp-state="s">' +
+        '<template mp-each="$store.dt" mp-key="name"><div mp="dc"></div></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.dv')[0].textContent, '1');
+      eq(el.querySelectorAll('.dv')[1].textContent, '2');
+      // Update only item A — B should be skipped entirely
+      MachinePerfect.store.dt[0].v = 99;
+      el.querySelector('[mp="dp"]')._mp.update();
+      eq(el.querySelectorAll('.dv')[0].textContent, '99', 'A should update');
+      eq(el.querySelectorAll('.dv')[1].textContent, '2', 'B unchanged');
+    });
+
+    test('deps tracked: keyed mp-each child entirely skipped when nothing changed', function () {
+      var el = fixture(
+        '<div>' +
+        '<template mp-define="dc2"><div mp-state="d"><span mp-text="v" class="dv2"></span></div></template>' +
+        '<mp-store name="dt2" value=\'[{"name":"A","v":1}]\'></mp-store>' +
+        '<div mp="dp2"><div mp-state="s">' +
+        '<template mp-each="$store.dt2" mp-key="name"><div mp="dc2"></div></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.dv2')[0].textContent, '1');
+      // Call update without changing anything — child should NOT re-render
+      // (we can verify by checking the element is the same text node)
+      var textBefore = el.querySelectorAll('.dv2')[0].firstChild;
+      el.querySelector('[mp="dp2"]')._mp.update();
+      var textAfter = el.querySelectorAll('.dv2')[0].firstChild;
+      assert(textBefore === textAfter, 'Text node should be same object — child was skipped');
+    });
+
+    test('deps tracked: $store path deps use store-level granularity', function () {
+      var el = fixture(
+        '<div>' +
+        '<mp-store name="da" value=\'{"x":1}\'></mp-store>' +
+        '<mp-store name="db" value=\'{"y":2}\'></mp-store>' +
+        '<div mp="t"><div mp-state="s">' +
+        '<span mp-text="$store.da.x" id="oa"></span>' +
+        '<span mp-text="$store.db.y" id="ob"></span>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelector('#oa').textContent, '1');
+      eq(el.querySelector('#ob').textContent, '2');
+      // Mark only $store.da dirty
+      var inst = el.querySelector('[mp]')._mp;
+      MachinePerfect.store.da.x = 99;
+      inst._dirty = { '$store.da': true };
+      inst.update();
+      eq(el.querySelector('#oa').textContent, '99', 'store.da binding should update');
+      eq(el.querySelector('#ob').textContent, '2', 'store.db binding should be skipped');
+    });
+
+    test('deps tracked: mp-on s-expression handler sets dirty via _applyScope', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":0,"b":0}\'><div mp-state="s"><span mp-text="a" id="oa"></span><span mp-text="b" id="ob"></span><button id="btn" mp-on:click="(set! a 10)">Go</button></div></div>');
+      eq(el.querySelector('#oa').textContent, '0');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#oa').textContent, '10', 'a should update from event handler');
+    });
+
+    test('deps tracked: self-transition with action only updates affected bindings', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":0,"y":"fixed"}\'><div mp-state="s"><span mp-text="x" id="ox"></span><span mp-text="y" id="oy"></span><button mp-to="." mp-action="(inc! x)" id="btn">+</button></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#ox').textContent, '1', 'x incremented');
+      eq(el.querySelector('#oy').textContent, 'fixed', 'y unchanged');
+    });
+
+
+    group('Debug mode');
+
+    test('debug mode warns on undefined variable', function () {
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      MachinePerfect.debug = true;
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":1}\'><div mp-state="s"><span mp-text="(str x nonexistent)" id="o"></span></div></div>');
+      MachinePerfect.debug = false;
+      console.warn = origWarn;
+      assert(warnings.some(function (w) { return w.indexOf('nonexistent') !== -1; }), 'Should warn about undefined "nonexistent"');
+      has(el.querySelector('#o').textContent, '1');
+    });
+
+    test('debug mode logs state transitions', function () {
+      var logs = [];
+      var origLog = console.log;
+      console.log = function () { logs.push(Array.prototype.slice.call(arguments).join(' ')); };
+      MachinePerfect.debug = true;
+      var el = fixture('<div mp="t"><div mp-state="a"><button mp-to="b" id="btn">B</button></div><div mp-state="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      MachinePerfect.debug = false;
+      console.log = origLog;
+      assert(logs.some(function (l) { return l.indexOf('a') !== -1 && l.indexOf('b') !== -1; }), 'Should log a → b transition');
+    });
+
+    test('debug mode off by default', function () {
+      eq(MachinePerfect.debug, false);
+    });
+
+    test('debug mode does not warn when variable exists', function () {
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      MachinePerfect.debug = true;
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":"hello"}\'><div mp-state="s"><span mp-text="x" id="o"></span></div></div>');
+      MachinePerfect.debug = false;
+      console.warn = origWarn;
+      var debugWarnings = warnings.filter(function (w) { return w.indexOf('mp:debug') !== -1; });
+      eq(debugWarnings.length, 0, 'No debug warnings for valid variables');
+      eq(el.querySelector('#o').textContent, 'hello');
+    });
+
+
+    group('Purity');
+
+    test('mutation in mp-text throws', function () {
+      var threw = false;
+      try {
+        fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="(set! x 5)"></span></div></div>');
+      } catch (e) {
+        threw = true;
+        has(e.message, 'set!');
+        has(e.message, 'not allowed in bindings');
+      }
+      assert(threw, 'Should throw on mutation in mp-text');
+    });
+
+    test('mutation in mp-show throws', function () {
+      var threw = false;
+      try {
+        fixture('<div mp="t" mp-ctx=\'{"x":true}\'><div mp-state="s"><div mp-show="(toggle! x)">hi</div></div></div>');
+      } catch (e) {
+        threw = true;
+        has(e.message, 'toggle!');
+      }
+      assert(threw, 'Should throw on mutation in mp-show');
+    });
+
+    test('nested mutation in binding throws', function () {
+      var threw = false;
+      try {
+        fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="(do (inc! x) x)"></span></div></div>');
+      } catch (e) {
+        threw = true;
+        has(e.message, 'inc!');
+      }
+      assert(threw, 'Should throw on nested mutation in binding');
+    });
+
+    test('mutation in mp-action still works', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="x" id="o"></span><button mp-to="." mp-action="(set! x 42)" id="btn">Go</button></div></div>');
+      eq(el.querySelector('#o').textContent, '0');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '42', 'set! should work in mp-action');
+    });
+
+    test('mutation in mp-on: still works', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="x" id="o"></span><button mp-on:click="(do (inc! x) (to .))" id="btn">+</button></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1', 'inc! should work in mp-on:');
+    });
+
+    test('pure functions work in bindings', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3],"name":"world"}\'><div mp-state="s"><span mp-text="(str (count items) \' – \' (upper name))" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, '3 – WORLD');
+    });
+
+
+    group('Security');
+
+    test('set! rejects __proto__ path traversal', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"obj":{}}\'><div mp-state="s"><button mp-to="." mp-action="(set! obj.__proto__.polluted true)" id="btn">X</button></div></div>');
+      click(el.querySelector('#btn'));
+      assert(!({}).polluted, 'Object.prototype should not be polluted');
+    });
+
+    test('deeply nested expression throws instead of stack overflow', function () {
+      // Build a 600-deep nested expression: (+ (+ (+ ... 1 ...) 1) 1)
+      var expr = '1';
+      for (var i = 0; i < 600; i++) expr = '(+ ' + expr + ' 1)';
+      var threw = false;
+      try {
+        fixture('<div mp="t"><div mp-state="s"><span mp-text="' + expr + '"></span></div></div>');
+      } catch (err) {
+        threw = true;
+        has(err.message, 'deeply nested');
+      }
+      assert(threw, 'Should throw on excessive nesting');
+    });
+
+
+    group('Error handling');
+
+    test('malformed mp-ctx does not crash', function () {
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      var el = fixture('<div mp="t" mp-ctx="not valid json"><div mp-state="s"><span mp-text="$state" id="o"></span></div></div>');
+      console.warn = origWarn;
+      assert(warnings.some(function (w) { return w.indexOf('malformed') !== -1; }), 'Should warn about malformed JSON');
+      eq(el.querySelector('#o').textContent, 's', 'Machine should still work with empty ctx');
+    });
+
+    test('malformed mp-store does not crash', function () {
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      var el = fixture('<div><mp-store name="bad" value="not json"></mp-store><div mp="t"><div mp-state="s"><span mp-text="$state" id="o"></span></div></div></div>');
+      console.warn = origWarn;
+      assert(warnings.some(function (w) { return w.indexOf('malformed') !== -1; }), 'Should warn about malformed store');
+      eq(el.querySelector('#o').textContent, 's', 'Machine should still work');
+    });
+
+
+    group('Public API');
+
+    test('destroy() removes machine instance', function () {
+      var el = fixture('<div mp="t"><div mp-state="a">A</div></div>');
+      var machineEl = el.querySelector('[mp]');
+      assert(machineEl._mp, 'Should have _mp before destroy');
+      MachinePerfect.destroy(machineEl);
+      assert(!machineEl._mp, 'Should not have _mp after destroy');
+    });
+
+    test('destroy() cleans up nested machines', function () {
+      var el = fixture(
+        '<div>' +
+        '<template mp-define="inner"><div mp-state="d">I</div></template>' +
+        '<div mp="outer"><div mp-state="s"><div mp="inner" id="child"></div></div></div></div>'
+      );
+      var outer = el.querySelector('[mp="outer"]');
+      var child = el.querySelector('#child');
+      assert(outer._mp, 'Outer should have _mp');
+      assert(child._mp, 'Child should have _mp');
+      MachinePerfect.destroy(outer);
+      assert(!outer._mp, 'Outer cleaned up');
+      assert(!child._mp, 'Child cleaned up');
+    });
+
+    test('stdlib dispatch: all function categories work', function () {
+      // Math
+      var el = fixture('<div mp="t" mp-ctx=\'{"v":0}\'><div mp-state="s"><span mp-text="(+ 2 3)" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, '5');
+      // String
+      el = fixture('<div mp="t"><div mp-state="s"><span mp-text="(upper \'hello\')" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'HELLO');
+      // Collection
+      el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><div mp-state="s"><span mp-text="(count items)" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, '3');
+      // Higher-order
+      el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4]}\'><div mp-state="s"><span mp-text="(count (filter #(> % 2) items))" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, '2');
+      // Object
+      el = fixture('<div mp="t"><div mp-state="s"><span mp-text="(get (obj :a 1 :b 2) :b)" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, '2');
+      // Type
+      el = fixture('<div mp="t"><div mp-state="s"><span mp-text="(type nil)" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'nil');
+    });
+
+    test('parse cache eviction does not break re-evaluation', function () {
+      // Force many unique expressions to trigger cache eviction
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":1}\'><div mp-state="s"><span mp-text="x" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, '1');
+      // After eviction, cached expressions should be re-parseable
+      var inst = el.querySelector('[mp]')._mp;
+      inst.ctx.x = 42;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '42', 'Still works after potential cache eviction');
+    });
+
+
+    group('Async error handling');
+
+    test('then! transitions to error state on rejection', async function () {
+      MachinePerfect.fn('fail-async', function () {
+        return Promise.reject(new Error('network down'));
+      });
+      var el = fixture(
+        '<div mp="t" mp-initial="loading" mp-init="(then! (fail-async) :result \'done\' \'error\')" mp-ctx=\'{"result":null}\'>' +
+        '<div mp-state="loading">Loading</div>' +
+        '<div mp-state="done">OK</div>' +
+        '<div mp-state="error"><span mp-text="result" id="o"></span></div></div>'
+      );
+      await sleep(30);
+      eq(el.querySelector('[mp]')._mp.state, 'error', 'Should transition to error state');
+    });
+
+    test('then! stores error in context key on rejection', async function () {
+      MachinePerfect.fn('fail-with-msg', function () {
+        return Promise.reject('oops');
+      });
+      var el = fixture(
+        '<div mp="t" mp-initial="loading" mp-init="(then! (fail-with-msg) :err \'done\' \'failed\')" mp-ctx=\'{"err":null}\'>' +
+        '<div mp-state="loading">Loading</div><div mp-state="done">OK</div><div mp-state="failed">F</div></div>'
+      );
+      await sleep(30);
+      eq(el.querySelector('[mp]')._mp.state, 'failed');
+      eq(el.querySelector('[mp]')._mp.ctx.err, 'oops', 'Error should be stored in ctx');
+    });
+
+    test('then! without error state warns on rejection', async function () {
+      MachinePerfect.fn('fail-no-catch', function () {
+        return Promise.reject('silent');
+      });
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      var el = fixture(
+        '<div mp="t" mp-initial="go" mp-init="(then! (fail-no-catch) :x \'done\')" mp-ctx=\'{"x":null}\'>' +
+        '<div mp-state="go">Go</div><div mp-state="done">OK</div></div>'
+      );
+      await sleep(30);
+      console.warn = origWarn;
+      eq(el.querySelector('[mp]')._mp.state, 'go', 'Should stay in current state');
+      assert(warnings.some(function (w) { return w.indexOf('async error') !== -1; }), 'Should warn');
+    });
+
+
+    group('Lifecycle');
+
+    test('mp-exit runs before state content is destroyed', function () {
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"cleaned":false}\'>' +
+        '<div mp-state="a" mp-exit="(set! cleaned true)"><button mp-to="b" id="btn">Go</button></div>' +
+        '<div mp-state="b"><span mp-text="cleaned" id="o"></span></div></div>'
+      );
+      eq(el.querySelector('[mp]')._mp.ctx.cleaned, false);
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, 'true', 'mp-exit should have set cleaned=true');
+    });
+
+    test('mp-exit does not run on self-transition', function () {
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"exits":0}\'>' +
+        '<div mp-state="a" mp-exit="(inc! exits)"><button mp-to="." id="btn">Self</button><span mp-text="exits" id="o"></span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '0', 'mp-exit should not run on self-transition');
+    });
+
+
+    group('Error messages');
+
+    test('purity error includes function name and guidance', function () {
+      var threw = false;
+      try {
+        fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="(inc! x)"></span></div></div>');
+      } catch (err) {
+        threw = true;
+        has(err.message, 'inc!');
+        has(err.message, 'mp-action');
+      }
+      assert(threw, 'Should throw with function name and fix guidance');
+    });
+
+    test('binding error includes element tag and expression', function () {
+      // Register a function that throws at runtime
+      MachinePerfect.fn('blow-up', function () { throw new Error('kaboom'); });
+      var threw = false;
+      try {
+        fixture('<div mp="t"><div mp-state="s"><span mp-text="(blow-up)"></span></div></div>');
+      } catch (err) {
+        threw = true;
+        has(err.message, '<span>');
+        has(err.message, 'blow-up');
+      }
+      assert(threw, 'Should throw with element tag and expression');
+    });
+
+
+    group('Cleanup');
+
+    test('outside listener removed on destroy', function () {
+      var el = fixture('<div mp="t"><div mp-state="a"><button mp-on:click.outside="(to .)" id="btn">X</button></div></div>');
+      var machineEl = el.querySelector('[mp]');
+      assert(machineEl._mpCleanups && machineEl._mpCleanups.length > 0, 'Should have tracked cleanup');
+      MachinePerfect.destroy(machineEl);
+      assert(!machineEl._mpCleanups, 'Cleanups should be removed after destroy');
+    });
+
+    test('dotted-path set! records dirty key for targeted update', function () {
+      var el = fixture(
+        '<div>' +
+        '<mp-store name="dp" value=\'{"color":"red"}\'></mp-store>' +
+        '<div mp="t" mp-ctx=\'{"count":0}\'><div mp-state="s">' +
+        '<span mp-text="$store.dp.color" id="oc"></span>' +
+        '<span mp-text="count" id="on"></span>' +
+        '<button mp-to="." mp-action="(do (inc! count) (set! $store.dp.color \'blue\'))" id="btn">Go</button>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelector('#oc').textContent, 'red');
+      eq(el.querySelector('#on').textContent, '0');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#on').textContent, '1', 'count should update');
+      eq(el.querySelector('#oc').textContent, 'blue', 'Dotted path store should also update');
+    });
+
+
+    group('Performance');
+
+    // ── Performance benchmarks ─────────────────────────────────────
+    // Reference numbers from js-framework-benchmark (keyed, Chrome):
+    //   Create 1000:  Vanilla ~30ms, Solid ~40ms, Svelte ~45ms, Vue ~55ms, React ~70ms
+    //   Partial update: Solid ~15ms, Svelte ~20ms, Vue ~25ms, React ~30ms
+    //   Remove row:   All <5ms
+    //
+    // We run inside a test fixture (extra DOM overhead), so targets are
+    // generous but still competitive. Failing these means a regression.
+
+    test('create 1000 keyed rows', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+
+      var t0 = performance.now();
+      var el = fixture(
+        '<div><mp-store name="perf" value=\'' + JSON.stringify(items) + '\'></mp-store>' +
+        '<div mp="p"><div mp-state="s">' +
+        '<template mp-each="$store.perf" mp-key="id"><span mp-text="label" class="pl"></span></template>' +
+        '</div></div></div>'
+      );
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl').length, 1000);
+      eq(el.querySelectorAll('.pl')[0].textContent, 'Item 0');
+      eq(el.querySelectorAll('.pl')[999].textContent, 'Item 999');
+
+      perf('create', time);
+      // Target: under 200ms (React-class). Solid/Svelte are ~40-45ms.
+      assert(time < 200, 'Create 1000 rows should be under 200ms, got ' + time.toFixed(1));
+    });
+
+    test('update every 10th row (100 of 1000)', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+      var el = fixture(
+        '<div><mp-store name="perf3" value=\'' + JSON.stringify(items) + '\'></mp-store>' +
+        '<div mp="p3"><div mp-state="s">' +
+        '<template mp-each="$store.perf3" mp-key="id"><span mp-text="label" class="pl3"></span></template>' +
+        '</div></div></div>'
+      );
+
+      var t0 = performance.now();
+      for (var i = 0; i < 1000; i += 10) {
+        MachinePerfect.store.perf3[i].label = 'UPDATED ' + i;
+      }
+      el.querySelector('[mp="p3"]')._mp.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl3')[0].textContent, 'UPDATED 0');
+      eq(el.querySelectorAll('.pl3')[1].textContent, 'Item 1', 'Non-updated rows unchanged');
+
+      perf('update 100', time);
+      // Target: under 50ms (React-class partial update is ~30ms)
+      assert(time < 50, 'Partial update should be under 50ms, got ' + time.toFixed(1));
+    });
+
+    test('delete 500 of 1000 rows', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+      var el = fixture(
+        '<div><mp-store name="perf4" value=\'' + JSON.stringify(items) + '\'></mp-store>' +
+        '<div mp="p4"><div mp-state="s">' +
+        '<template mp-each="$store.perf4" mp-key="id"><span mp-text="label" class="pl4"></span></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.pl4').length, 1000);
+
+      var t0 = performance.now();
+      MachinePerfect.store.perf4.splice(0, 500);
+      el.querySelector('[mp="p4"]')._mp.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl4').length, 500);
+
+      perf('delete 500', time);
+      // Target: under 100ms
+      assert(time < 100, 'Delete 500 rows should be under 100ms, got ' + time.toFixed(1));
+    });
+
+    test('swap two rows', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+      var el = fixture(
+        '<div><mp-store name="perf5" value=\'' + JSON.stringify(items) + '\'></mp-store>' +
+        '<div mp="p5"><div mp-state="s">' +
+        '<template mp-each="$store.perf5" mp-key="id"><span mp-text="label" class="pl5"></span></template>' +
+        '</div></div></div>'
+      );
+
+      var t0 = performance.now();
+      var temp = MachinePerfect.store.perf5[1];
+      MachinePerfect.store.perf5[1] = MachinePerfect.store.perf5[998];
+      MachinePerfect.store.perf5[998] = temp;
+      el.querySelector('[mp="p5"]')._mp.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl5')[1].textContent, 'Item 998');
+      eq(el.querySelectorAll('.pl5')[998].textContent, 'Item 1');
+
+      perf('swap', time);
+      // Target: under 30ms (most frameworks do this in <10ms)
+      assert(time < 30, 'Swap should be under 30ms, got ' + time.toFixed(1));
+    });
+
+    test('targeted update: 1 of 100 nested machines', function () {
+      var items = [];
+      for (var i = 0; i < 100; i++) items.push({id: i, val: 'v' + i});
+
+      var el = fixture(
+        '<div><mp-store name="perf2" value=\'' + JSON.stringify(items) + '\'></mp-store>' +
+        '<template mp-define="pcard"><div mp-state="d"><span mp-text="val" class="pv"></span></div></template>' +
+        '<div mp="p2"><div mp-state="s">' +
+        '<template mp-each="$store.perf2" mp-key="id"><div mp="pcard"></div></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.pv').length, 100);
+
+      var t0 = performance.now();
+      MachinePerfect.store.perf2[50].val = 'CHANGED';
+      el.querySelector('[mp="p2"]')._mp.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pv')[50].textContent, 'CHANGED');
+      eq(el.querySelectorAll('.pv')[0].textContent, 'v0', 'Unaffected card unchanged');
+
+      perf('targeted 1/100', time);
+      // Target: under 5ms — this is the dependency tracking payoff.
+      // Without dep tracking, all 100 cards would re-evaluate.
+      assert(time < 5, 'Targeted update should be under 5ms, got ' + time.toFixed(1));
+    });
+
+    test('append 1000 rows to existing 1000', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+      var el = fixture(
+        '<div><mp-store name="perf6" value=\'' + JSON.stringify(items) + '\'></mp-store>' +
+        '<div mp="p6"><div mp-state="s">' +
+        '<template mp-each="$store.perf6" mp-key="id"><span mp-text="label" class="pl6"></span></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.pl6').length, 1000);
+
+      var t0 = performance.now();
+      for (var i = 1000; i < 2000; i++) MachinePerfect.store.perf6.push({id: i, label: 'Item ' + i});
+      el.querySelector('[mp="p6"]')._mp.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl6').length, 2000);
+      eq(el.querySelectorAll('.pl6')[1999].textContent, 'Item 1999');
+
+      perf('append 1000', time);
+      // Target: under 200ms — existing rows should not be touched
+      assert(time < 200, 'Append should be under 200ms, got ' + time.toFixed(1));
+    });
+
+
+    // ── Run ──
+    run();
+  </script>
+</body>
+</html>

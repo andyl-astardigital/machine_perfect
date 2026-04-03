@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="../logo.svg" />
+  <title>machine_perfect — Sticky Notes</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{mp:{purple:'#6d28d9',dark:'#4c1d95',gold:'#fbbf24',lavender:'#e9d5ff'}}}}}</script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" />
+  <script src="../src/machine-perfect.js"></script>
+  <style>
+    .note { transition: transform 0.15s, box-shadow 0.15s; }
+    .note:hover { transform: scale(1.04) rotate(0deg) !important; box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 10; }
+    .note:nth-child(4n+1) { transform: rotate(-1.5deg); }
+    .note:nth-child(4n+2) { transform: rotate(0.8deg); }
+    .note:nth-child(4n+3) { transform: rotate(-0.5deg); }
+    .note:nth-child(4n+4) { transform: rotate(1.3deg); }
+    .note-yellow { background: #fef9c3; color: #713f12; border: 2px solid #fde047; }
+    .note-pink { background: #fce7f3; color: #831843; border: 2px solid #fda4af; }
+    .note-blue { background: #dbeafe; color: #1e3a8a; border: 2px solid #93c5fd; }
+    .note-green { background: #dcfce7; color: #14532d; border: 2px solid #86efac; }
+    .note-divider { border-top: 1px solid rgba(0,0,0,0.08); }
+    .note-delete { color: #b91c1c; }
+    .mp-enter-active, .mp-leave-active { transition: all 0.2s ease; }
+    .mp-enter-from { opacity: 0; transform: scale(0.92); }
+    .mp-leave-to { opacity: 0; transform: scale(0.92); }
+  </style>
+</head>
+<body class="bg-base-300 text-base-content min-h-screen">
+
+  <!--
+    Sticky Notes — zero JavaScript.
+
+    Each note is an independent state machine with four states:
+    viewing → editing → confirming → deleted.
+
+    Edit one note — the others don't move. That's the component model.
+    The HTML IS the application. No script tags below.
+  -->
+
+  <template mp-define="note">
+    <div mp-state="viewing" mp-transition class="card note shadow-md">
+      <div class="card-body p-4 gap-2">
+        <p mp-text="text" class="text-sm whitespace-pre-wrap leading-relaxed select-text"></p>
+        <div class="flex justify-end gap-1 mt-auto pt-2 note-divider">
+          <button mp-to="editing" mp-action="(set! draft text)"
+                  class="btn btn-xs btn-ghost opacity-50 hover:opacity-100">edit</button>
+          <button mp-to="confirming"
+                  class="btn btn-xs btn-ghost opacity-50 hover:opacity-100 note-delete">delete</button>
+        </div>
+      </div>
+    </div>
+    <div mp-state="editing" mp-transition class="card note shadow-md">
+      <div class="card-body p-4 gap-2">
+        <textarea mp-model="draft" rows="3"
+                  class="textarea textarea-bordered w-full text-sm bg-transparent"
+                  mp-on:keydown="(when (= (get $event :key) 'Escape') (to viewing))"></textarea>
+        <div class="flex justify-end gap-1">
+          <button mp-to="viewing" mp-action="(set! text draft)" mp-guard="(> (count draft) 0)"
+                  class="btn btn-xs btn-primary">save</button>
+          <button mp-to="viewing" class="btn btn-xs btn-ghost">cancel</button>
+        </div>
+      </div>
+    </div>
+    <div mp-state="confirming" mp-transition class="card note shadow-md">
+      <div class="card-body p-4 gap-2 items-center justify-center">
+        <p class="text-sm font-bold">Delete this note?</p>
+        <div class="flex gap-2">
+          <button mp-to="viewing" class="btn btn-xs btn-ghost">keep</button>
+          <button mp-to="deleted" mp-emit="note-deleted" class="btn btn-xs btn-error">delete</button>
+        </div>
+      </div>
+    </div>
+    <div mp-state="deleted"></div>
+  </template>
+
+  <template mp-define="toast">
+    <div mp-state="idle"></div>
+    <div mp-state="show" mp-transition="(after 2000 idle)"
+         class="alert alert-success shadow-lg text-sm">
+      <span mp-text="message"></span>
+    </div>
+  </template>
+
+  <div class="navbar bg-base-100 shadow-md px-6">
+    <div class="flex items-center gap-2 flex-1">
+      <img src="../logo.svg" alt="" class="w-8 h-8 rounded-md" />
+      <span class="text-xl font-bold">Sticky Notes</span>
+    </div>
+    <span class="badge bg-mp-dark text-mp-lavender border-mp-purple text-xs">machine_perfect</span>
+  </div>
+
+  <main class="max-w-5xl mx-auto p-6 space-y-6"
+        mp="app">
+
+    <div mp-state="board">
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div mp="note" mp-ctx='{"text":"Ship machine_perfect\nThe framework is ready","draft":"","color":"yellow"}'
+             mp-class="(str 'note-' color)"></div>
+        <div mp="note" mp-ctx='{"text":"Call Sarah about the demo","draft":"","color":"pink"}'
+             mp-class="(str 'note-' color)"></div>
+        <div mp="note" mp-ctx='{"text":"Review state machine patterns\nNested machines, guards, actions","draft":"","color":"blue"}'
+             mp-class="(str 'note-' color)"></div>
+        <div mp="note" mp-ctx='{"text":"Buy coffee beans","draft":"","color":"green"}'
+             mp-class="(str 'note-' color)"></div>
+      </div>
+    </div>
+
+    <div class="toast toast-end toast-bottom z-50">
+      <div mp="toast" mp-ctx='{"message":""}'
+           mp-receive="(on 'note-deleted' (do (set! message 'Note deleted') (to show)))
+                       (on 'note-created' (do (set! message 'Note created') (to show)))">
+      </div>
+    </div>
+  </main>
+
+</body>
+</html>

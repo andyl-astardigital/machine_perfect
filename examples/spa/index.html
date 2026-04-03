@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="../../logo.svg" />
+  <title>Snow Check — Where's the Snow?</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{mp:{purple:'#6d28d9',dark:'#4c1d95',gold:'#fbbf24',lavender:'#e9d5ff'}}}}}</script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" />
+  <script src="../../src/machine-perfect.js"></script>
+  <style>
+    .mp-enter-active,.mp-leave-active{transition:all .3s ease}
+    .mp-enter-from{opacity:0;transform:translateY(12px) scale(.98)}
+    .mp-leave-to{opacity:0;transform:translateY(-8px) scale(.98)}
+    .resort-card{transition:transform .2s,box-shadow .2s}
+    .resort-card:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+    @keyframes soft-pulse{0%,100%{opacity:1}50%{opacity:.6}}
+    .checking{animation:soft-pulse 1.5s ease-in-out infinite}
+    .badge{transition:background-color .3s,color .3s}
+  </style>
+
+  <!-- Three components — each a genuine reusable piece -->
+  <link rel="mp-import" href="components/resort-card.mp.html" />
+  <link rel="mp-import" href="components/toast.mp.html" />
+  <link rel="mp-import" href="components/command-palette.mp.html" />
+</head>
+
+<!--
+  ════════════════════════════════════════════════════════════════════════════
+  ARCHITECTURE
+
+  This app is composed of 7 independent machines + 1 reusable UI component.
+  No machine owns everything. Each owns ONE concern.
+
+  Stores (shared state):
+    $store.resorts   — loaded resort data (array of objects)
+    $store.filters   — current filter state (country, minSnow, sortBy, query)
+    $store.picks     — user selections (saved array, compare array)
+
+  Machines:
+    shell            — theme persistence, Ctrl+K shortcut
+    app              — routing ONLY (loading → browse → detail → compare → saved)
+    filters          — sidebar filter controls, writes $store.filters
+    picks            — sidebar saved/compare lists, writes $store.picks
+    live-clock       — ticking timestamp (isolated to avoid thrashing)
+    command-palette  — Ctrl+K search overlay (imported component)
+    toast            — auto-dismissing notification (imported component)
+
+  UI Component:
+    resort-card      — visual card template, used in browse + compare + saved
+                       different slot content per context
+
+  Communication:
+    filters  → emits 'filters-changed'  → app receives, re-renders
+    picks    → emits 'picks-changed'    → app receives, re-renders
+    app      → emits 'resort-saved'     → toast receives, shows message
+    app      → emits 'resort-removed'   → toast receives, shows message
+    shell    → emits 'open-palette'     → command-palette receives, opens
+  ════════════════════════════════════════════════════════════════════════════
+-->
+
+<!-- Shell: theme + global keyboard -->
+<body class="bg-base-200 min-h-screen"
+      mp="shell" mp-persist="snow-theme" mp-bind-data-theme="theme"
+      mp-on:keydown="(when (and (or (get $event :ctrlKey) (get $event :metaKey)) (= (get $event :key) 'k'))
+                      (do (prevent!) (emit open-palette)))"
+      mp-ctx='{"theme": "dark"}'>
+
+  <!-- Shared state — three stores, clear boundaries -->
+  <mp-store name="resorts" value='[]'></mp-store>
+  <mp-store name="filters" value='{"country":"All","minSnow":0,"sortBy":"snow","query":"","weatherReady":false}'></mp-store>
+  <mp-store name="picks" value='{"saved":[],"compare":[]}'></mp-store>
+
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       APP MACHINE — routing only. Thin. Receives events from
+       filters and picks machines to know when to re-render.
+       ══════════════════════════════════════════════════════════════════ -->
+  <div mp="app" mp-route mp-initial="loading"
+       mp-init="(then! (load-resorts) :_loaded 'browse')"
+       mp-receive="(on 'filters-changed' (to .))
+                   (on 'picks-changed' (to .))"
+       mp-ctx='{"selected":null,"summary":""}'>
+
+    <!-- ── Navbar ─────────────────────────────────────────────────── -->
+    <div class="navbar bg-base-100 shadow-md px-4 gap-2 sticky top-0 z-40">
+      <a mp-to="browse" class="btn btn-ghost text-lg font-bold gap-2 normal-case"><img src="../../logo.svg" alt="" class="w-7 h-7 rounded" /> Snow Check</a>
+      <div class="flex-1"></div>
+      <input mp-model="$store.filters.query" type="text" placeholder="Search resorts..."
+             mp-on:keydown="(when (= (get $event :key) 'Escape') (do (set! $store.filters.query '') (emit filters-changed) (to .)))"
+             mp-on:input="(do (emit filters-changed) (to .))"
+             class="input input-bordered input-sm w-48 md:w-64" />
+      <select mp-on:change="(do (set! $store.filters.country (get $event :target :value)) (emit filters-changed) (to .))"
+              class="select select-bordered select-sm w-36">
+        <option>All</option><option>France</option><option>Switzerland</option>
+        <option>Austria</option><option>Italy</option><option>United Kingdom</option>
+        <option>Norway</option><option>Sweden</option><option>Andorra</option><option>Spain</option>
+      </select>
+      <div class="flex gap-1">
+        <button mp-to="browse" mp-class="(when-state browse 'btn-active')" class="btn btn-ghost btn-sm">Resorts</button>
+        <button mp-to="compare" mp-class="(when-state compare 'btn-active')" class="btn btn-ghost btn-sm gap-1">
+          Compare <span mp-show="(> (count $store.picks.compare) 0)" mp-text="(count $store.picks.compare)" class="badge badge-sm badge-secondary"></span>
+        </button>
+        <button mp-to="saved" mp-class="(when-state saved 'btn-active')" class="btn btn-ghost btn-sm gap-1">
+          Saved <span mp-show="(> (count $store.picks.saved) 0)" mp-text="(count $store.picks.saved)" class="badge badge-sm badge-primary"></span>
+        </button>
+      </div>
+      <select class="select select-bordered select-sm w-28"
+              mp-model="theme">
+        <option value="dark">Dark</option><option value="light">Light</option>
+        <option value="nord">Nord</option><option value="corporate">Corporate</option>
+      </select>
+    </div>
+
+
+    <!-- ── Layout ─────────────────────────────────────────────────── -->
+    <div class="flex" style="height:calc(100vh - 64px)">
+
+      <!-- ════════════════════════════════════════════════════════════
+           SIDEBAR — contains TWO independent machines: filters + picks
+           ════════════════════════════════════════════════════════════ -->
+      <aside class="w-56 bg-base-100 border-r border-base-300 p-4 overflow-y-auto shrink-0 space-y-4">
+
+        <!-- FILTERS MACHINE — owns filter UI, writes to $store.filters -->
+        <div mp="filters" mp-persist="snow-filters" mp-ctx='{}'>
+
+          <div mp-state="active">
+            <!-- Snow summary (reads from $store.resorts) -->
+            <div class="mb-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40 mb-2">Conditions</h3>
+              <div class="stats stats-vertical shadow bg-base-200 w-full">
+                <div class="stat py-2 px-3">
+                  <div class="stat-title text-xs">With snow</div>
+                  <div class="stat-value text-lg" mp-text="(->> $store.resorts (filter #(> (get % :snow) 0)) (count))">0</div>
+                </div>
+                <div class="stat py-2 px-3">
+                  <div class="stat-title text-xs">Best depth</div>
+                  <div class="stat-value text-lg font-mono" mp-text="(let [get-snow (fn [r] (get r :snow)) mx (->> $store.resorts (map get-snow) (reduce max 0))] (str mx 'cm'))">-</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Min snow filter -->
+            <div class="mb-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40 mb-2">Min snow depth</h3>
+              <div class="flex gap-1 flex-wrap">
+                <button mp-to="." mp-action="(set! $store.filters.minSnow 0)" mp-emit="filters-changed" mp-class="(when (= $store.filters.minSnow 0) 'btn-active')" mp-bind-disabled="(not $store.filters.weatherReady)" class="btn btn-xs btn-ghost">Any</button>
+                <button mp-to="." mp-action="(set! $store.filters.minSnow 20)" mp-emit="filters-changed" mp-class="(when (= $store.filters.minSnow 20) 'btn-active')" mp-bind-disabled="(not $store.filters.weatherReady)" class="btn btn-xs btn-ghost">20cm+</button>
+                <button mp-to="." mp-action="(set! $store.filters.minSnow 50)" mp-emit="filters-changed" mp-class="(when (= $store.filters.minSnow 50) 'btn-active')" mp-bind-disabled="(not $store.filters.weatherReady)" class="btn btn-xs btn-ghost">50cm+</button>
+                <button mp-to="." mp-action="(set! $store.filters.minSnow 100)" mp-emit="filters-changed" mp-class="(when (= $store.filters.minSnow 100) 'btn-active')" mp-bind-disabled="(not $store.filters.weatherReady)" class="btn btn-xs btn-ghost">1m+</button>
+              </div>
+            </div>
+
+            <!-- Sort -->
+            <div class="mb-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40 mb-2">Sort by</h3>
+              <div class="flex gap-1 flex-wrap">
+                <button mp-to="." mp-action="(set! $store.filters.sortBy 'snow')" mp-emit="filters-changed" mp-class="(when (= $store.filters.sortBy 'snow') 'btn-active')" mp-bind-disabled="(not $store.filters.weatherReady)" class="btn btn-xs btn-ghost">Snow</button>
+                <button mp-to="." mp-action="(set! $store.filters.sortBy 'temp')" mp-emit="filters-changed" mp-class="(when (= $store.filters.sortBy 'temp') 'btn-active')" mp-bind-disabled="(not $store.filters.weatherReady)" class="btn btn-xs btn-ghost">Temp</button>
+                <button mp-to="." mp-action="(set! $store.filters.sortBy 'name')" mp-emit="filters-changed" mp-class="(when (= $store.filters.sortBy 'name') 'btn-active')" class="btn btn-xs btn-ghost">Name</button>
+                <button mp-to="." mp-action="(set! $store.filters.sortBy 'alt')" mp-emit="filters-changed" mp-class="(when (= $store.filters.sortBy 'alt') 'btn-active')" mp-bind-disabled="(not $store.filters.weatherReady)" class="btn btn-xs btn-ghost">Altitude</button>
+              </div>
+            </div>
+
+            <!-- Countries -->
+            <div>
+              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40 mb-2">Countries</h3>
+              <ul class="menu menu-xs p-0">
+                <li><a mp-to="." mp-action="(set! $store.filters.country 'All')" mp-emit="filters-changed" mp-class="(when (= $store.filters.country 'All') 'active')" class="text-xs">All countries</a></li>
+                <template mp-each="(->> $store.resorts (map #(get % :country)) (uniq) (sort-by str))">
+                  <li><a mp-to="." mp-action="(set! $store.filters.country $item)" mp-emit="filters-changed" mp-class="(when (= $store.filters.country $item) 'active')" class="text-xs" mp-text="$item"></a></li>
+                </template>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider my-1"></div>
+
+        <!-- PICKS MACHINE — owns saved resorts, writes to $store.picks -->
+        <div mp="picks" mp-persist="snow-picks" mp-ctx='{}'>
+          <div mp-state="active">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40 mb-2">
+              Saved <span mp-show="(> (count $store.picks.saved) 0)" class="badge badge-xs badge-primary ml-1" mp-text="(count $store.picks.saved)"></span>
+            </h3>
+            <div mp-show="(= (count $store.picks.saved) 0)"><p class="text-xs text-base-content/30 italic">None yet</p></div>
+            <ul class="menu menu-xs p-0 gap-0.5">
+              <template mp-each="$store.picks.saved" mp-key="name">
+                <li><a class="text-xs flex items-center gap-2">
+                  <img mp-bind-src="(str 'https://flagcdn.com/w40/' code '.png')" class="w-4 h-3 rounded-sm" />
+                  <span mp-text="name" class="truncate flex-1"></span>
+                  <span class="font-mono text-base-content/40" mp-text="(if (> snow 0) (str snow 'cm') '—')"></span>
+                </a></li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </aside>
+
+
+      <!-- ══ Main content — routed states ══════════════════════════ -->
+      <main class="flex-1 overflow-y-auto p-4">
+
+        <!-- LOADING -->
+        <div mp-state="loading" mp-transition class="flex items-center justify-center h-full">
+          <div class="text-center"><span class="loading loading-spinner loading-lg text-primary"></span><p class="text-sm text-base-content/50 mt-4">Checking conditions at 27 resorts...</p></div>
+        </div>
+
+        <!-- ERROR -->
+        <div mp-state="error" mp-transition class="flex items-center justify-center h-full">
+          <div class="alert alert-error max-w-md"><span>Failed to load. Refresh to retry.</span></div>
+        </div>
+
+
+        <!-- ══ BROWSE ══════════════════════════════════════════════ -->
+        <div mp-state="browse" mp-path="/" mp-transition="(every 600000 (refresh-weather))">
+          <div class="mb-4 flex items-center justify-between flex-wrap gap-2">
+            <div class="flex items-center gap-2">
+              <h2 class="text-xl font-bold">Where's the snow?</h2>
+              <span class="text-sm text-base-content/50"
+                    mp-text="(let [f $store.filters n (->> $store.resorts (filter #(or (= (get f :country) 'All') (= (get % :country) (get f :country)))) (filter #(contains? (lower (get % :name)) (lower (get f :query)))) (filter #(or (not (get f :weatherReady)) (>= (get % :snow) (get f :minSnow)))) (count))] (str n ' resorts'))"></span>
+              <span mp-show="(not $store.filters.weatherReady)" class="badge badge-sm badge-warning gap-1"><span class="loading loading-spinner loading-xs"></span> checking</span>
+              <span mp-hide="(or (!= $store.filters.country 'All') (> $store.filters.minSnow 0) (!= $store.filters.query '') (not $store.filters.weatherReady))" class="badge badge-sm badge-outline">all</span>
+              <span mp-show="(or (!= $store.filters.country 'All') (> $store.filters.minSnow 0) (!= $store.filters.query ''))" class="badge badge-sm badge-ghost">filtered</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button mp-show="(or (!= $store.filters.country 'All') (> $store.filters.minSnow 0) (!= $store.filters.query ''))"
+                      mp-to="." mp-action="(do (set! $store.filters.country 'All') (set! $store.filters.minSnow 0) (set! $store.filters.query ''))"
+                      class="btn btn-ghost btn-xs">Clear filters</button>
+              <!-- Live clock — its own machine, doesn't thrash the app -->
+              <div mp="live-clock" mp-ctx='{"time":""}' mp-init="(set! time (timestamp-str))">
+                <div mp-state="ticking" mp-transition="(every 1000 (set! time (timestamp-str)))">
+                  <span class="text-xs text-base-content/40 font-mono flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-success animate-pulse inline-block"></span>
+                    Live · <span mp-text="time"></span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Resort grid — uses resort-card component -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <template mp-each="(let [f $store.filters base (->> $store.resorts (filter #(or (= (get f :country) 'All') (= (get % :country) (get f :country)))) (filter #(contains? (lower (get % :name)) (lower (get f :query)))) (filter #(or (not (get f :weatherReady)) (>= (get % :snow) (get f :minSnow))))) sorted (if (get f :weatherReady) (sort-by #(get % (get f :sortBy)) base) (sort-by #(get % :name) base))] (if (and (get f :weatherReady) (or (= (get f :sortBy) 'snow') (= (get f :sortBy) 'alt'))) (reverse sorted) sorted))" mp-key="name">
+              <div mp-to="detail" mp-action="(set! selected $item)" class="cursor-pointer">
+                <div mp="resort-card">
+                  <div slot="actions" class="flex gap-1 mt-1">
+                    <button mp-on:click.stop="(do (push! $store.picks.saved (obj :name name :code code :snow snow :temp temp :alt alt :top top :region region :country country :weather weather :wind wind :lat lat :lng lng :img img)) (emit resort-saved) (emit picks-changed) (to .))"
+                            mp-guard="(not (some #(= (get % :name) name) $store.picks.saved))"
+                            mp-bind-disabled="(some #(= (get % :name) name) $store.picks.saved)"
+                            class="btn btn-xs btn-ghost flex-1">
+                      <span mp-text="(if (some #(= (get % :name) name) $store.picks.saved) '✓' '★')"></span>
+                    </button>
+                    <button mp-on:click.stop="(do (push! $store.picks.compare (obj :name name :code code :snow snow :temp temp :alt alt :top top :region region :country country :weather weather :wind wind :lat lat :lng lng :img img)) (emit picks-changed) (to .))"
+                            mp-guard="(not (some #(= (get % :name) name) $store.picks.compare))"
+                            mp-bind-disabled="(some #(= (get % :name) name) $store.picks.compare)"
+                            class="btn btn-xs btn-ghost flex-1">
+                      <span mp-text="(if (some #(= (get % :name) name) $store.picks.compare) '⇄' '+⇄')"></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Empty state -->
+          <div mp-show="(= 0 (let [f $store.filters] (->> $store.resorts (filter #(or (= (get f :country) 'All') (= (get % :country) (get f :country)))) (filter #(>= (get % :snow) (get f :minSnow))) (filter #(contains? (lower (get % :name)) (lower (get f :query)))) (count))))"
+               class="text-center py-16">
+            <p class="text-4xl mb-2">🏔️</p><p class="text-lg text-base-content/50">No resorts match</p>
+            <button mp-to="." mp-action="(do (set! $store.filters.country 'All') (set! $store.filters.minSnow 0))" mp-emit="filters-changed" class="btn btn-sm btn-ghost mt-2">Reset</button>
+          </div>
+        </div>
+
+
+        <!-- ══ DETAIL ══════════════════════════════════════════════ -->
+        <div mp-state="detail" mp-path="/resort" mp-transition
+             mp-init="(then! (fetch-summary (get selected :name)) :summary)">
+          <div mp-show="(some? selected)">
+            <button mp-to="browse" class="btn btn-ghost btn-sm mb-4 gap-1">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg> Back
+            </button>
+            <div class="card text-white shadow-xl mb-4 bg-cover bg-center bg-gradient-to-br from-blue-900 to-indigo-900"
+                 mp-bind-style="(if (and (get selected :img) (> (count (get selected :img)) 0)) (str 'background-image:linear-gradient(to right,rgba(15,23,42,.85),rgba(15,23,42,.4)),url(' (get selected :img) ')') '')">
+              <div class="card-body p-6">
+                <div class="flex items-start justify-between">
+                  <div>
+                    <div class="flex items-center gap-3 mb-2">
+                      <img mp-bind-src="(str 'https://flagcdn.com/w40/' (get selected :code) '.png')" class="w-8 h-5 rounded shadow" />
+                      <h2 class="text-3xl font-bold drop-shadow" mp-text="(get selected :name)"></h2>
+                    </div>
+                    <p class="text-white/60" mp-text="(str (get selected :region) ' · ' (get selected :country))"></p>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-5xl font-bold drop-shadow" mp-text="(str (get selected :snow) 'cm')"></p>
+                    <p class="text-white/60 text-sm">snow depth</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+              <div class="stat bg-base-100 rounded-box shadow border border-base-300 p-3"><div class="stat-title text-xs">Temperature</div><div class="stat-value text-xl font-mono" mp-class="(if (< (get selected :temp) 0) 'text-info' 'text-warning')" mp-text="(str (get selected :temp) '°C')"></div></div>
+              <div class="stat bg-base-100 rounded-box shadow border border-base-300 p-3"><div class="stat-title text-xs">Conditions</div><div class="stat-value text-base" mp-text="(get selected :weather)"></div></div>
+              <div class="stat bg-base-100 rounded-box shadow border border-base-300 p-3"><div class="stat-title text-xs">Wind</div><div class="stat-value text-xl font-mono" mp-text="(str (get selected :wind) ' km/h')"></div></div>
+              <div class="stat bg-base-100 rounded-box shadow border border-base-300 p-3"><div class="stat-title text-xs">Base</div><div class="stat-value text-xl font-mono" mp-text="(str (get selected :alt) 'm')"></div></div>
+              <div class="stat bg-base-100 rounded-box shadow border border-base-300 p-3"><div class="stat-title text-xs">Summit</div><div class="stat-value text-xl font-mono" mp-text="(str (get selected :top) 'm')"></div></div>
+            </div>
+            <div mp-show="(> (count summary) 0)" class="card bg-base-100 shadow border border-base-300 mb-4"><div class="card-body p-4 gap-2">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40">About</h3>
+              <p class="text-sm text-base-content/80 leading-relaxed" mp-text="summary"></p>
+            </div></div>
+            <div class="card bg-base-100 shadow border border-base-300 mb-4"><div class="card-body p-4 gap-3">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40" mp-text="(str 'Other resorts in ' (get selected :country))"></h3>
+              <div class="flex flex-wrap gap-2">
+                <template mp-each="(->> $store.resorts (filter #(and (= (get % :country) (get selected :country)) (!= (get % :name) (get selected :name)))) (sort-by #(get % :snow)) (reverse))">
+                  <button class="btn btn-xs btn-ghost gap-1" mp-to="detail" mp-action="(set! selected $item)">
+                    <span mp-text="name"></span><span class="font-mono text-base-content/40" mp-text="(str snow 'cm')"></span>
+                  </button>
+                </template>
+              </div>
+            </div></div>
+            <div class="flex justify-end">
+              <button mp-to="." mp-action="(push! $store.picks.saved (obj :name (get selected :name) :code (get selected :code) :snow (get selected :snow) :temp (get selected :temp) :alt (get selected :alt) :top (get selected :top) :region (get selected :region) :country (get selected :country) :weather (get selected :weather) :wind (get selected :wind) :lat (get selected :lat) :lng (get selected :lng) :img (get selected :img)))"
+                      mp-emit="resort-saved" mp-guard="(not (some #(= (get % :name) (get selected :name)) $store.picks.saved))" mp-bind-disabled="(some #(= (get % :name) (get selected :name)) $store.picks.saved)" class="btn btn-primary btn-sm gap-1">
+                <span mp-text="(if (some #(= (get % :name) (get selected :name)) $store.picks.saved) '✓ Saved' '★ Save')"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- ══ COMPARE ═════════════════════════════════════════════ -->
+        <div mp-state="compare" mp-path="/compare" mp-transition>
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold">Compare Resorts</h2>
+            <button mp-show="(> (count $store.picks.compare) 0)" mp-to="." mp-action="(set! $store.picks.compare [])" mp-emit="picks-changed" class="btn btn-ghost btn-xs text-error">Clear all</button>
+          </div>
+          <div mp-show="(= (count $store.picks.compare) 0)" class="text-center py-16">
+            <p class="text-4xl mb-2">⇄</p><p class="text-lg text-base-content/50">Add resorts from Browse to compare</p>
+            <button mp-to="browse" class="btn btn-primary btn-sm mt-4">Browse resorts</button>
+          </div>
+          <div mp-show="(> (count $store.picks.compare) 0)">
+            <div class="grid gap-3" mp-bind-style="(str 'grid-template-columns:repeat(' (min 4 (count $store.picks.compare)) ',1fr)')">
+              <template mp-each="$store.picks.compare" mp-key="name">
+                <div mp="resort-card">
+                  <div slot="actions" class="mt-1">
+                    <button mp-on:click="(do (stop!) (remove-where! $store.picks.compare :name name) (emit picks-changed) (to .))"
+                            class="btn btn-ghost btn-xs text-error btn-block">Remove</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="mt-4 text-xs text-base-content/50 text-center"
+                 mp-text="(str 'Comparing ' (count $store.picks.compare) ' resorts · Total snow: ' (->> $store.picks.compare (map #(get % :snow)) (reduce + 0)) 'cm')"></div>
+          </div>
+        </div>
+
+
+        <!-- ══ SAVED ═══════════════════════════════════════════════ -->
+        <div mp-state="saved" mp-path="/saved" mp-transition>
+          <h2 class="text-xl font-bold mb-4">Saved Resorts <span mp-show="(> (count $store.picks.saved) 0)" class="badge badge-primary ml-2" mp-text="(count $store.picks.saved)"></span></h2>
+          <div mp-show="(= (count $store.picks.saved) 0)" class="text-center py-16">
+            <p class="text-4xl mb-2">★</p><p class="text-lg text-base-content/50">No saved resorts</p>
+            <button mp-to="browse" class="btn btn-primary btn-sm mt-4">Browse resorts</button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <template mp-each="$store.picks.saved" mp-key="name">
+              <div mp="resort-card">
+                <div slot="actions" class="mt-1">
+                  <button mp-to="." mp-action="(remove-where! $store.picks.saved :name name)" mp-emit="resort-removed" mp-emit="picks-changed"
+                          class="btn btn-ghost btn-xs text-error btn-block">Remove</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+
+    <!-- Command palette -->
+    <div mp="command-palette" mp-ctx='{"query":""}'
+         mp-receive="(on 'open-palette' (to open)) (on 'cmd-select' (to closed))"></div>
+
+    <!-- Toast -->
+    <div class="toast toast-end toast-bottom z-50">
+      <div mp="toast" mp-ctx='{"message":""}'
+           mp-receive="(on 'resort-saved' (do (set! message 'Resort saved!') (to show)))
+                       (on 'resort-removed' (do (set! message 'Removed') (to show)))"></div>
+    </div>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════════════════
+       JS ESCAPE HATCH — four registered functions for browser APIs.
+       Everything else is s-expressions in HTML.
+       ════════════════════════════════════════════════════════════════ -->
+  <script>
+    var _wc = {0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Rime fog',51:'Light drizzle',53:'Drizzle',55:'Dense drizzle',56:'Freezing drizzle',57:'Dense freezing drizzle',61:'Slight rain',63:'Rain',65:'Heavy rain',66:'Freezing rain',67:'Heavy freezing rain',71:'Slight snow',73:'Snow',75:'Heavy snow',77:'Snow grains',80:'Slight showers',81:'Showers',82:'Heavy showers',85:'Slight snow showers',86:'Heavy snow showers',95:'Thunderstorm'};
+
+    var RESORTS = [
+      {name:"Chamonix",country:"France",code:"fr",lat:45.92,lng:6.87,alt:1035,top:3842,region:"Mont Blanc"},
+      {name:"Val d'Isère",country:"France",code:"fr",lat:45.45,lng:6.98,alt:1850,top:3456,region:"Tarentaise",wiki:"Val-d'Isère"},
+      {name:"Courchevel",country:"France",code:"fr",lat:45.42,lng:6.63,alt:1850,top:2738,region:"Les 3 Vallées"},
+      {name:"Tignes",country:"France",code:"fr",lat:45.47,lng:6.91,alt:2100,top:3456,region:"Tarentaise"},
+      {name:"Les Deux Alpes",country:"France",code:"fr",lat:45.02,lng:6.12,alt:1650,top:3568,region:"Oisans",wiki:"Les 2 Alpes"},
+      {name:"Zermatt",country:"Switzerland",code:"ch",lat:46.02,lng:7.75,alt:1620,top:3883,region:"Valais"},
+      {name:"Verbier",country:"Switzerland",code:"ch",lat:46.10,lng:7.23,alt:1500,top:3330,region:"4 Vallées"},
+      {name:"St. Moritz",country:"Switzerland",code:"ch",lat:46.50,lng:9.84,alt:1822,top:3303,region:"Engadin"},
+      {name:"Davos",country:"Switzerland",code:"ch",lat:46.80,lng:9.84,alt:1560,top:2844,region:"Graubünden"},
+      {name:"Grindelwald",country:"Switzerland",code:"ch",lat:46.62,lng:8.04,alt:1034,top:2971,region:"Jungfrau"},
+      {name:"St. Anton",country:"Austria",code:"at",lat:47.13,lng:10.27,alt:1304,top:2811,region:"Arlberg"},
+      {name:"Kitzbühel",country:"Austria",code:"at",lat:47.45,lng:12.39,alt:800,top:2000,region:"Tyrol"},
+      {name:"Sölden",country:"Austria",code:"at",lat:46.97,lng:10.87,alt:1368,top:3340,region:"Ötztal"},
+      {name:"Lech",country:"Austria",code:"at",lat:47.21,lng:10.14,alt:1450,top:2811,region:"Arlberg"},
+      {name:"Ischgl",country:"Austria",code:"at",lat:47.01,lng:10.30,alt:1377,top:2872,region:"Paznaun"},
+      {name:"Cortina d'Ampezzo",country:"Italy",code:"it",lat:46.54,lng:12.14,alt:1224,top:3244,region:"Dolomites",wiki:"Cortina d'Ampezzo"},
+      {name:"Cervinia",country:"Italy",code:"it",lat:45.93,lng:7.63,alt:2050,top:3480,region:"Aosta Valley"},
+      {name:"Val Gardena",country:"Italy",code:"it",lat:46.56,lng:11.76,alt:1236,top:2518,region:"Dolomites",wiki:"Val Gardena"},
+      {name:"Courmayeur",country:"Italy",code:"it",lat:45.79,lng:6.97,alt:1224,top:2755,region:"Mont Blanc"},
+      {name:"Hemsedal",country:"Norway",code:"no",lat:60.86,lng:8.40,alt:620,top:1497,region:"Buskerud"},
+      {name:"Trysil",country:"Norway",code:"no",lat:61.32,lng:12.26,alt:415,top:1132,region:"Innlandet"},
+      {name:"Åre",country:"Sweden",code:"se",lat:63.40,lng:13.08,alt:380,top:1274,region:"Jämtland"},
+      {name:"Grandvalira",country:"Andorra",code:"ad",lat:42.55,lng:1.73,alt:1710,top:2640,region:"Pyrenees",wiki:"Soldeu"},
+      {name:"Sierra Nevada",country:"Spain",code:"es",lat:37.10,lng:-3.40,alt:2100,top:3300,region:"Andalusia",wiki:"Sierra Nevada, Spain"},
+      {name:"Cairngorm",country:"United Kingdom",code:"gb",lat:57.12,lng:-3.64,alt:550,top:1245,region:"Cairngorms",wiki:"Cairn Gorm"},
+      {name:"Glenshee",country:"United Kingdom",code:"gb",lat:56.88,lng:-3.42,alt:640,top:1068,region:"Cairngorms",wiki:"Glenshee Ski Centre"},
+      {name:"Nevis Range",country:"United Kingdom",code:"gb",lat:56.83,lng:-5.10,alt:200,top:1221,region:"Highlands",wiki:"Nevis Range"}
+    ];
+
+    MachinePerfect.fn('load-resorts', function () {
+      var resorts = RESORTS.map(function (r) {
+        return Object.assign({}, r, { temp: null, snow: -1, wind: 0, weather: 'Checking...', img: '' });
+      });
+      MachinePerfect.store.resorts = resorts;
+      var app = document.querySelector('[mp="app"]');
+      var weatherDone = 0, total = resorts.length;
+      function onDone() {
+        weatherDone++;
+        if (app && app._mp) app._mp.update();
+        if (weatherDone >= total) {
+          MachinePerfect.store.filters.weatherReady = true;
+          if (app && app._mp) app._mp.update();
+        }
+      }
+      resorts.forEach(function (r) {
+        var mid = Math.round((r.alt + r.top) / 2);
+        fetch('https://api.open-meteo.com/v1/forecast?latitude=' + r.lat + '&longitude=' + r.lng + '&elevation=' + mid + '&current=temperature_2m,weather_code,wind_speed_10m,snow_depth&timezone=auto')
+          .then(function (res) { return res.json(); })
+          .then(function (d) { var c = d.current; r.temp = Math.round(c.temperature_2m); r.snow = Math.round((c.snow_depth || 0) * 100); r.wind = Math.round(c.wind_speed_10m); r.weather = _wc[c.weather_code] || 'Unknown'; onDone(); })
+          .catch(function () { r.temp = 0; r.snow = 0; r.wind = 0; r.weather = 'Unavailable'; onDone(); });
+        fetch('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(r.wiki || r.name))
+          .then(function (res) { return res.json(); })
+          .then(function (d) { r.img = d.thumbnail ? d.thumbnail.source.replace(/\/\d+px-/, '/400px-') : ''; if (app && app._mp) app._mp.update(); })
+          .catch(function () { r.img = ''; });
+      });
+      return Promise.resolve(resorts);
+    });
+
+    // Silent refresh — updates weather in place, no flicker
+    MachinePerfect.fn('refresh-weather', function () {
+      var app = document.querySelector('[mp="app"]');
+      var resorts = MachinePerfect.store.resorts;
+      if (!resorts || !resorts.length) return;
+      resorts.forEach(function (r) {
+        var mid = Math.round((r.alt + r.top) / 2);
+        fetch('https://api.open-meteo.com/v1/forecast?latitude=' + r.lat + '&longitude=' + r.lng + '&elevation=' + mid + '&current=temperature_2m,weather_code,wind_speed_10m,snow_depth&timezone=auto')
+          .then(function (res) { return res.json(); })
+          .then(function (d) { var c = d.current; r.temp = Math.round(c.temperature_2m); r.snow = Math.round((c.snow_depth || 0) * 100); r.wind = Math.round(c.wind_speed_10m); r.weather = _wc[c.weather_code] || 'Unknown'; if (app && app._mp) app._mp.update(); })
+          .catch(function () {});
+      });
+    });
+
+    MachinePerfect.fn('timestamp-str', function () { return new Date().toLocaleTimeString(); });
+
+    MachinePerfect.fn('fetch-summary', function (name) {
+      return fetch('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(name))
+        .then(function (r) { return r.json(); }).then(function (d) { return d.extract || ''; }).catch(function () { return ''; });
+    });
+  </script>
+</body>
+</html>

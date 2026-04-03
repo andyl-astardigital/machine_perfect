@@ -1,0 +1,15 @@
+<!-- toast — Auto-dismissing notification with optional custom content.
+     States: idle → show (auto-dismiss via mp-transition)
+     Context: { message }
+     Slot: default (optional extra content after message) -->
+<template mp-define="toast">
+  <div mp-state="idle"></div>
+  <div mp-state="show" mp-transition="(after 2500 idle)"
+       class="alert alert-success shadow-lg text-sm gap-2">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+    </svg>
+    <span mp-text="message"></span>
+    <mp-slot></mp-slot>
+  </div>
+</template>
