@@ -31,10 +31,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/andyl-astardigital/machine_perfect.git"
   },
   "bugs": {
-    "url": ""
+    "url": "https://github.com/andyl-astardigital/machine_perfect/issues"
   },
-  "homepage": ""
+  "homepage": "https://github.com/andyl-astardigital/machine_perfect"
 }
