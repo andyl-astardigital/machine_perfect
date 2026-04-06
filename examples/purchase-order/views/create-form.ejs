@@ -1,0 +1,160 @@
+<%# The create form IS the pipeline machine.
+    Same machine definition in the browser AND on the server.
+    The browser renders the draft state with the form UI.
+    When submitted, the HTML goes to the server, transforms to SCXML,
+    and the services advance it through submitted → approved → fulfilled.
+
+    States: draft → submitted → approved → fulfilled | rejected
+    The browser only ever sees 'draft'. The server advances the rest. %>
+
+<div class="max-w-2xl mx-auto space-y-4">
+  <div mp="purchase-order" mp-persist="po-draft"
+       mp-ctx='{"title":"","amount":0,"items":[],"newItem":"","notes":"","urgent":false,"submitted_at":null,"approved_at":null}'
+       mp-let="valid (and (>= (count title) 3) (> amount 0) (> (count items) 0))"
+       mp-on:keydown="(when (= (get $event :key) 'Escape') (to draft))">
+
+    <!-- ── draft: the form UI ────────────────────────────────────── -->
+    <div mp-state="draft" mp-temporal="(animate)"
+         mp-init="(focus! $refs.titleInput)"
+         mp-exit="(do (set! newItem ''))">
+
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold text-mp-gold">New Purchase Order</h2>
+        <button mp-to="(emit navigate-orders)"
+                class="btn btn-ghost btn-sm gap-1"><span class="text-xs">Esc</span> Cancel</button>
+      </div>
+
+      <form class="card bg-base-100 shadow-xl">
+        <div class="card-body gap-4">
+
+          <!-- Title -->
+          <div class="form-control">
+            <label class="label"><span class="label-text font-bold">Title</span></label>
+            <input mp-model="title" mp-ref="titleInput" type="text"
+                   placeholder="What is this order for?"
+                   mp-bind-aria-label="'Order title'"
+                   class="input input-bordered" />
+            <label class="label" mp-show="(and (> (count title) 0) (< (count title) 3))">
+              <span class="label-text-alt text-warning">Title must be at least 3 characters</span>
+            </label>
+          </div>
+
+          <!-- Amount -->
+          <div class="form-control">
+            <label class="label"><span class="label-text font-bold">Amount (£)</span></label>
+            <input mp-model="amount" type="number" placeholder="0"
+                   class="input input-bordered"
+                   mp-bind-aria-label="'Order amount in pounds'" />
+            <label class="label" mp-show="(< amount 0)">
+              <span class="label-text-alt text-warning">Amount must be positive</span>
+            </label>
+          </div>
+
+          <!-- Notes -->
+          <div class="form-control">
+            <label class="label"><span class="label-text font-bold">Notes</span></label>
+            <textarea mp-model="notes" placeholder="Optional notes..."
+                      class="textarea textarea-bordered" rows="2"></textarea>
+          </div>
+
+          <!-- Urgent — mp-model checkbox -->
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-3">
+              <input mp-model="urgent" type="checkbox" class="checkbox checkbox-warning checkbox-sm" />
+              <span class="label-text font-bold">Urgent</span>
+              <span mp-show="urgent" class="badge badge-warning badge-sm">Priority</span>
+            </label>
+          </div>
+
+          <!-- Items -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-bold">Items</span>
+              <span class="label-text-alt" mp-text="(str (count items) ' added')"></span>
+            </label>
+            <div class="flex gap-2">
+              <input mp-model="newItem" type="text" placeholder="Add item... (Enter)"
+                     mp-ref="itemInput"
+                     mp-on:keydown="(when (and (= (get $event :key) 'Enter') (not (empty? newItem)))
+                                      (do (prevent!) (push! items (obj :name newItem :qty 1)) (set! newItem '') (to draft)))"
+                     class="input input-bordered input-sm flex-1" />
+              <button type="button" mp-to="(when (not (empty? newItem)) (do (push! items (obj :name newItem :qty 1)) (set! newItem '')))"
+                      class="btn btn-primary btn-sm">Add</button>
+            </div>
+          </div>
+
+          <!-- Item list -->
+          <div mp-show="(> (count items) 0)" class="space-y-1">
+            <template mp-each="items" mp-key="name">
+              <div class="flex items-center gap-2 bg-base-200 rounded px-3 py-2">
+                <span class="text-xs text-base-content/40 font-mono w-5"
+                      mp-text="(str (+ $index 1) '.')"></span>
+                <span mp-text="name" class="flex-1 text-sm font-medium"></span>
+                <label class="text-xs text-base-content/50">qty:</label>
+                <input mp-model="qty" type="number"
+                       mp-bind-aria-label="(str 'Quantity for ' name)"
+                       class="input input-bordered input-xs w-16 text-center" />
+                <button type="button" mp-to="(remove-where! items :name name)"
+                        class="btn btn-xs btn-ghost text-error">&#x2715;</button>
+              </div>
+            </template>
+          </div>
+
+          <p mp-show="(= (count items) 0)" class="text-xs text-base-content/40 italic">
+            No items added yet.
+          </p>
+
+          <!-- Validation + submit -->
+          <div class="divider my-0"></div>
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p mp-show="(not valid)" class="text-xs text-warning">
+                <span mp-text="(cond
+                  (empty? title) 'Enter a title'
+                  (<= amount 0) 'Enter an amount'
+                  (= (count items) 0) 'Add at least one item'
+                  (< (count title) 3) 'Title must be at least 3 characters'
+                  true '')"></span>
+              </p>
+              <p mp-show="valid" class="text-xs text-success">Ready to submit</p>
+            </div>
+            <!-- The transition guard uses the full expression (not mp-let's 'valid')
+                 because this travels to the server via outerHTML. mp-let values are
+                 browser-only computed bindings. mp-bind-disabled can use 'valid'
+                 because it's browser-only. -->
+            <button type="button" mp-to="(when (and (>= (count title) 3) (> amount 0) (> (count items) 0)) (do (set! submitted_at (now)) (to submitted)))"
+                    mp-bind-disabled="(not valid)"
+                    class="btn btn-primary gap-1">
+              Send to Pipeline
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+              </svg>
+            </button>
+          </div>
+
+          <p class="text-xs text-base-content/30 text-center">
+            Draft auto-saved to localStorage via mp-persist
+          </p>
+        </div>
+      </form>
+    </div>
+
+    <!-- Pipeline states — mp-where on the state, not the button.
+         to() checks the target state's mp-where on every transition.
+         The server has log+notify+persist+fulfil capabilities.
+         The browser sends the machine, server executes the pipeline. -->
+
+    <div mp-state="submitted" mp-where="(requires 'log' 'notify' 'persist' 'fulfil')">
+      <button mp-to="(when (and (some? title) (<= amount 100000)) (do (set! approved_at (now)) (invoke! :type 'notify' :input (obj :to 'finance@company.com' :subject (str 'Approved: ' title) :amount amount)) (emit order-approved) (to approved)))">approve</button>
+      <button mp-to="(when (> amount 100000) (do (invoke! :type 'notify' :input (obj :to 'requester@company.com' :subject (str 'Rejected: ' title))) (to rejected)))">reject</button>
+    </div>
+
+    <div mp-state="approved">
+      <button mp-to="(do (invoke! :type 'fulfil' :input (obj :title title :items items)) (invoke! :type 'persist' :input (obj :title title :amount amount :items items :notes notes :created_at submitted_at)) (to fulfilled))">fulfil</button>
+    </div>
+
+    <div mp-state="fulfilled" mp-final></div>
+    <div mp-state="rejected" mp-final></div>
+
+  </div>
+</div>

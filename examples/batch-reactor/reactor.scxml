@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ISA-88 batch reactor — hierarchical state machine.
+
+  Demonstrates compound states with inherited transitions.
+  ABORT and E_STOP are available from ANY child state of 'running'
+  because they are transitions on the compound state itself.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       id="batch-reactor"
+       initial="idle"
+       mp-ctx='{"batchId":null,"phase":"","temperature":0,"pressure":0,"fillLevel":0,"errorCode":null,"startedAt":null,"runDuration":null,"holdStart":null}'>
+
+  <state id="idle">
+    <transition event="START"
+                mp-to="(when (some? batchId) (do (set! errorCode nil) (to running)))"/>
+  </state>
+
+  <state id="running" initial="filling"
+         mp-init="(set! startedAt (now))"
+         mp-exit="(set! runDuration (- (now) startedAt))">
+
+    <!-- Inherited transitions: available from ANY child state -->
+    <transition event="ABORT"
+                mp-to="(do (set! errorCode 'operator-abort') (to aborting))"/>
+    <transition event="E_STOP"
+                mp-to="(do (set! errorCode 'emergency-stop') (to stopped))"/>
+
+    <state id="filling" mp-init="(set! phase 'fill')">
+      <transition event="LEVEL_OK"
+                  mp-to="(do (set! fillLevel 100) (to heating))"/>
+    </state>
+
+    <state id="heating" mp-init="(set! phase 'heat')">
+      <transition event="TEMP_OK"
+                  mp-to="(when (> temperature 80) (do (set! phase 'hold') (to holding)))"/>
+    </state>
+
+    <state id="holding" mp-init="(set! holdStart (now))">
+      <transition event="HOLD_COMPLETE"
+                  mp-to="(do (set! phase 'drain') (to draining))"/>
+    </state>
+
+    <state id="draining">
+      <transition event="EMPTY"
+                  mp-to="(do (set! phase 'complete') (to complete))"/>
+    </state>
+
+    <final id="complete"/>
+  </state>
+
+  <state id="aborting"
+         mp-init="(set! phase 'aborting')">
+    <transition event="SAFE"
+                mp-to="(do (set! batchId nil) (set! phase '') (set! errorCode nil) (set! temperature 0) (set! fillLevel 0) (set! pressure 0) (to idle))"/>
+  </state>
+
+  <final id="stopped"/>
+
+</scxml>

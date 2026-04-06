@@ -1,0 +1,30 @@
+<main class="max-w-5xl mx-auto p-6">
+<% if (orders.length === 0) { %>
+  <div class="text-center py-16">
+    <p class="text-5xl mb-3 opacity-30">&#x1F4CB;</p>
+    <p class="text-lg text-base-content/50 mb-2">No orders yet</p>
+    <button mp-to="create" class="btn btn-primary btn-sm mt-2">Create your first order</button>
+  </div>
+<% } else { %>
+  <div class="stats shadow bg-base-100 w-full mb-4">
+    <div class="stat py-3 px-4">
+      <div class="stat-title text-xs">Total</div>
+      <div class="stat-value text-lg"><%= orders.length %></div>
+    </div>
+    <div class="stat py-3 px-4">
+      <div class="stat-title text-xs">Fulfilled</div>
+      <div class="stat-value text-lg text-success"><%= orders.filter(o => o.status === 'fulfilled').length %></div>
+    </div>
+    <div class="stat py-3 px-4">
+      <div class="stat-title text-xs">Total value</div>
+      <div class="stat-value text-lg font-mono">£<%= orders.reduce((s, o) => s + o.amount, 0) %></div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+    <% for (var order of orders) { %>
+      <%- include('order-card', { order: order }) %>
+    <% } %>
+  </div>
+<% } %>
+</main>

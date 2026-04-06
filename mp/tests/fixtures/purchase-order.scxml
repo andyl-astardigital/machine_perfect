@@ -1,0 +1,30 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+
+       initial="draft">
+
+  <datamodel>
+    <data id="title" expr="'Untitled'"/>
+    <data id="items" expr="[]"/>
+    <data id="amount" expr="0"/>
+    <data id="submitted_at" expr="nil"/>
+    <data id="approved_at" expr="nil"/>
+    <data id="rejected_reason" expr="nil"/>
+  </datamodel>
+
+  <state id="draft">
+    <transition event="submit"
+                mp-to="(when (and (> (count items) 0) (> amount 0)) (do (set! submitted_at (now)) (to submitted)))"/>
+  </state>
+
+  <state id="submitted">
+    <transition event="approve"
+                mp-to="(do (set! approved_at (now)) (emit order-approved) (to approved))"/>
+    <transition event="reject"
+                mp-to="(do (set! rejected_reason (get $event :reason)) (to rejected))"/>
+    <transition event="withdraw" target="draft"/>
+  </state>
+
+  <final id="approved"/>
+  <final id="rejected"/>
+
+</scxml>

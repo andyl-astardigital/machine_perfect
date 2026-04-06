@@ -8,7 +8,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{mp:{purple:'#6d28d9',dark:'#4c1d95',gold:'#fbbf24',lavender:'#e9d5ff'}}}}}</script>
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" />
-  <script src="../src/machine-perfect.js"></script>
+  <script src="../mp/engine.js"></script>
+  <script src="../mp/browser.js"></script>
   <style>
     .note { transition: transform 0.15s, box-shadow 0.15s; }
     .note:hover { transform: scale(1.04) rotate(0deg) !important; box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 10; }
@@ -40,35 +41,35 @@
   -->
 
   <template mp-define="note">
-    <div mp-state="viewing" mp-transition class="card note shadow-md">
+    <div mp-state="viewing" mp-temporal="(animate)" class="card note shadow-md">
       <div class="card-body p-4 gap-2">
         <p mp-text="text" class="text-sm whitespace-pre-wrap leading-relaxed select-text"></p>
         <div class="flex justify-end gap-1 mt-auto pt-2 note-divider">
-          <button mp-to="editing" mp-action="(set! draft text)"
+          <button mp-to="(do (set! draft text) (to editing))"
                   class="btn btn-xs btn-ghost opacity-50 hover:opacity-100">edit</button>
           <button mp-to="confirming"
                   class="btn btn-xs btn-ghost opacity-50 hover:opacity-100 note-delete">delete</button>
         </div>
       </div>
     </div>
-    <div mp-state="editing" mp-transition class="card note shadow-md">
+    <div mp-state="editing" mp-temporal="(animate)" class="card note shadow-md">
       <div class="card-body p-4 gap-2">
         <textarea mp-model="draft" rows="3"
                   class="textarea textarea-bordered w-full text-sm bg-transparent"
                   mp-on:keydown="(when (= (get $event :key) 'Escape') (to viewing))"></textarea>
         <div class="flex justify-end gap-1">
-          <button mp-to="viewing" mp-action="(set! text draft)" mp-guard="(> (count draft) 0)"
+          <button mp-to="(when (> (count draft) 0) (do (set! text draft) (to viewing)))"
                   class="btn btn-xs btn-primary">save</button>
           <button mp-to="viewing" class="btn btn-xs btn-ghost">cancel</button>
         </div>
       </div>
     </div>
-    <div mp-state="confirming" mp-transition class="card note shadow-md">
+    <div mp-state="confirming" mp-temporal="(animate)" class="card note shadow-md">
       <div class="card-body p-4 gap-2 items-center justify-center">
         <p class="text-sm font-bold">Delete this note?</p>
         <div class="flex gap-2">
           <button mp-to="viewing" class="btn btn-xs btn-ghost">keep</button>
-          <button mp-to="deleted" mp-emit="note-deleted" class="btn btn-xs btn-error">delete</button>
+          <button mp-to="(do (emit note-deleted) (to deleted))" class="btn btn-xs btn-error">delete</button>
         </div>
       </div>
     </div>
@@ -77,7 +78,7 @@
 
   <template mp-define="toast">
     <div mp-state="idle"></div>
-    <div mp-state="show" mp-transition="(after 2000 idle)"
+    <div mp-state="show" mp-temporal="(after 2000 (to idle))"
          class="alert alert-success shadow-lg text-sm">
       <span mp-text="message"></span>
     </div>
@@ -109,8 +110,7 @@
 
     <div class="toast toast-end toast-bottom z-50">
       <div mp="toast" mp-ctx='{"message":""}'
-           mp-receive="(on 'note-deleted' (do (set! message 'Note deleted') (to show)))
-                       (on 'note-created' (do (set! message 'Note created') (to show)))">
+           mp-receive="(on 'note-deleted' (do (set! message 'Note deleted') (to show)))">
       </div>
     </div>
   </main>

@@ -1,0 +1,28 @@
+<div mp="live-stats" mp-ctx='<%- JSON.stringify(stats) %>'>
+  <div mp-state="display" class="stats shadow bg-base-100 w-full">
+    <div class="stat py-3 px-4">
+      <div class="stat-title text-xs">Orders</div>
+      <div class="stat-value text-lg" mp-text="total"></div>
+    </div>
+    <div class="stat py-3 px-4">
+      <div class="stat-title text-xs">Fulfilled</div>
+      <div class="stat-value text-lg text-success" mp-text="fulfilled"></div>
+    </div>
+    <div class="stat py-3 px-4">
+      <div class="stat-title text-xs">Rejected</div>
+      <div class="stat-value text-lg text-error" mp-text="rejected"></div>
+    </div>
+    <div class="stat py-3 px-4">
+      <div class="stat-title text-xs">Total value</div>
+      <div class="stat-value text-lg font-mono" mp-text="(str '£' totalValue)"></div>
+    </div>
+    <div class="stat py-3 px-4">
+      <div class="stat-title text-xs">Avg</div>
+      <div class="stat-value text-lg font-mono" mp-text="(str '£' avgValue)"></div>
+    </div>
+    <div class="stat py-3 px-4">
+      <div class="stat-title text-xs">Updated</div>
+      <div class="stat-value text-sm font-mono" mp-text="(date-fmt lastUpdated)"></div>
+    </div>
+  </div>
+</div>

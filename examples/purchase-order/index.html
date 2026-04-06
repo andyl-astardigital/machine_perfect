@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="../../logo.svg" />
+  <title>Purchase Orders — machine_perfect full-stack</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{mp:{purple:'#6d28d9',dark:'#4c1d95',gold:'#fbbf24',lavender:'#e9d5ff'}}}}}</script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" />
+  <script src="../../mp/engine.js"></script>
+  <script src="../../mp/browser.js"></script>
+  <style>
+    .mp-enter-active,.mp-leave-active{transition:all .25s ease}
+    .mp-enter-from{opacity:0;transform:translateY(10px) scale(.98)}
+    .mp-leave-to{opacity:0;transform:translateY(-6px) scale(.98)}
+    .scxml-box{white-space:pre-wrap;font-size:11px;line-height:1.4;max-height:16rem;overflow:auto}
+  </style>
+  <link rel="mp-import" href="/examples/purchase-order/components/order-card.mp.html" />
+  <link rel="mp-import" href="/examples/purchase-order/components/toast.mp.html" />
+</head>
+
+<!--
+  ════════════════════════════════════════════════════════════════════════════
+  PURCHASE ORDER — machine_perfect full-stack
+
+  mp-where is ONLY on states. to() checks it on every transition.
+  No HTMX. No fetch. No escape hatches for normal flow.
+  One mechanism. One code path. Every journey.
+
+  App machine states:   orders, create, detail
+  Pipeline machine:     draft → submitted → fulfilled | rejected
+  Toast machine:        idle → show (auto-dismiss)
+  ════════════════════════════════════════════════════════════════════════════
+-->
+
+<body class="bg-base-300 text-base-content min-h-screen">
+
+  <mp-store name="app" value='{"debug":false,"viewOrderId":null,"deleteOrderId":null}'></mp-store>
+
+  <!-- ═══ APP MACHINE ═══════════════════════════════════════════════════
+       States = views. mp-where on states routes to capable hosts.
+       mp-receive handles navigation events from server-rendered views.
+       ═════════════════════════════════════════════════════════════════ -->
+  <div mp="app" mp-initial="orders"
+       mp-ctx='{"_action":null,"_actionId":null}'
+       mp-receive="(on 'navigate-detail' (do (set! _actionId (get $detail :id)) (to detail)))
+                   (on 'delete-order' (do (set! _action 'delete') (set! _actionId (get $detail :id)) (to orders)))
+                   (on 'order-approved' (do (set! _action nil) (to orders)))
+                   (on 'order-rejected' (do (set! _action nil) (to orders)))">
+
+    <!-- Navbar — always visible -->
+    <div class="navbar bg-base-100 shadow-md px-4 gap-2 sticky top-0 z-40">
+      <button mp-to="(do (set! _action nil) (set! _actionId nil) (to orders))"
+              class="btn btn-ghost text-lg font-bold gap-2 normal-case">
+        <img src="../../logo.svg" alt="" class="w-7 h-7 rounded" /> Purchase Orders
+      </button>
+      <div class="flex-1"></div>
+      <button mp-to="(do (set! _action nil) (set! _actionId nil) (to orders))"
+              class="btn btn-ghost btn-sm">Orders</button>
+      <button mp-to="create" class="btn btn-ghost btn-sm">+ New</button>
+      <span class="badge bg-mp-dark text-mp-lavender border-mp-purple text-xs">full-stack</span>
+    </div>
+
+    <!-- Server-rendered states. mp-where routes to capable host.
+         mp-url maps state to browser URL. Loading spinner set globally via init(). -->
+    <div mp-state="orders" mp-url="/orders" mp-temporal="(animate)" mp-where="(requires 'ui-render')"></div>
+    <div mp-state="create" mp-url="/orders/new" mp-temporal="(animate)" mp-where="(requires 'ui-render')"></div>
+    <div mp-state="detail" mp-url="(path '/orders/:id' _actionId)" mp-temporal="(animate)" mp-where="(requires 'ui-render')"></div>
+  </div>
+
+  <!-- ═══ TOAST ═════════════════════════════════════════════════════════
+       Sibling machine. Receives events from app and pipeline machines.
+       Auto-dismisses via (after 3000 idle).
+       ═════════════════════════════════════════════════════════════════ -->
+  <div class="toast toast-end toast-bottom z-50">
+    <div mp="po-toast" mp-ctx='{"message":"","type":"info"}'
+         mp-receive="(on 'order-approved' (do (set! message 'Order fulfilled!') (set! type 'success') (to show)))
+                     (on 'order-rejected' (do (set! message 'Order rejected') (set! type 'error') (to show)))
+                     (on 'order-deleted' (do (set! message 'Deleted') (set! type 'warning') (to show)))"></div>
+  </div>
+
+  <!-- Info -->
+  <div class="max-w-5xl mx-auto px-6 pb-6">
+    <div class="card bg-base-100/50 shadow">
+      <div class="card-body gap-2 text-xs text-base-content/50 p-4">
+        <p><strong class="text-mp-gold">How it works:</strong> <code>mp-where</code> on states declares capability requirements. <code>to()</code> checks every transition — clicks, receives, timers, initial entry. If the browser can't satisfy the capabilities, the runtime routes the machine to a capable node via the registry. One mechanism. One code path. Every journey.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Boot the runtime with registry and app-wide loading spinner -->
+  <script>MachinePerfect.init({
+    registry: 'http://localhost:3100',
+    loading: '<main class="max-w-5xl mx-auto p-6"><div class="flex items-center justify-center py-16"><span class="loading loading-spinner loading-lg text-mp-purple"></span></div></main>'
+  });</script>
+
+</body>
+</html>

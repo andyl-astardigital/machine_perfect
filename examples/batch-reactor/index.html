@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="../../logo.svg" />
+  <title>Batch Reactor — ISA-88 Hierarchical State Machine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{mp:{purple:'#6d28d9',dark:'#4c1d95',gold:'#fbbf24',lavender:'#e9d5ff'}}}}}</script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" />
+  <script src="../../mp/engine.js"></script>
+  <script src="../../mp/browser.js"></script>
+  <style>
+    .mp-enter-active,.mp-leave-active{transition:all .25s ease}
+    .mp-enter-from{opacity:0;transform:translateY(10px) scale(.98)}
+    .mp-leave-to{opacity:0;transform:translateY(-10px) scale(.98)}
+    .gauge{width:120px;height:120px;border-radius:50%;border:4px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;flex-direction:column}
+  </style>
+</head>
+<body class="min-h-screen bg-mp-dark text-mp-lavender p-6">
+
+  <div class="max-w-4xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+      <img src="../../logo.svg" alt="" class="w-8 h-8 rounded" />
+      <h1 class="text-2xl font-bold text-mp-gold">Batch Reactor</h1>
+      <span class="badge badge-ghost text-xs">ISA-88 hierarchical states</span>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         THE MACHINE
+
+         This demonstrates hierarchical (compound) states.
+
+         'running' is a compound state with children:
+           filling → heating → holding → draining → complete
+
+         ABORT and E-STOP buttons are in running's "chrome" —
+         visible in ALL child states without duplication.
+
+         When ABORT fires from any child, the machine exits the
+         child state, exits running (firing its exit hook), and
+         enters aborting. One transition, one declaration.
+         ════════════════════════════════════════════════════════════ -->
+
+    <div mp="batch-reactor"
+         mp-ctx='{"batchId":null,"phase":"","temperature":0,"pressure":0,"fillLevel":0,"errorCode":null,"startedAt":null,"runDuration":null,"holdStart":null}'>
+
+      <!-- ── Status bar (always visible) ───────────────────────── -->
+      <div class="flex items-center gap-4 mb-4 bg-base-300 rounded-xl px-4 py-2 text-sm">
+        <span class="font-mono" mp-text="(if (some? batchId) (str 'Batch: ' batchId) 'No batch')"></span>
+        <span class="badge badge-sm" mp-class="(cond
+          (in-state? 'running') 'badge-success'
+          (in-state? 'aborting') 'badge-error'
+          (in-state? 'stopped') 'badge-error'
+          true 'badge-ghost')"
+          mp-text="(if (some? phase) phase 'idle')"></span>
+        <span class="flex-1"></span>
+        <span class="font-mono text-xs text-base-content/40"
+              mp-text="(str 'State: ' $state)"></span>
+      </div>
+
+      <!-- ── IDLE ──────────────────────────────────────────────── -->
+      <div mp-state="idle" mp-temporal="(animate)">
+        <div class="card bg-base-100 shadow-xl">
+          <div class="card-body items-center text-center">
+            <h2 class="card-title text-mp-gold">Reactor Idle</h2>
+            <p class="text-base-content/60">Enter a batch ID to begin the production run.</p>
+            <div class="flex gap-2 mt-4">
+              <input mp-model="batchId" type="text" placeholder="Batch ID (e.g. B-2026-042)"
+                     class="input input-bordered w-64" />
+              <button mp-to="(when (some? batchId) (do (set! errorCode nil) (to running)))"
+                      mp-bind-disabled="(nil? batchId)"
+                      class="btn btn-primary">Start Batch</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── RUNNING (compound state) ──────────────────────────── -->
+      <div mp-state="running" mp-temporal="(animate)"
+           mp-init="(set! startedAt (now))"
+           mp-exit="(set! runDuration (- (now) startedAt))">
+
+        <!-- CHROME: visible in ALL child states (filling, heating, holding, draining, complete) -->
+        <div class="flex gap-2 mb-4">
+          <button mp-to="(do (set! errorCode 'operator-abort') (to aborting))"
+                  class="btn btn-warning btn-sm gap-1">ABORT</button>
+          <button mp-to="(do (set! errorCode 'emergency-stop') (to stopped))"
+                  class="btn btn-error btn-sm gap-1">E-STOP</button>
+          <span class="flex-1"></span>
+          <div class="flex items-center gap-2 text-xs text-base-content/40">
+            <span mp-text="(str 'Batch ' batchId)"></span>
+            <span class="badge badge-success badge-xs">RUNNING</span>
+          </div>
+        </div>
+
+        <!-- CHILD STATES -->
+
+        <div mp-state="filling" mp-temporal="(animate)" mp-init="(set! phase 'fill')">
+          <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+              <h3 class="card-title text-info">Phase 1: Filling</h3>
+              <p>Filling reactor vessel with raw materials.</p>
+              <div class="flex items-center gap-6 mt-4">
+                <div class="gauge border-info">
+                  <span class="text-2xl font-bold" mp-text="(str fillLevel '%')"></span>
+                  <span class="text-xs text-base-content/40">Fill Level</span>
+                </div>
+                <div class="flex flex-col gap-2">
+                  <input type="range" mp-model="fillLevel" min="0" max="100"
+                         class="range range-info range-sm w-48" />
+                  <button mp-to="(when (>= fillLevel 95) (do (set! fillLevel 100) (to heating)))"
+                          mp-bind-disabled="(< fillLevel 95)"
+                          class="btn btn-info btn-sm">Level OK</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div mp-state="heating" mp-temporal="(animate)" mp-init="(set! phase 'heat')">
+          <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+              <h3 class="card-title text-warning">Phase 2: Heating</h3>
+              <p>Heating to target temperature (80+).</p>
+              <div class="flex items-center gap-6 mt-4">
+                <div class="gauge border-warning">
+                  <span class="text-2xl font-bold" mp-text="(str temperature '')"></span>
+                  <span class="text-xs text-base-content/40">Temp</span>
+                </div>
+                <div class="flex flex-col gap-2">
+                  <input type="range" mp-model="temperature" min="0" max="120"
+                         class="range range-warning range-sm w-48" />
+                  <button mp-to="(when (> temperature 80) (do (set! phase 'hold') (to holding)))"
+                          mp-bind-disabled="(<= temperature 80)"
+                          class="btn btn-warning btn-sm">Temperature OK</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div mp-state="holding" mp-temporal="(animate)"
+             mp-init="(set! holdStart (now))">
+          <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+              <h3 class="card-title text-success">Phase 3: Holding</h3>
+              <p>Maintaining temperature for the required duration.</p>
+              <div class="flex items-center gap-6 mt-4">
+                <div class="gauge border-success">
+                  <span class="text-2xl font-bold" mp-text="(str temperature '')"></span>
+                  <span class="text-xs text-base-content/40">Temp</span>
+                </div>
+                <div>
+                  <p class="text-sm text-base-content/60">Hold period active. Monitor temperature stability.</p>
+                  <button mp-to="(do (set! phase 'drain') (to draining))"
+                          class="btn btn-success btn-sm mt-2">Hold Complete</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div mp-state="draining" mp-temporal="(animate)">
+          <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+              <h3 class="card-title text-accent">Phase 4: Draining</h3>
+              <p>Draining product from reactor vessel.</p>
+              <button mp-to="(do (set! phase 'complete') (to complete))"
+                      class="btn btn-accent btn-sm mt-4">Vessel Empty</button>
+            </div>
+          </div>
+        </div>
+
+        <div mp-state="complete" mp-final mp-temporal="(animate)">
+          <div class="card bg-success/10 border border-success shadow-xl">
+            <div class="card-body items-center text-center">
+              <div class="text-4xl">&#10003;</div>
+              <h3 class="card-title text-success">Batch Complete</h3>
+              <p class="text-base-content/60"
+                 mp-text="(str 'Batch ' batchId ' completed successfully.')"></p>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- end running compound state -->
+
+      <!-- ── ABORTING ──────────────────────────────────────────── -->
+      <div mp-state="aborting" mp-temporal="(animate)"
+           mp-init="(set! phase 'aborting')">
+        <div class="card bg-warning/10 border border-warning shadow-xl">
+          <div class="card-body">
+            <h2 class="card-title text-warning">Aborting Batch</h2>
+            <p mp-text="(str 'Error: ' errorCode)"></p>
+            <p class="text-base-content/60">Closing valves, stopping agitators, securing reactor.</p>
+            <button mp-to="(do (set! batchId nil) (set! phase '') (set! errorCode nil) (set! temperature 0) (set! fillLevel 0) (set! pressure 0) (to idle))"
+                    class="btn btn-warning btn-sm mt-4">Reset to Safe</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── STOPPED (final) ───────────────────────────────────── -->
+      <div mp-state="stopped" mp-final mp-temporal="(animate)">
+        <div class="card bg-error/10 border border-error shadow-xl">
+          <div class="card-body items-center text-center">
+            <div class="text-6xl">&#9888;</div>
+            <h2 class="card-title text-error">EMERGENCY STOP</h2>
+            <p mp-text="(str 'Error: ' errorCode)"></p>
+            <p class="text-error/60 text-sm mt-2">Operator intervention required. Reactor secured.</p>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end machine -->
+
+    <!-- ── Explanation ──────────────────────────────────────────── -->
+    <div class="mt-8 card bg-base-300 shadow-inner">
+      <div class="card-body text-sm text-base-content/60 gap-2">
+        <h3 class="font-bold text-mp-gold text-base">What this demonstrates</h3>
+        <ul class="list-disc pl-5 space-y-1">
+          <li><strong>Compound states.</strong> <code>running</code> contains five child states: filling, heating, holding, draining, complete. The machine is always in a specific child (e.g. <code>running.heating</code>), never in <code>running</code> directly.</li>
+          <li><strong>Inherited transitions.</strong> ABORT and E-STOP are declared once on <code>running</code> and are available from every child state. No duplication.</li>
+          <li><strong>Compound state chrome.</strong> The ABORT/E-STOP buttons and the batch info bar are inside <code>running</code> but outside any child state. They stay visible across all phase transitions.</li>
+          <li><strong>Entry/exit hooks.</strong> <code>running</code> has mp-init (records start time) and mp-exit (calculates run duration). These fire when entering/leaving the compound state, not on internal child transitions.</li>
+          <li><strong>State path.</strong> The status bar shows the full dot-path state: <code>running.filling</code>, <code>running.heating</code>, etc.</li>
+          <li><strong>ISA-88 compliance.</strong> The abort transition is available from every operational phase, as required by the ISA-88 batch control standard. This is a safety requirement, not a design choice.</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

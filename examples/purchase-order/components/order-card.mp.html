@@ -1,0 +1,36 @@
+<!-- order-card — Reusable card for displaying a purchase order.
+
+     Context: { id, title, amount, items, status, created_at }
+     Slot: actions (View, Submit, Delete — depends on context)
+
+     Used in: dashboard list, detail view — SAME component, different slots.
+-->
+<template mp-define="order-card">
+  <div mp-state="display" class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden order-card">
+    <div class="card-body p-4 gap-2">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex-1 min-w-0">
+          <h3 mp-text="title" class="font-bold text-sm truncate"></h3>
+          <p class="text-xs text-base-content/50 mt-0.5"
+             mp-text="(str (count items) (if (= (count items) 1) ' item' ' items'))"></p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="font-mono text-sm font-bold" mp-text="(str '£' amount)"></span>
+          <div class="badge badge-sm"
+               mp-class="(cond
+                 (= status 'draft') 'badge-warning'
+                 (= status 'submitted') 'badge-info'
+                 (= status 'approved') 'badge-info'
+                 (= status 'fulfilled') 'badge-success'
+                 (= status 'rejected') 'badge-error'
+                 true 'badge-ghost')"
+               mp-text="status"></div>
+        </div>
+      </div>
+      <div class="text-xs text-base-content/40 font-mono"
+           mp-text="(if (some? created_at) (date-fmt created_at) 'draft')"></div>
+      <mp-slot name="actions"></mp-slot>
+    </div>
+  </div>
+</template>
+<style>.order-card{transition:transform .15s,box-shadow .15s}.order-card:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.2)}</style>

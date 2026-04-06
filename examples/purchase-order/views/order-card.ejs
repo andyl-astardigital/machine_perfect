@@ -1,0 +1,11 @@
+<%# Uses the order-card mp-define template (loaded via mp-import).
+    mp-ctx on the machine element so bindings resolve correctly.
+    Navigation uses (emit) in mp-to to cross the nested machine boundary. %>
+<div mp="order-card" mp-ctx='<%- JSON.stringify(order) %>'>
+  <div slot="actions" class="flex gap-1 mt-1">
+    <button mp-to="(emit navigate-detail (obj :id id))"
+            class="btn btn-ghost btn-xs flex-1">View</button>
+    <button mp-to="(emit delete-order (obj :id id))"
+            class="btn btn-ghost btn-xs text-error flex-1">Delete</button>
+  </div>
+</div>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       id="registry"
+       initial="active"
+       mp-ctx='{"nodes":[],"id":null,"address":null,"capabilities":null,"formats":null}'>
+
+  <state id="active">
+    <transition event="register"
+                mp-to="(when (and (some? address) (some? capabilities) (some? formats)) (do (remove-where! nodes :id id) (push! nodes (obj :id id :address address :capabilities capabilities :formats formats :registered_at (now)))))"/>
+
+    <transition event="deregister"
+                mp-to="(when (some? id) (remove-where! nodes :id id))"/>
+  </state>
+
+</scxml>

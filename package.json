@@ -1,18 +1,37 @@
 {
   "name": "machine-perfect",
   "version": "0.5.0",
-  "description": "State machines and s-expressions in HTML. JavaScript-optional frontend framework with tier-1 performance.",
-  "main": "src/machine-perfect.js",
+  "description": "Application platform where state machines are the unit of definition, execution, and exchange. S-expressions for logic. Markup as substrate.",
+  "main": "mp/machine.js",
+  "browser": "mp/browser.js",
+  "exports": {
+    ".": "./mp/engine.js",
+    "./engine": "./mp/engine.js",
+    "./machine": "./mp/machine.js",
+    "./browser": "./mp/browser.js",
+    "./scxml": "./mp/scxml.js",
+    "./transforms": "./mp/transforms.js",
+    "./host": "./mp/host.js",
+    "./registry": "./mp/registry.js",
+    "./adapters": "./mp/adapters.js"
+  },
   "files": [
-    "src",
+    "mp/engine.js",
+    "mp/machine.js",
+    "mp/transforms.js",
+    "mp/browser.js",
+    "mp/scxml.js",
+    "mp/adapters.js",
+    "mp/host.js",
+    "mp/registry.js",
     "LICENSE",
     "README.md",
     "REFERENCE.md"
   ],
   "scripts": {
     "dev": "npx serve .",
-    "test": "echo 'Open tests/test.html in a browser'",
-    "minify": "npx terser src/machine-perfect.js -o dist/machine-perfect.min.js -c -m"
+    "test": "node mp/tests/engine.test.js && node mp/tests/machine.test.js && node mp/tests/transforms.test.js && node mp/tests/scxml.test.js && node mp/tests/host.test.js && node mp/tests/adapters.test.js && node mp/tests/registry.test.js",
+    "start": "node mp/host.js"
   },
   "keywords": [
     "state-machine",
@@ -36,5 +55,9 @@
   "bugs": {
     "url": "https://github.com/andyl-astardigital/machine_perfect/issues"
   },
-  "homepage": "https://github.com/andyl-astardigital/machine_perfect"
+  "homepage": "https://github.com/andyl-astardigital/machine_perfect",
+  "devDependencies": {
+    "ejs": "^5.0.1",
+    "puppeteer": "^24.40.0"
+  }
 }

@@ -19,52 +19,56 @@
  *   mp-state="name"                 State (visible when active)
  *   mp-initial="name"               Override initial state
  *   mp-ctx='{"key":"val"}'          Context data
- *   mp-to="state"                   Click → transition ("." = self)
- *   mp-guard="expr"                 Block transition if falsy
- *   mp-action="statements"          Run JS during transition
+ *   mp-to="state"                   Click → transition (bare name)
+ *   mp-to="(expr)"                  Click → s-expression (guards, actions, emits)
  *
  * ── Data binding ────────────────────────────────────────────────────────────
  *   mp-text="expr"                  textContent from expression
  *   mp-model="path"                 Two-way input binding
  *   mp-show="expr"                  Show if truthy
- *   mp-hide="expr"                  Hide if truthy
  *   mp-class="(when expr 'cls')"    Toggle class via s-expression
  *   mp-bind-ATTR="expr"             Bind any HTML attribute
  *
  * ── Events ──────────────────────────────────────────────────────────────────
- *   mp-on:EVENT="state"             Transition on any DOM event
- *   mp-on:EVENT.MODIFIER="state"    With modifiers: prevent, stop, self,
- *                                   enter, escape, space, tab, once, outside
- *   mp-emit="name"                  Dispatch event for other machines
- *   mp-receive="(on 'name' body)"   Receive machine events ($detail = source ctx)
+ *   mp-on:EVENT="(sexpr)"           DOM event handler (s-expression only)
+ *   mp-on:EVENT.MODIFIER="(sexpr)" Modifiers: prevent, stop, self, once, outside
+ *   mp-receive="(on 'name' body)"  Receive machine events ($detail = emit payload)
  *
  * ── Lists ───────────────────────────────────────────────────────────────────
  *   mp-each="expr"                  Repeat template for each array item
  *   mp-key="expr"                   Key for efficient reconciliation
  *   In scope: $item, $index         Current item and index
  *
- * ── Transitions ─────────────────────────────────────────────────────────────
- *   mp-transition                   Enable CSS enter/leave animations
- *   mp-transition="(after ms st)"   ...with timed auto-transition
- *   Classes applied: mp-enter-from, mp-enter-active, mp-enter-to,
- *                    mp-leave-from, mp-leave-active, mp-leave-to
+ * ── Temporal ────────────────────────────────────────────────────────────────
+ *   mp-temporal="(animate)"         CSS enter/leave animations
+ *   mp-temporal="(after ms expr)"   Timed behaviour (delay then action)
+ *   mp-temporal="(every ms expr)"   Repeating interval
+ *   CSS classes: mp-enter-from, mp-enter-active, mp-enter-to,
+ *                mp-leave-from, mp-leave-active, mp-leave-to
  *
- * ── Templates ───────────────────────────────────────────────────────────────
+ * ── Composition ─────────────────────────────────────────────────────────────
  *   <template mp-define="name">     Reusable machine template
+ *   <mp-slot name="x">              Content projection point
+ *   <link rel="mp-import" href="">  Import external component
  *
  * ── Lifecycle ───────────────────────────────────────────────────────────────
  *   mp-init="statements"            Run on creation / state entry
  *   mp-exit="statements"            Run before state content is destroyed
  *   mp-ref="name"                   Reference element as $refs.name
+ *   mp-persist="key"                Save/restore context to localStorage
+ *   mp-let="name expr ..."          Machine-scope computed bindings (derived, not persisted)
+ *   mp-where="(requires 'cap')"     Capability-based routing
+ *   mp-url="/path"                  Map state to browser URL (or (path '/p/:k' ctxKey))
+ *   mp-loading="<html>"             Custom loading indicator for mp-where states
  *
- * ── Timing ──────────────────────────────────────────────────────────────────
- *   (after ms state)                Inside mp-transition — auto-transition
+ * ── Global state ────────────────────────────────────────────────────────────
+ *   <mp-store name value>           Global shared state ($store.name)
  *
  * ── HTMX integration ───────────────────────────────────────────────────────
- *   Works automatically. A MutationObserver initializes new [mp] elements
+ *   Works automatically. A MutationObserver initialises new [mp] elements
  *   when HTMX swaps content. HTMX events work with mp-on: directly:
- *     mp-on:htmx:before-request="loading"
- *     mp-on:htmx:after-swap="ready"
+ *     mp-on:htmx:before-request="(to loading)"
+ *     mp-on:htmx:after-swap="(to ready)"
  *   No bridge. No coupling. Just standard DOM events.
  *
  * @version 0.5.0
@@ -72,666 +76,73 @@
  */
 (function (root, factory) {
   if (typeof exports === 'object' && typeof module !== 'undefined') {
-    module.exports = factory();
+    module.exports = factory(require('./engine'));
   } else if (typeof define === 'function' && define.amd) {
-    define(factory);
+    define(['./engine'], factory);
   } else {
-    root.MachinePerfect = factory();
+    root.MachinePerfect = factory(root.MPEngine);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : typeof self !== 'undefined' ? self : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : typeof self !== 'undefined' ? self : this, function (engine) {
+
+  // ── Engine aliases ─────────────────────────────────────────────────────
+  // Local references to the shared engine. The engine is imported, not
+  // embedded. Same evaluator runs in browser and Node.
+  var _parse = engine.parse;
+  var _seval = engine.seval;
+  var _sevalPure = engine.sevalPure;
+  var _eval = engine.eval;
+  var _exec = engine.exec;
+  var _makeScope = engine.makeScope;
+  var _applyScope = engine.applyScope;
+  var _get = engine.get;
+  var _set = engine.set;
+  var _depKey = engine.depKey;
+  var _userFns = engine.userFns;
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  S-expression engine                                                    ║
+  // ║  DOM runtime                                                            ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
-  // machine_perfect uses s-expressions as its expression language.
+  // Everything below is browser-specific. The s-expression engine is imported
+  // from mp/engine.js. This file handles DOM bindings, events, transitions,
+  // templates, routing, and the MutationObserver lifecycle.
   //
-  //   (+ 1 2)                       → 3
-  //   (if done 'complete' 'pending') → "complete" or "pending"
-  //   (str count ' items')           → "5 items"
-  //   (> (count items) 0)            → true/false
-  //   (do (inc! count) (set! name 'new'))
-  //
-  // Bare words without parens are resolved as variable lookups:
-  //   "done"   → ctx.done
-  //   "count"  → ctx.count
-  //   "$state" → current state name
-  //
-  // This is ONE syntax used everywhere — mp-text, mp-show, mp-guard,
-  // mp-action, mp-class, mp-on-*. No ad-hoc mini-languages.
-
-  // ── Tokenizer ──────────────────────────────────────────────────────────
-  //
-  // Supports: ( ) [ ] 'strings' :keywords numbers true false nil symbols
-  // #(expr) shorthand for anonymous functions: #(> % 0) → (fn [%] (> % 0))
-
-  function _tokenize(str) {
-    var tokens = [], i = 0, len = str.length;
-    while (i < len) {
-      var ch = str[i];
-      if (/\s/.test(ch)) { i++; continue; }
-      if (ch === '(' || ch === ')' || ch === '[' || ch === ']') {
-        tokens.push(ch); i++; continue;
-      }
-      // #( → anonymous function shorthand
-      if (ch === '#' && i + 1 < len && str[i + 1] === '(') {
-        tokens.push('#('); i += 2; continue;
-      }
-      // String literal (single quotes)
-      if (ch === "'") {
-        var j = i + 1;
-        while (j < len && str[j] !== "'") j++;
-        tokens.push({ t: 'S', v: str.slice(i + 1, j) });
-        i = j + 1; continue;
-      }
-      // Atom: number, bool, keyword, symbol
-      var j = i;
-      while (j < len && !/[\s()\[\]]/.test(str[j])) j++;
-      var word = str.slice(i, j);
-      if (word === 'true') tokens.push({ t: 'B', v: true });
-      else if (word === 'false') tokens.push({ t: 'B', v: false });
-      else if (word === 'nil') tokens.push({ t: 'N', v: null });
-      else if (word[0] === ':') tokens.push({ t: 'K', v: word.slice(1) });
-      else if (!isNaN(Number(word)) && word !== '') tokens.push({ t: '#', v: Number(word) });
-      else tokens.push({ t: 'Y', v: word });
-      i = j;
-    }
-    return tokens;
-  }
-
-  // ── Parser ─────────────────────────────────────────────────────────────
-  // Turns tokens into a tree. Atoms stay as token objects.
-  // Lists become arrays. Vectors become {t:'V', v:[...]}
-  // #(body) becomes (fn [%] body)
-
-  function _parseOne(tokens) {
-    if (tokens.length === 0) return null;
-    var tok = tokens.shift();
-    if (tok === '(') {
-      var list = [];
-      while (tokens.length > 0 && tokens[0] !== ')') list.push(_parseOne(tokens));
-      if (tokens.length > 0) tokens.shift();
-      return list;
-    }
-    if (tok === '[') {
-      var vec = [];
-      while (tokens.length > 0 && tokens[0] !== ']') vec.push(_parseOne(tokens));
-      if (tokens.length > 0) tokens.shift();
-      return { t: 'V', v: vec };
-    }
-    if (tok === '#(') {
-      // Anonymous function shorthand: #(> % 0) → (fn [%] (> % 0))
-      // The tokens between #( and ) form ONE expression (a function call list),
-      // not separate expressions wrapped in do.
-      var body = [];
-      while (tokens.length > 0 && tokens[0] !== ')') body.push(_parseOne(tokens));
-      if (tokens.length > 0) tokens.shift();
-      return [{ t: 'Y', v: 'fn' }, { t: 'V', v: [{ t: 'Y', v: '%' }] }, body.length === 1 ? body[0] : body];
-    }
-    return tok;
-  }
-
-  var _parseCache = {};
-  var _parseCacheSize = 0;
-
-  function _parse(str) {
-    if (_parseCache[str]) return _parseCache[str];
-    var tokens = _tokenize(str.trim());
-    // Multiple top-level expressions → wrap in implicit (do ...)
-    var exprs = [];
-    while (tokens.length > 0) exprs.push(_parseOne(tokens));
-    var result = exprs.length === 1 ? exprs[0] : [{ t: 'Y', v: 'do' }].concat(exprs);
-    // perf: evict cache if it grows beyond reasonable bounds (long-running SPAs)
-    if (_parseCacheSize > 2000) { _parseCache = {}; _parseCacheSize = 0; }
-    _parseCache[str] = result;
-    _parseCacheSize++;
-    return result;
-  }
-
-  // ── Evaluator ──────────────────────────────────────────────────────────
-
-  var _evalDepth = 0;
-
-  function _seval(node, ctx) {
-    if (node === null || node === undefined) return null;
-    if (++_evalDepth > 512) { _evalDepth--; throw new Error('[mp] expression too deeply nested (max depth 512)'); }
-    try { return _sevalInner(node, ctx); } finally { _evalDepth--; }
-  }
-
-  function _sevalInner(node, ctx) {
-    // Atom (token object)
-    if (!Array.isArray(node)) {
-      if (typeof node === 'string') return node; // shouldn't happen, but safety
-      switch (node.t) {
-        case 'S': return node.v;                    // string literal
-        case '#': return node.v;                    // number
-        case 'B': return node.v;                    // boolean
-        case 'N': return null;                      // nil
-        case 'K': return node.v;                    // keyword → string
-        case 'V':                                   // vector [1 2 3] → JS array
-          var arr = [];
-          for (var i = 0; i < node.v.length; i++) arr.push(_seval(node.v[i], ctx));
-          return arr;
-        case 'Y':                                   // symbol → context lookup
-          var name = node.v;
-          if (name === '$state') return ctx.$state;
-          if (name === '$el') return ctx.$el;
-          if (name === '$event') return ctx.$event;
-          if (name === '$item') return ctx.$item;
-          if (name === '$index') return ctx.$index;
-          if (name === '$detail') return ctx.$detail;
-          if (name.indexOf('.') !== -1) {
-            if (_trackingDeps) _trackedDeps[_depKey(name)] = true;
-            return _get(ctx, name);
-          }
-          // Built-in functions as first-class values (for reduce, map, etc.)
-          if (_firstClass[name]) return _firstClass[name];
-          // User-registered functions as first-class values
-          if (_userFns[name]) return _userFns[name];
-          if (_trackingDeps) _trackedDeps[name] = true;
-          if (_debug && !(name in ctx)) console.warn('[mp:debug] undefined variable "' + name + '"');
-          return ctx[name];
-      }
-      return node;
-    }
-
-    // List (function application)
-    if (node.length === 0) return null;
-    var head = node[0];
-    var fn = (head && head.t === 'Y') ? head.v : null;
-    // Use node directly with +1 offset — avoids allocating a sliced array
-    // on every function call. n1/n2/n3/n4 are shorthands for the hot path.
-    var n1 = node[1], n2 = node[2], n3 = node[3], n4 = node[4];
-    var nLen = node.length - 1; // arg count
-
-    // ── Special forms (args NOT pre-evaluated) ───────────────────────
-
-    switch (fn) {
-      case 'if':
-        return _seval(n1, ctx) ? _seval(n2, ctx) : (n3 != null ? _seval(n3, ctx) : null);
-
-      case 'when':
-        return _seval(n1, ctx) ? _seval(n2, ctx) : null;
-
-      case 'unless':
-        return !_seval(n1, ctx) ? _seval(n2, ctx) : null;
-
-      case 'when-state':
-        // (when-state editing 'ring-2') — returns value if machine is in named state
-        return ctx.$state === (n1.v || String(n1)) ? _seval(n2, ctx) : null;
-
-      case 'cond':
-        for (var i = 1; i < node.length; i += 2) {
-          if (i + 1 < node.length && _seval(node[i], ctx)) return _seval(node[i + 1], ctx);
-        }
-        return null;
-
-      case 'and':
-        var val; for (var i = 1; i < node.length; i++) { val = _seval(node[i], ctx); if (!val) return val; } return val;
-
-      case 'or':
-        for (var i = 1; i < node.length; i++) { var val = _seval(node[i], ctx); if (val) return val; } return val;
-
-      case 'do':
-        var result; for (var i = 1; i < node.length; i++) result = _seval(node[i], ctx); return result;
-
-      case 'let':
-        // (let [x 1 y 2] (+ x y))  — vector bindings (Clojure-style)
-        var bindings = n1, body = n2;
-        // Support both vector {t:'V',v:[...]} and list [...] for bindings
-        var blist = bindings.t === 'V' ? bindings.v : (Array.isArray(bindings) ? bindings : []);
-        var local = Object.create(ctx);
-        for (var i = 0; i < blist.length; i += 2) {
-          local[blist[i].v] = _seval(blist[i + 1], local);
-        }
-        return _seval(body, local);
-
-      case 'fn':
-        // (fn [x y] (+ x y))  — vector params (Clojure-style)
-        var params = n1, body = n2;
-        var plist = params.t === 'V' ? params.v : (Array.isArray(params) ? params : []);
-        return function () {
-          var local = Object.create(ctx);
-          for (var i = 0; i < plist.length; i++) local[plist[i].v] = arguments[i];
-          return _seval(body, local);
-        };
-
-      // ── Threading macros (Clojure-style) ───────────────────────────
-      // (-> x (f a) (g b))  → (g (f x a) b)     — thread as FIRST arg
-      // (->> x (f a) (g b)) → (g a (f a x))      — thread as LAST arg
-      case '->':
-        var result = n1;
-        for (var i = 2; i < node.length; i++) {
-          if (Array.isArray(node[i])) {
-            result = [node[i][0], result].concat(node[i].slice(1));
-          } else {
-            result = [node[i], result];
-          }
-        }
-        return _seval(result, ctx);
-
-      case '->>':
-        var result = n1;
-        for (var i = 2; i < node.length; i++) {
-          if (Array.isArray(node[i])) {
-            result = node[i].concat([result]);
-          } else {
-            result = [node[i], result];
-          }
-        }
-        return _seval(result, ctx);
-
-      case 'set!':
-        var val = _seval(n2, ctx);
-        if (n1.v.indexOf('.') !== -1) {
-          _set(ctx, n1.v, val);
-          // Dotted paths mutate via prototype chain — _applyScope won't see them.
-          // Record the dirty key directly so dependency tracking picks it up.
-          if (ctx.__mpInst) { if (!ctx.__mpInst._mpDirty) ctx.__mpInst._mpDirty = {}; ctx.__mpInst._mpDirty[_depKey(n1.v)] = true; }
-        }
-        else ctx[n1.v] = val;
-        return val;
-
-      case 'inc!':
-        ctx[n1.v] = (ctx[n1.v] || 0) + 1; return ctx[n1.v];
-
-      case 'dec!':
-        ctx[n1.v] = (ctx[n1.v] || 0) - 1; return ctx[n1.v];
-
-      case 'toggle!':
-        ctx[n1.v] = !ctx[n1.v]; return ctx[n1.v];
-
-      case 'push!':
-        var arr = _seval(n1, ctx);
-        var val = _seval(n2, ctx);
-        if (Array.isArray(arr)) arr.push(val);
-        return arr;
-
-      case 'remove-where!':
-        // (remove-where! items :id val)
-        var arr = _seval(n1, ctx);
-        var key = _seval(n2, ctx);
-        var val = _seval(n3, ctx);
-        if (Array.isArray(arr)) {
-          for (var i = arr.length - 1; i >= 0; i--) { if (arr[i][key] === val) arr.splice(i, 1); }
-        }
-        return arr;
-
-      case 'splice!':
-        var arr = _seval(n1, ctx);
-        var idx = _seval(n2, ctx);
-        var count = n3 != null ? _seval(n3, ctx) : 1;
-        if (Array.isArray(arr)) arr.splice(idx, count);
-        return arr;
-
-      // Machine integration — these store intent on the scope for
-      // the framework to pick up after evaluation completes.
-      case 'to':
-        var target = n1.t === 'Y' ? n1.v : String(_seval(n1, ctx));
-        ctx.__mpTo = target;
-        return target;
-
-      case 'emit':
-        var eName = n1.t === 'Y' ? n1.v : String(_seval(n1, ctx));
-        ctx.__mpEmit = eName;
-        return eName;
-
-      // Event control — call from within mp-on: s-expressions
-      case 'prevent!':
-        if (ctx.__mpEvent) ctx.__mpEvent.preventDefault();
-        else if (ctx.$event) ctx.$event.preventDefault();
-        return null;
-
-      case 'stop!':
-        if (ctx.__mpEvent) ctx.__mpEvent.stopPropagation();
-        else if (ctx.$event) ctx.$event.stopPropagation();
-        return null;
-
-      // (after ms state) — one-shot timer, then transition. Inside mp-transition.
-      case 'after':
-        var ms = _seval(n1, ctx);
-        var st = n2.t === 'Y' ? n2.v : String(_seval(n2, ctx));
-        if (ctx.__mpAfterTimer) ctx.__mpAfterTimer(ms, st);
-        return null;
-
-      // (every ms body) — repeating interval. Inside mp-transition.
-      // Automatically cleared when the state is exited.
-      case 'every':
-        var ems = _seval(n1, ctx);
-        if (ctx.__mpEveryInterval) ctx.__mpEveryInterval(ems, n2, ctx);
-        return null;
-
-      // (then! promise-expr :key 'success-state' 'error-state')
-      // Evaluates the expression (which should return a Promise),
-      // stores the resolved value at ctx[key], optionally transitions.
-      // If the promise rejects and an error state is provided, transitions
-      // there and stores the error at ctx[key]. Without an error state,
-      // rejection is warned but the machine stays put.
-      case 'then!':
-        var promise = _seval(n1, ctx);
-        var key = n2 ? _seval(n2, ctx) : null;
-        var thenState = n3 ? _seval(n3, ctx) : null;
-        var errorState = n4 ? _seval(n4, ctx) : null;
-        var machineEl = ctx.$el;
-        if (promise && typeof promise.then === 'function') {
-          promise.then(function (result) {
-            if (!machineEl || !machineEl._mp) return;
-            if (key) machineEl._mp.ctx[key] = result;
-            if (thenState) machineEl._mp.to(thenState);
-            else machineEl._mp.update();
-          }).catch(function (err) {
-            if (!machineEl || !machineEl._mp) return;
-            if (errorState) {
-              if (key) machineEl._mp.ctx[key] = err;
-              machineEl._mp.to(errorState);
-            } else {
-              console.warn('[mp] async error:', err);
-            }
-          });
-        }
-        return null;
-    }
-
-    // ── Standard library dispatch ──────────────────────────────────
-    // Pre-evaluate all args, then dispatch to the stdlib table.
-
-    var args = new Array(nLen);
-    for (var i = 0; i < nLen; i++) args[i] = _seval(node[i + 1], ctx);
-
-    if (_stdlib[fn]) return _stdlib[fn](args);
-
-    // Try user-registered function (MachinePerfect.fn())
-    if (_userFns[fn]) return _userFns[fn].apply(null, args);
-
-    // Try calling a function from context
-    var ctxFn = ctx[fn];
-    if (typeof ctxFn === 'function') return ctxFn.apply(null, args);
-
-    console.warn('[mp] unknown function: ' + fn);
-    return null;
-  }
-
-  // ── Standard library ───────────────────────────────────────────────
-  //
-  // ~60 built-in functions organized by domain. Each receives the
-  // pre-evaluated args array. This table is the complete vocabulary
-  // of the s-expression language (excluding special forms above).
-
-  var _stdlib = {
-    // Math
-    '+':   function (a) { return a.reduce(function (x, y) { return x + y; }, 0); },
-    '-':   function (a) { return a.length === 1 ? -a[0] : a[0] - a[1]; },
-    '*':   function (a) { return a.reduce(function (x, y) { return x * y; }, 1); },
-    '/':   function (a) { return a[0] / a[1]; },
-    'mod': function (a) { return a[0] % a[1]; },
-    'inc': function (a) { return a[0] + 1; },
-    'dec': function (a) { return a[0] - 1; },
-    'abs': function (a) { return Math.abs(a[0]); },
-    'min': function (a) { return Math.min.apply(null, a); },
-    'max': function (a) { return Math.max.apply(null, a); },
-    'round': function (a) { return Math.round(a[0]); },
-    'floor': function (a) { return Math.floor(a[0]); },
-    'ceil':  function (a) { return Math.ceil(a[0]); },
-
-    // Comparison
-    '=':  function (a) { return a[0] === a[1]; },
-    '!=': function (a) { return a[0] !== a[1]; },
-    '>':  function (a) { return a[0] > a[1]; },
-    '<':  function (a) { return a[0] < a[1]; },
-    '>=': function (a) { return a[0] >= a[1]; },
-    '<=': function (a) { return a[0] <= a[1]; },
-
-    // Logic
-    'not':    function (a) { return !a[0]; },
-    'nil?':   function (a) { return a[0] == null; },
-    'some?':  function (a) { return a[0] != null; },
-    'true?':  function (a) { return a[0] === true; },
-    'false?': function (a) { return a[0] === false; },
-    'empty?': function (a) { return !a[0] || (a[0].length != null && a[0].length === 0); },
-
-    // Strings
-    'str':       function (a) { return a.map(function (x) { return x == null ? '' : String(x); }).join(''); },
-    'upper':     function (a) { return String(a[0] || '').toUpperCase(); },
-    'lower':     function (a) { return String(a[0] || '').toLowerCase(); },
-    'trim':      function (a) { return String(a[0] || '').trim(); },
-    'split':     function (a) { return String(a[0] || '').split(a[1] || ''); },
-    'join':      function (a) { return (a[0] || []).join(a[1] != null ? a[1] : ''); },
-    'starts?':   function (a) { return String(a[0] || '').indexOf(a[1]) === 0; },
-    'ends?':     function (a) { return String(a[0] || '').slice(-(a[1] || '').length) === a[1]; },
-    'contains?': function (a) { return String(a[0] || '').indexOf(a[1]) !== -1; },
-    'replace':   function (a) { return String(a[0] || '').split(a[1]).join(a[2] || ''); },
-    'subs':      function (a) { return String(a[0] || '').substring(a[1], a[2]); },
-
-    // Collections
-    'count':     function (a) { return a[0] == null ? 0 : (a[0].length != null ? a[0].length : Object.keys(a[0]).length); },
-    'first':     function (a) { return a[0] && a[0][0]; },
-    'last':      function (a) { return a[0] && a[0][a[0].length - 1]; },
-    'nth':       function (a) { return a[0] && a[0][a[1]]; },
-    'rest':      function (a) { return a[0] ? a[0].slice(1) : []; },
-    'take':      function (a) { return (a[1] || []).slice(0, a[0]); },
-    'drop':      function (a) { return (a[1] || []).slice(a[0]); },
-    'concat':    function (a) { return (a[0] || []).concat(a[1] || []); },
-    'reverse':   function (a) { return (a[0] || []).slice().reverse(); },
-    'sort':      function (a) { return (a[0] || []).slice().sort(a[1] || undefined); },
-    'includes?': function (a) { return (a[0] || []).indexOf(a[1]) !== -1; },
-    'index-of':  function (a) { return (a[0] || []).indexOf(a[1]); },
-    'uniq':      function (a) { return a[0] ? a[0].filter(function (v, i, s) { return s.indexOf(v) === i; }) : []; },
-    'range':     function (a) { var r = []; for (var i = a[0] || 0; i < a[1]; i += (a[2] || 1)) r.push(i); return r; },
-
-    // Higher-order — Clojure argument order: (fn collection)
-    'map':     function (a) { return (a[1] || []).map(a[0]); },
-    'filter':  function (a) { return (a[1] || []).filter(a[0]); },
-    'find':    function (a) { return (a[1] || []).find(a[0]); },
-    'every?':  function (a) { return (a[1] || []).every(a[0]); },
-    'some':    function (a) { return (a[1] || []).some(a[0]); },
-    'reduce':  function (a) { return (a[2] || []).reduce(a[0], a[1]); },
-    'flat-map': function (a) { return (a[1] || []).reduce(function (r, x) { return r.concat(a[0](x)); }, []); },
-    'sort-by': function (a) { return (a[1] || []).slice().sort(function (x, y) { var fx = a[0](x), fy = a[0](y); return fx < fy ? -1 : fx > fy ? 1 : 0; }); },
-
-    // Objects
-    'obj':    function (a) { var o = {}; for (var i = 0; i < a.length; i += 2) o[a[i]] = a[i + 1]; return o; },
-    'get':    function (a) { return a[0] != null ? a[0][a[1]] : null; },
-    'keys':   function (a) { return a[0] ? Object.keys(a[0]) : []; },
-    'vals':   function (a) { return a[0] ? Object.keys(a[0]).map(function (k) { return a[0][k]; }) : []; },
-    'assoc':  function (a) { var o = {}; for (var k in a[0]) o[k] = a[0][k]; o[a[1]] = a[2]; return o; },
-    'assoc!': function (a) { if (a[0]) a[0][a[1]] = a[2]; return a[0]; },
-    'dissoc': function (a) { var o = {}; for (var k in a[0]) { if (k !== a[1]) o[k] = a[0][k]; } return o; },
-    'merge':  function (a) { var o = {}; for (var i = 0; i < a.length; i++) { if (a[i]) for (var k in a[i]) o[k] = a[i][k]; } return o; },
-
-    // Type
-    'type':  function (a) { return a[0] === null ? 'nil' : Array.isArray(a[0]) ? 'list' : typeof a[0]; },
-    'num':   function (a) { return Number(a[0]); },
-    'int':   function (a) { return parseInt(a[0], a[1] || 10); },
-    'float': function (a) { return parseFloat(a[0]); },
-    'bool':  function (a) { return !!a[0]; },
-
-    // Date/time
-    'now':       function () { return Date.now(); },
-    'timestamp': function (a) { return new Date(a[0]).getTime(); },
-
-    // Console
-    'log':  function (a) { console.log.apply(console, a); return a[0]; },
-    'warn': function (a) { console.warn.apply(console, a); return a[0]; }
-  };
-
-  // User-registered functions — the JS escape hatch.
-  var _userFns = {};
-
-  // Debug mode — set MachinePerfect.debug = true for verbose diagnostics.
-  // Reports: missing context variables, unknown functions, state transitions,
-  // expression evaluation errors. Off by default for production performance.
-  var _debug = false;
-
-  // Built-in functions as first-class values.
-  // In Clojure, (reduce + 0 items) works because + is a value.
-  // These let built-in names resolve as functions when used as arguments.
-  // Note: 2-arity so they work correctly with Array.reduce/map/filter
-  // which pass (acc, val, index, array). Direct calls (+ 1 2 3) use
-  // the variadic switch case instead.
-  var _firstClass = {
-    '+':   function (a, b) { return a + b; },
-    '-':   function (a, b) { return a - b; },
-    '*':   function (a, b) { return a * b; },
-    '/':   function (a, b) { return a / b; },
-    'inc': function (x) { return x + 1; },
-    'dec': function (x) { return x - 1; },
-    'not': function (x) { return !x; },
-    'str': function () { return Array.prototype.slice.call(arguments).map(function (x) { return x == null ? '' : String(x); }).join(''); },
-    'count': function (x) { return x == null ? 0 : x.length != null ? x.length : Object.keys(x).length; },
-    'get': function (o, k) { return o != null ? o[k] : null; },
-    'upper': function (s) { return String(s || '').toUpperCase(); },
-    'lower': function (s) { return String(s || '').toLowerCase(); },
-    'trim': function (s) { return String(s || '').trim(); },
-    'max': function (a, b) { return Math.max(a, b); },
-    'min': function (a, b) { return Math.min(a, b); }
-  };
-
-
-  // ── Expression interface ────────────────────────────────────────────
-  //
-  // _eval: READ — evaluate an expression and return the result.
-  // _exec: WRITE — evaluate for side effects, copy mutations back to ctx.
-  //
-  // Both accept raw attribute strings. Both use the cached parser.
-  // _eval is used in bindings (mp-text, mp-show, mp-guard, mp-bind-*).
-  // _exec is used in actions (mp-init, mp-action).
-
-  function _makeScope(ctx, state, el, event) {
-    var scope = Object.create(ctx);
-    scope.$state = state;
-    scope.$el = el;
-    scope.$event = event || null;
-    return scope;
-  }
-
-  // Pure evaluator — wraps _seval but throws on mutation forms.
-  // Bindings must never change state; this enforces it structurally.
-  var _mutationForms = { 'set!':1, 'inc!':1, 'dec!':1, 'toggle!':1, 'push!':1,
-                         'remove-where!':1, 'splice!':1, 'assoc!':1 };
-
-  function _sevalPure(node, ctx) {
-    if (Array.isArray(node) && node.length > 0 && node[0] && node[0].t === 'Y') {
-      if (_mutationForms[node[0].v]) {
-        throw new Error('[mp] mutation "' + node[0].v + '" is not allowed in bindings (mp-text, mp-show, mp-class, mp-bind-*). Use mp-action or mp-on: instead.');
-      }
-      // Check nested expressions (e.g. (do (set! x 1) x) — the set! is inside a do)
-      for (var i = 1; i < node.length; i++) {
-        if (Array.isArray(node[i])) _sevalPure(node[i], ctx);
-      }
-    }
-    return _seval(node, ctx);
-  }
-
-  // _eval: pure read path for bindings. Throws on mutations.
-  function _eval(expr, ctx, state, el) {
-    if (!expr) return undefined;
-    var str = expr.trim();
-    if (!str) return undefined;
-    // S-expression — pure evaluation (no ! mutations allowed)
-    if (str.charAt(0) === '(') return _sevalPure(_parse(str), _makeScope(ctx, state, el));
-    // Bare atom — symbol lookup
-    if (str === 'true') return true;
-    if (str === 'false') return false;
-    if (str === 'nil') return null;
-    if (str === '$state') return state;
-    if (str.charAt(0) === "'" && str.charAt(str.length - 1) === "'") return str.slice(1, -1);
-    if (!isNaN(Number(str)) && str !== '') return Number(str);
-    if (str.indexOf('.') !== -1) {
-      if (_trackingDeps) _trackedDeps[_depKey(str)] = true;
-      return _get(ctx, str);
-    }
-    if (_trackingDeps) _trackedDeps[str] = true;
-    return ctx[str];
-  }
-
-  function _exec(expr, ctx, state, el, event, inst) {
-    if (!expr) return;
-    var str = expr.trim();
-    if (!str) return;
-    var scope = _makeScope(ctx, state, el, event);
-    // Make inst available to set! for dotted-path dirty tracking
-    if (inst) scope.__mpInst = inst;
-    _seval(_parse(str), scope);
-    _applyScope(scope, ctx, inst);
-  }
-
-
-  // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  Dependency tracking                                                    ║
-  // ╚══════════════════════════════════════════════════════════════════════════╝
-  //
-  // Runtime read/write tracking through the s-expression evaluator.
-  //
-  // READ tracking: during binding cache build, _seval records which context
-  // keys each binding expression accesses. Stored as deps on the binding.
-  //
-  // WRITE tracking: when s-expressions mutate context (set!, inc!, etc.),
-  // the mutated keys are recorded as dirty on the machine instance. On
-  // update(), only bindings whose deps overlap with dirty keys are evaluated.
-  //
-  // No Proxies. No compiler. We are the runtime — every data access and
-  // every mutation flows through _seval, so we see everything.
-
-  var _trackingDeps = false;
-  var _trackedDeps = null;
-
-  // Normalize a symbol name to a dependency key.
-  // Simple names: 'temp' → 'temp'
-  // $store paths: '$store.filters.country' → '$store.filters' (two segments)
-  // Other dotted: 'user.name' → 'user' (root segment)
-  function _depKey(name) {
-    if (name.charAt(0) === '$' && name.indexOf('$store.') === 0) {
-      var rest = name.substring(7);
-      var dot = rest.indexOf('.');
-      return dot === -1 ? name : '$store.' + rest.substring(0, dot);
-    }
-    var dot = name.indexOf('.');
-    return dot === -1 ? name : name.substring(0, dot);
-  }
-
-  // Copy own scope mutations to target ctx, recording dirty keys on inst.
-  // Replaces all the manual copy-back loops throughout the framework.
-  function _applyScope(scope, target, inst) {
-    for (var k in scope) {
-      if (scope.hasOwnProperty(k) && k.charAt(0) !== '$' && k.charAt(0) !== '_') {
-        target[k] = scope[k];
-        if (inst) { if (!inst._mpDirty) inst._mpDirty = {}; inst._mpDirty[_depKey(k)] = true; }
-      }
-    }
-  }
-
-
-  // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  Utilities                                                              ║
-  // ╚══════════════════════════════════════════════════════════════════════════╝
-
-  // Path get/set for mp-model (e.g. "user.name" → ctx.user.name)
-  function _get(obj, path) {
-    var parts = path.split('.');
-    for (var i = 0; i < parts.length; i++) {
-      if (obj == null) return undefined;
-      obj = obj[parts[i]];
-    }
-    return obj;
-  }
-
-  var _unsafePaths = { '__proto__': 1, 'constructor': 1, 'prototype': 1 };
-
-  function _set(obj, path, val) {
-    var parts = path.split('.');
-    for (var i = 0; i < parts.length; i++) {
-      if (_unsafePaths[parts[i]]) return; // defense against prototype pollution
-    }
-    for (var i = 0; i < parts.length - 1; i++) {
-      if (obj[parts[i]] == null) obj[parts[i]] = {};
-      obj = obj[parts[i]];
-    }
-    obj[parts[parts.length - 1]] = val;
-  }
+  // To use: load engine.js first, then this file.
+  //   <script src="mp/engine.js"></script>
+  //   <script src="mp/browser.js"></script>
 
   // Query elements belonging to this machine (not nested child machines).
   // Rule: element belongs to its closest [mp] ancestor.
-  function _own(machineEl, selector) {
+  // Compute ancestor path from a dot-separated state name.
+  // 'running.filling' → ['running.filling', 'running']
+  function _stateAncestors(s) {
+    var a = []; var p = s;
+    while (p) { a.push(p); var dot = p.lastIndexOf('.'); p = dot === -1 ? null : p.substring(0, dot); }
+    return a;
+  }
+
+  // Compute exit and enter paths for a hierarchical transition via LCA.
+  function _transitionPaths(prev, target) {
+    var prevAnc = prev ? _stateAncestors(prev) : [];
+    var targetAnc = _stateAncestors(target);
+    var lca = null;
+    for (var i = 0; i < targetAnc.length; i++) {
+      if (prevAnc.indexOf(targetAnc[i]) !== -1) { lca = targetAnc[i]; break; }
+    }
+    var exitPath = [];
+    for (var j = 0; j < prevAnc.length; j++) {
+      if (prevAnc[j] === lca) break;
+      exitPath.push(prevAnc[j]);
+    }
+    var enterPath = [];
+    for (var k = targetAnc.length - 1; k >= 0; k--) {
+      if (targetAnc[k] === lca) continue;
+      enterPath.push(targetAnc[k]);
+    }
+    return { exitPath: exitPath, enterPath: enterPath };
+  }
+
+  function _ownElements(machineEl, selector) {
     var all = machineEl.querySelectorAll(selector);
     var out = [];
     for (var i = 0; i < all.length; i++) {
@@ -755,7 +166,7 @@
   // Build $refs map from mp-ref elements owned by this machine.
   function _buildRefs(machineEl) {
     var refs = {};
-    var refEls = _own(machineEl, '[mp-ref]');
+    var refEls = _ownElements(machineEl, '[mp-ref]');
     for (var i = 0; i < refEls.length; i++) refs[refEls[i].getAttribute('mp-ref')] = refEls[i];
     return refs;
   }
@@ -786,13 +197,13 @@
   // ║  Inter-machine events                                                   ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
-  // mp-emit dispatches named events. mp-receive listens.
+  // (emit name) in s-expressions dispatches named events. mp-receive listens.
   //
-  // Emit:    <button mp-emit="saved">Save</button>
+  // Emit:    <button mp-to="(do (emit saved) (to done))">Save</button>
   // Receive: <div mp="toast" mp-receive="(on 'saved' (to show))">
   //
   // The receive attribute contains s-expressions using (on 'name' body).
-  // Multiple (on) forms can be in one attribute. $detail is the emitter's ctx.
+  // Multiple (on) forms can be in one attribute. $detail is the emit payload.
   //
   // (on) is a special form registered as an event listener at init time.
   // It does NOT run during normal expression evaluation.
@@ -833,20 +244,20 @@
               if (entry.inst.el === e.detail.source) continue;
 
               var scope = _makeScope(entry.inst.ctx, entry.inst.state, entry.inst.el);
-              scope.$detail = e.detail.ctx;
+              scope.$detail = e.detail.payload;
               scope.__mpInst = entry.inst;
               _seval(entry.body, scope);
               _applyScope(scope, entry.inst.ctx, entry.inst);
               if (scope.__mpTo) {
-                var target = scope.__mpTo === '.' ? entry.inst.state : scope.__mpTo;
+                var target = scope.__mpTo;
                 entry.inst.to(target);
               } else {
                 entry.inst.update();
               }
-              if (scope.__mpEmit) entry.inst.emit(scope.__mpEmit);
+              if (scope.__mpEmit) entry.inst.emit(scope.__mpEmit, scope.__mpEmitPayload);
             }
           };
-          document.addEventListener('mp:' + name, handler);
+          document.addEventListener('mp-' + name, handler);
           _events[name]._handler = handler; // stored for cleanup
         }
         _events[name].push({ inst: machine, body: bodyExpr });
@@ -894,52 +305,18 @@
       var scope = Object.create(itemScope);
       scope.$event = e;
 
-      if (targetState.charAt(0) === '(') {
-        // ── S-expression mode ────────────────────────────────────────
-        // The entire handler is ONE s-expression. No separate guard/action.
-        // (when), (if), etc. naturally filter. (to), (emit), (prevent!),
-        // (stop!) signal intent.
-        //
-        //   mp-on:keydown="(when (= (get $event :key) 'Escape') (to closed))"
-        //   mp-on:keydown="(when (and (get $event :ctrlKey) (= (get $event :key) 'k'))
-        //                    (do (prevent!) (emit open-palette)))"
-        //
-        scope.__mpEvent = e;
-        scope.__mpInst = inst;
-        _seval(_parse(targetState), scope);
-        _applyScope(scope, inst.ctx, inst);
-        // Handle (to state) signal
-        if (scope.__mpTo) {
-          var target = scope.__mpTo === '.' ? inst.state : scope.__mpTo;
-          inst.to(target);
-        } else {
-          inst.update();
-        }
-        // Handle (emit name) signal
-        if (scope.__mpEmit) inst.emit(scope.__mpEmit);
+      // Apply modifiers
+      if (mods.indexOf('prevent') !== -1) e.preventDefault();
+      if (mods.indexOf('stop') !== -1) e.stopPropagation();
 
-      } else {
-        // ── Bare state name mode (backward compatible) ───────────────
-        var guard = el.getAttribute('mp-guard');
-        if (guard && !_eval(guard, scope, inst.state, el)) return;
-        if (mods.indexOf('prevent') !== -1) e.preventDefault();
-        if (mods.indexOf('stop') !== -1) e.stopPropagation();
-
-        var action = el.getAttribute('mp-action');
-        if (action) {
-          var merged = Object.create(inst.ctx);
-          for (var k in scope) { if (scope.hasOwnProperty(k)) merged[k] = scope[k]; }
-          _exec(action, merged, inst.state, el, e);
-          _applyScope(merged, inst.ctx, inst);
-        }
-
-        var emit = el.getAttribute('mp-emit');
-        if (emit) inst.emit(emit);
-
-        var target = targetState || '.';
-        if (target === '.') target = inst.state;
-        inst.to(target);
-      }
+      // mp-on:EVENT always takes an s-expression
+      scope.__mpEvent = e;
+      scope.__mpInst = inst;
+      _seval(_parse(targetState), scope);
+      _applyScope(scope, inst.ctx, inst);
+      if (scope.__mpEmit) inst.emit(scope.__mpEmit, scope.__mpEmitPayload);
+      if (scope.__mpTo) inst.to(scope.__mpTo);
+      else inst.update();
     };
 
     var target = isOutside ? document : el;
@@ -980,10 +357,10 @@
 
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  CSS transition engine (mp-transition)                                  ║
+  // ║  CSS transition engine (mp-temporal)                                  ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
-  // When a state element has the mp-transition attribute, entering and leaving
+  // When a state element has the mp-temporal attribute, entering and leaving
   // are animated via CSS classes instead of instant show/hide.
   //
   // Enter sequence (state becomes active):
@@ -1007,7 +384,7 @@
     el.hidden = false;
     el.classList.add('mp-enter-from', 'mp-enter-active');
     // Force reflow so the browser sees the from-state before transitioning
-    el.offsetHeight; // eslint-disable-line no-unused-expressions
+    el.offsetHeight; // perf: force reflow so browser sees from-state before transitioning
     requestAnimationFrame(function () {
       el.classList.remove('mp-enter-from');
       el.classList.add('mp-enter-to');
@@ -1022,7 +399,7 @@
     // Clean up any in-progress enter transition classes
     el.classList.remove('mp-enter-from', 'mp-enter-active', 'mp-enter-to');
     el.classList.add('mp-leave-from', 'mp-leave-active');
-    el.offsetHeight; // eslint-disable-line no-unused-expressions
+    el.offsetHeight; // perf: force reflow so browser sees from-state before transitioning
     requestAnimationFrame(function () {
       el.classList.remove('mp-leave-from');
       el.classList.add('mp-leave-to');
@@ -1038,16 +415,25 @@
     });
   }
 
+  function _maxDuration(durString) {
+    if (!durString) return 0;
+    var parts = durString.split(',');
+    var max = 0;
+    for (var i = 0; i < parts.length; i++) {
+      var v = parseFloat(parts[i]) || 0;
+      if (v > max) max = v;
+    }
+    return max;
+  }
+
   function _onTransitionEnd(el, cb) {
-    // Get computed transition duration. If none, fire immediately.
     var style = getComputedStyle(el);
-    var dur = parseFloat(style.transitionDuration) || 0;
-    var animDur = parseFloat(style.animationDuration) || 0;
+    var dur = _maxDuration(style.transitionDuration);
+    var animDur = _maxDuration(style.animationDuration);
     var total = Math.max(dur, animDur);
     if (total === 0) {
       cb();
     } else {
-      // Use timeout as fallback (transitionend can be unreliable)
       setTimeout(cb, total * 1000 + 50);
     }
   }
@@ -1086,13 +472,17 @@
   }
 
   function _updateEach(machineEl, inst) {
-    var tmpls = _own(machineEl, 'template[mp-each]');
+    var tmpls = _ownElements(machineEl, 'template[mp-each]');
     for (var t = 0; t < tmpls.length; t++) {
       var tmpl = tmpls[t];
       var expr = tmpl.getAttribute('mp-each');
       var keyExpr = tmpl.getAttribute('mp-key');
+      if (!keyExpr && engine.debug) console.warn('[mp] mp-each without mp-key causes full re-render on every update. Add mp-key for efficient reconciliation.');
       var items = _eval(expr, inst.ctx, inst.state, tmpl);
-      if (!Array.isArray(items)) items = [];
+      if (!Array.isArray(items)) {
+        if (engine.debug && items != null) console.warn('[mp] mp-each expression "' + expr + '" evaluated to ' + typeof items + ', not an array. Treating as empty list.');
+        items = [];
+      }
 
       // Initialize tracking structures
       if (!tmpl._mpMarker) {
@@ -1112,6 +502,7 @@
         for (var i = 0; i < items.length; i++) {
           var scope = _itemCtx(inst.ctx, items[i], i);
           var key = String(_eval(keyExpr, scope, inst.state, tmpl));
+          if (newMap[key]) console.warn('[mp] duplicate mp-key="' + key + '" in mp-each. Only the last item with this key will render. Keys must be unique.');
           newKeys.push(key);
           newMap[key] = { item: items[i], index: i, scope: scope };
         }
@@ -1251,7 +642,7 @@
   //
   // Accessible in ANY machine as $store.user.name. Shared by reference —
   // when one machine writes $store.user.name = 'New', all machines see it
-  // on their next update. Use mp-emit to notify other machines to re-render.
+  // on their next update. Use (emit name) inside mp-to to notify other machines.
 
   var _store = {};
 
@@ -1262,7 +653,7 @@
       var val = els[i].getAttribute('value');
       if (name) {
         try { _store[name] = val ? JSON.parse(val) : {}; }
-        catch (err) { console.warn('[mp] malformed mp-store "' + name + '":', err.message); _store[name] = {}; }
+        catch (err) { console.warn('[mp] mp-store name="' + name + '" has invalid JSON in value attribute. Check your quotes and syntax. Error: ' + err.message); _store[name] = {}; }
       }
     }
   }
@@ -1396,64 +787,6 @@
   }
 
 
-  // ── Client-side routing ─────────────────────────────────────────────────
-  //
-  // <div mp="app" mp-route>
-  //   <div mp-state="home" mp-path="/">Home</div>
-  //   <div mp-state="settings" mp-path="/settings">Settings</div>
-  // </div>
-  //
-  // Uses the History API (pushState) for clean URLs.
-  // On init: reads location.pathname, routes to matching mp-path state.
-  // On transition: updates the URL via pushState.
-  // On back/forward: transitions to matching state.
-
-  function _setupRoute(el, inst, stateMap, stateTmpls, initial) {
-    if (!el.hasAttribute('mp-route')) return;
-
-    var currentPath = location.pathname || '/';
-    for (var sn in stateMap) {
-      if (stateMap[sn].getAttribute('mp-path') === currentPath && sn !== initial) {
-        if (initial && stateMap[initial]) {
-          stateMap[initial].innerHTML = '';
-          stateMap[initial].hidden = true;
-        }
-        inst.state = sn;
-        stateMap[sn].appendChild(stateTmpls[sn].content.cloneNode(true));
-        stateMap[sn].hidden = false;
-        _scanBindAttrs(stateMap[sn], el);
-        _attachDomEvents(stateMap[sn], inst);
-        _initNested(stateMap[sn]);
-        inst.update();
-        break;
-      }
-    }
-
-    var _origTo = inst.to;
-    inst.to = function (target) {
-      var result = _origTo(target);
-      if (result && stateMap[target]) {
-        var path = stateMap[target].getAttribute('mp-path');
-        if (path && location.pathname !== path) {
-          try { history.pushState(null, '', path); } catch (e) { /* file:// protocol */ }
-        }
-      }
-      return result;
-    };
-
-    var popHandler = function () {
-      var path = location.pathname || '/';
-      for (var sn in stateMap) {
-        if (stateMap[sn].getAttribute('mp-path') === path && inst.state !== sn) {
-          _origTo(sn);
-          break;
-        }
-      }
-    };
-    window.addEventListener('popstate', popHandler);
-    if (!el._mpCleanups) el._mpCleanups = [];
-    el._mpCleanups.push(function () { window.removeEventListener('popstate', popHandler); });
-  }
 
 
   // ── Machine setup ───────────────────────────────────────────────────
@@ -1469,40 +802,129 @@
     var ctx = {};
     if (ctxAttr) {
       try { ctx = JSON.parse(ctxAttr); }
-      catch (err) { console.warn('[mp] malformed mp-ctx on "' + name + '":', err.message); }
+      catch (err) { console.warn('[mp] mp-ctx on machine "' + name + '" has invalid JSON. Check your quotes and syntax. Error: ' + err.message); }
     }
     var persistKey = el.getAttribute('mp-persist');
     if (persistKey) {
       try {
-        var saved = JSON.parse(localStorage.getItem('mp:' + persistKey) || '{}');
+        var saved = JSON.parse(localStorage.getItem('mp-' + persistKey) || '{}');
         for (var k in saved) if (saved.hasOwnProperty(k)) ctx[k] = saved[k];
       } catch (e) { /* ignore corrupt localStorage */ }
     }
     ctx.$store = _store;
     ctx.$refs = _buildRefs(el);
 
-    // Discover states: save each state's content as a template for lazy rendering
-    var stateEls = _own(el, '[mp-state]');
+    // Discover states recursively (handles compound/hierarchical states).
+    // A compound state is an mp-state that contains child mp-state elements.
+    // Content OUTSIDE child mp-state elements is "chrome" (always visible
+    // when the compound state is active). Child mp-state content is templated
+    // and shown/hidden on internal transitions.
     var stateMap = {};
     var stateNames = [];
     var stateTmpls = {};
-    for (var i = 0; i < stateEls.length; i++) {
-      var sn = stateEls[i].getAttribute('mp-state');
-      stateMap[sn] = stateEls[i];
-      stateNames.push(sn);
-      var tmpl = document.createElement('template');
-      while (stateEls[i].firstChild) tmpl.content.appendChild(stateEls[i].firstChild);
-      stateTmpls[sn] = tmpl;
-      stateEls[i].hidden = true;
+    var compoundChromes = {}; // compound state dot-path → chrome template
+
+    function _discoverStates(parentEl, prefix) {
+      // Find direct child mp-state elements (not deeper nested)
+      var children = parentEl.querySelectorAll('[mp-state]');
+      var directChildren = [];
+      for (var i = 0; i < children.length; i++) {
+        // Must belong to this machine, not a nested [mp]
+        if (children[i].closest('[mp]') !== el) continue;
+        // Must be a direct child of parentEl (not nested inside another mp-state at this level)
+        var parentState = children[i].parentElement ? children[i].parentElement.closest('[mp-state]') : null;
+        if (parentState && parentState.closest('[mp]') === el) {
+          // This mp-state is inside another mp-state in the same machine
+          // Only include if the parent mp-state is parentEl itself
+          if (parentState !== parentEl) continue;
+        } else if (parentEl !== el) {
+          continue;
+        }
+        directChildren.push(children[i]);
+      }
+
+      for (var j = 0; j < directChildren.length; j++) {
+        var childEl = directChildren[j];
+        var shortName = childEl.getAttribute('mp-state');
+        var fullPath = prefix ? prefix + '.' + shortName : shortName;
+
+        stateMap[fullPath] = childEl;
+        stateNames.push(fullPath);
+
+        // Check for nested mp-state elements (compound state)
+        var nestedStates = childEl.querySelectorAll('[mp-state]');
+        var hasChildren = false;
+        for (var k = 0; k < nestedStates.length; k++) {
+          if (nestedStates[k].closest('[mp]') === el) {
+            var nsParent = nestedStates[k].parentElement ? nestedStates[k].parentElement.closest('[mp-state]') : null;
+            if (nsParent === childEl) { hasChildren = true; break; }
+          }
+        }
+
+        if (hasChildren) {
+          // Compound state: separate chrome (non-mp-state children) from child states
+          var chromeTmpl = document.createElement('template');
+          var childNodes = Array.prototype.slice.call(childEl.childNodes);
+          for (var cn = 0; cn < childNodes.length; cn++) {
+            var node = childNodes[cn];
+            if (node.nodeType === 1 && node.hasAttribute && node.hasAttribute('mp-state')) continue;
+            chromeTmpl.content.appendChild(node);
+          }
+          compoundChromes[fullPath] = chromeTmpl;
+          // Don't template the whole compound state — children are templated individually
+          stateTmpls[fullPath] = null;
+          childEl.hidden = true;
+          // Recurse into children
+          _discoverStates(childEl, fullPath);
+        } else {
+          // Atomic state: template all content.
+          // Template stays in the DOM so outerHTML captures the full machine
+          // definition for transport. <template> is inert — no rendering cost.
+          var tmpl = document.createElement('template');
+          tmpl.setAttribute('mp-state-template', fullPath);
+          while (childEl.firstChild) tmpl.content.appendChild(childEl.firstChild);
+          stateTmpls[fullPath] = tmpl;
+          childEl.after(tmpl);
+          // mp-where states get a loading indicator — shown while the server
+          // response is in flight. Customisable via mp-loading attribute.
+          if (childEl.hasAttribute('mp-where')) {
+            childEl.innerHTML = childEl.getAttribute('mp-loading') || _defaultLoading;
+          }
+          childEl.hidden = true;
+        }
+      }
     }
 
+    _discoverStates(el, null);
+
+    // Determine initial state (may need to descend into compound)
     var initial = el.getAttribute('mp-initial') || stateNames[0] || null;
-    if (initial && stateTmpls[initial]) {
-      stateMap[initial].appendChild(stateTmpls[initial].content.cloneNode(true));
-      stateMap[initial].hidden = false;
+    if (initial) {
+      // Descend to atomic initial child if compound
+      while (compoundChromes[initial]) {
+        // Show compound and stamp chrome
+        stateMap[initial].hidden = false;
+        stateMap[initial].appendChild(compoundChromes[initial].content.cloneNode(true));
+        // Find first child state
+        var childPrefix = initial + '.';
+        var firstChild = null;
+        for (var si = 0; si < stateNames.length; si++) {
+          if (stateNames[si].indexOf(childPrefix) === 0 && stateNames[si].indexOf('.', childPrefix.length) === -1) {
+            firstChild = stateNames[si];
+            break;
+          }
+        }
+        if (!firstChild) break;
+        initial = firstChild;
+      }
+      // Show and stamp the atomic initial state
+      if (stateTmpls[initial]) {
+        stateMap[initial].appendChild(stateTmpls[initial].content.cloneNode(true));
+        stateMap[initial].hidden = false;
+      }
     }
 
-    return { ctx: ctx, persistKey: persistKey, stateMap: stateMap, stateNames: stateNames, stateTmpls: stateTmpls, initial: initial };
+    return { ctx: ctx, persistKey: persistKey, stateMap: stateMap, stateNames: stateNames, stateTmpls: stateTmpls, compoundChromes: compoundChromes, initial: initial };
   }
 
 
@@ -1526,7 +948,7 @@
     // elements, evaluate each binding once to discover its deps.
     // perf: subsequent renders skip this entirely.
     if (!inst._mpBindCache) {
-      var all = machineEl.querySelectorAll('[mp-text],[mp-model],[mp-show],[mp-hide],[mp-class],[mp-bound]');
+      var all = machineEl.querySelectorAll('[mp-text],[mp-model],[mp-show],[mp-class],[mp-bound]');
       inst._mpBindCache = [];
       for (var i = 0; i < all.length; i++) {
         var elem = all[i];
@@ -1536,9 +958,15 @@
           elem._mpBind = {};
           var attr;
           attr = elem.getAttribute('mp-text'); if (attr) elem._mpBind.text = attr;
-          attr = elem.getAttribute('mp-model'); if (attr) elem._mpBind.model = attr;
+          attr = elem.getAttribute('mp-model');
+          if (attr) {
+            var tag = elem.tagName.toLowerCase();
+            if (tag !== 'input' && tag !== 'select' && tag !== 'textarea') {
+              console.warn('[mp] mp-model="' + attr + '" on <' + tag + '> — only <input>, <select>, and <textarea> support two-way binding.');
+            }
+            elem._mpBind.model = attr;
+          }
           if (elem.hasAttribute('mp-show') && !elem.hasAttribute('mp-state')) elem._mpBind.show = elem.getAttribute('mp-show');
-          attr = elem.getAttribute('mp-hide'); if (attr) elem._mpBind.hide = attr;
           attr = elem.getAttribute('mp-class');
           if (attr) {
             elem._mpBind.classExpr = attr;
@@ -1550,25 +978,38 @@
         // Track deps: evaluate with tracking enabled to discover
         // which context keys this element's bindings read.
         var scope = _scopeFor(elem, machineEl, ctx);
-        _trackingDeps = true; _trackedDeps = {};
+        engine.startTracking();
         try {
           if (elem._mpBind.text) _eval(elem._mpBind.text, scope, state, elem);
           if (elem._mpBind.show) _eval(elem._mpBind.show, scope, state, elem);
-          if (elem._mpBind.hide) _eval(elem._mpBind.hide, scope, state, elem);
           if (elem._mpBind.classExpr) for (var j = 0; j < elem._mpBind.classParsed.length; j++) _seval(elem._mpBind.classParsed[j], _makeScope(scope, state, elem));
           if (elem._mpBindAttrs) for (var j = 0; j < elem._mpBindAttrs.length; j++) _eval(elem._mpBindAttrs[j].expr, scope, state, elem);
         } catch (err) {
-          _trackingDeps = false; _trackedDeps = null;
+          engine.stopTracking();
           var tag = '<' + elem.tagName.toLowerCase();
-          var failedExpr = elem._mpBind.text || elem._mpBind.show || elem._mpBind.hide || elem._mpBind.classExpr || '?';
+          var failedExpr = elem._mpBind.text || elem._mpBind.show || elem._mpBind.classExpr || '?';
           throw new Error('[mp] error in ' + tag + '> expression "' + failedExpr + '": ' + err.message);
         }
-        if (elem._mpBind.model) _trackedDeps[_depKey(elem._mpBind.model)] = true;
-        elem._mpBind.deps = _trackedDeps;
-        _trackingDeps = false; _trackedDeps = null;
+        if (elem._mpBind.model) engine.addDep(_depKey(elem._mpBind.model));
+        elem._mpBind.deps = engine.stopTracking();
         inst._mpBindCache.push(elem);
       }
       dirty = null; // first build — force full render below
+    }
+
+    // ── Phase 2b: Evaluate mp-let computed bindings ──────────
+    // Computed values are injected into ctx before bindings read them.
+    // They participate in dirty tracking: if a dependency changes,
+    // the let value recomputes and any binding that reads it re-renders.
+    if (inst._mpLet) {
+      var letScope = _makeScope(ctx, state, machineEl);
+      for (var li = 0; li < inst._mpLet.length; li++) {
+        var lb = inst._mpLet[li];
+        var prev = ctx[lb.name];
+        var val = _sevalPure(lb.ast, letScope);
+        ctx[lb.name] = val;
+        if (val !== prev && dirty) dirty[_depKey(lb.name)] = true;
+      }
     }
 
     // ── Phase 3: Apply bindings ──────────────────────────────
@@ -1590,21 +1031,18 @@
       try {
         if (binding.text) {
           var val = _eval(binding.text, scope, state, bound);
-          if (val !== undefined && val !== null) bound.textContent = val;
+          bound.textContent = (val != null) ? val : '';
         }
 
         if (binding.model) {
           var val = _get(scope, binding.model);
           if (bound.type === 'checkbox') bound.checked = !!val;
+          else if (bound.type === 'radio') bound.checked = (bound.value === val);
           else if (document.activeElement !== bound) bound.value = (val != null) ? val : '';
         }
 
         if (binding.show) {
           bound.hidden = !_eval(binding.show, scope, state, bound);
-        }
-
-        if (binding.hide) {
-          bound.hidden = !!_eval(binding.hide, scope, state, bound);
         }
 
         if (binding.classExpr) {
@@ -1614,7 +1052,12 @@
           var next = [];
           for (var j = 0; j < binding.classParsed.length; j++) {
             var cls = _seval(binding.classParsed[j], classScope);
-            if (cls && typeof cls === 'string') { next.push(cls); bound.classList.add(cls); }
+            if (cls && typeof cls === 'string') {
+              var parts = cls.split(/\s+/);
+              for (var k = 0; k < parts.length; k++) {
+                if (parts[k]) { next.push(parts[k]); bound.classList.add(parts[k]); }
+              }
+            }
           }
           for (var j = 0; j < prev.length; j++) {
             if (next.indexOf(prev[j]) === -1) bound.classList.remove(prev[j]);
@@ -1639,7 +1082,7 @@
       } catch (err) {
         // Report which element and binding failed, then re-throw
         var tag = '<' + bound.tagName.toLowerCase();
-        var failedExpr = binding.text || binding.show || binding.hide || binding.classExpr || (bound._mpBindAttrs && bound._mpBindAttrs[0] && bound._mpBindAttrs[0].expr) || '?';
+        var failedExpr = binding.text || binding.show || binding.classExpr || (bound._mpBindAttrs && bound._mpBindAttrs[0] && bound._mpBindAttrs[0].expr) || '?';
         throw new Error('[mp] error in ' + tag + '> expression "' + failedExpr + '": ' + err.message);
       }
     }
@@ -1659,14 +1102,32 @@
     }
 
     // ── Phase 4: Persist ─────────────────────────────────────
+    // Exclude mp-let computed values — they are derived, not source data.
+    var letKeys = null;
+    if (inst._mpLet) {
+      letKeys = {};
+      for (var li = 0; li < inst._mpLet.length; li++) letKeys[inst._mpLet[li].name] = true;
+    }
     if (persistKey) {
       var toSave = {};
       for (var k in ctx) {
-        if (ctx.hasOwnProperty(k) && k.charAt(0) !== '$') toSave[k] = ctx[k];
+        if (ctx.hasOwnProperty(k) && k.charAt(0) !== '$' && !(letKeys && letKeys[k])) toSave[k] = ctx[k];
       }
-      try { localStorage.setItem('mp:' + persistKey, JSON.stringify(toSave)); }
+      try { localStorage.setItem('mp-' + persistKey, JSON.stringify(toSave)); }
       catch (e) { /* localStorage full or unavailable */ }
     }
+
+    // ── Phase 5: Sync mp-ctx attribute ───────────────────────
+    // The markup IS the state. Keep mp-ctx in sync so the
+    // element's outerHTML is always a portable machine snapshot.
+    var ctxSync = {};
+    for (var k in ctx) {
+      if (ctx.hasOwnProperty(k) && k.charAt(0) !== '$' && k.indexOf('__mp') !== 0 && !(letKeys && letKeys[k])) {
+        ctxSync[k] = ctx[k];
+      }
+    }
+    try { machineEl.setAttribute('mp-ctx', JSON.stringify(ctxSync)); }
+    catch (e) { /* circular reference or similar */ }
   }
 
 
@@ -1677,17 +1138,96 @@
   // run the first render, evaluate temporal transitions, set up routing,
   // and run mp-init.
 
-  function _wireInstance(el, inst, setup, evalTransition) {
+  function _wireInstance(el, inst, setup, evalTemporal) {
     _regReceive(inst);
     _scanBindAttrs(el, el);
     _attachDomEvents(el, inst);
     if (setup.initial && setup.stateMap[setup.initial]) _initNested(setup.stateMap[setup.initial]);
     inst.update();
-    if (setup.initial && setup.stateMap[setup.initial]) evalTransition(setup.stateMap[setup.initial], setup.initial);
-    _setupRoute(el, inst, setup.stateMap, setup.stateTmpls, setup.initial);
+    if (setup.initial && setup.stateMap[setup.initial]) evalTemporal(setup.stateMap[setup.initial], setup.initial);
     var initExpr = el.getAttribute('mp-init');
     if (initExpr) {
-      setTimeout(function () { _exec(initExpr, setup.ctx, inst.state, el); }, 0);
+      setTimeout(function () { _exec(initExpr, setup.ctx, inst.state, el, null, inst); }, 0);
+    }
+    // Fire mp-init on the initial state (same as when to() enters a state)
+    if (setup.initial && setup.stateMap[setup.initial] && setup.stateMap[setup.initial].hasAttribute('mp-init')) {
+      var stateInitExpr = setup.stateMap[setup.initial].getAttribute('mp-init');
+      setTimeout(function () { _exec(stateInitExpr, setup.ctx, inst.state, el, null, inst); }, 0);
+    }
+    // If the initial state has mp-where, trigger capability routing.
+    // Wait for the route table to be available before routing.
+    if (setup.initial && setup.stateMap[setup.initial] && setup.stateMap[setup.initial].hasAttribute('mp-where')) {
+      var triggerRoute = function () {
+        if (engine.debug) console.log('[mp-debug] initial mp-where: ' + inst.name + '/' + setup.initial + ' (' + _routeTable.length + ' nodes in route table)');
+        inst.to(setup.initial);
+      };
+      if (_routeTableReady) {
+        _routeTableReady.then(triggerRoute);
+      } else {
+        setTimeout(triggerRoute, 0);
+      }
+    }
+
+    // ── URL routing: collect mp-url map, wire popstate, match initial URL ──
+    var urlStates = el.querySelectorAll('[mp-state][mp-url]');
+    // Check if the current URL owner is still alive (in the document)
+    if (_urlOwner && !document.contains(_urlOwner.el)) _urlOwner = null;
+    if (urlStates.length > 0 && !_urlOwner) {
+      inst._urlMap = {};
+      for (var ui = 0; ui < urlStates.length; ui++) {
+        if (urlStates[ui].closest('[mp]') !== el) continue;
+        var urlState = urlStates[ui].getAttribute('mp-state');
+        var urlParsed = _parseUrlAttr(urlStates[ui].getAttribute('mp-url'));
+        if (urlParsed) inst._urlMap[urlState] = urlParsed;
+      }
+      _urlOwner = inst;
+
+      // popstate: back/forward → match URL → transition
+      var popHandler = function () {
+        if (_urlOwner !== inst) return;
+        var path = window.location.pathname;
+        for (var state in inst._urlMap) {
+          if (!inst._urlMap.hasOwnProperty(state)) continue;
+          var entry = inst._urlMap[state];
+          var matched = _matchUrl(path, entry.pattern, entry.params);
+          if (matched) {
+            for (var mk in matched) { if (matched.hasOwnProperty(mk)) inst.ctx[mk] = matched[mk]; }
+            inst.to(state);
+            return;
+          }
+        }
+      };
+      window.addEventListener('popstate', popHandler);
+      if (!el._mpCleanups) el._mpCleanups = [];
+      el._mpCleanups.push(function () {
+        window.removeEventListener('popstate', popHandler);
+        if (_urlOwner === inst) _urlOwner = null;
+      });
+
+      // Initial page load: match current URL to a state
+      var loadPath = window.location.pathname;
+      for (var state in inst._urlMap) {
+        if (!inst._urlMap.hasOwnProperty(state)) continue;
+        var entry = inst._urlMap[state];
+        var matched = _matchUrl(loadPath, entry.pattern, entry.params);
+        if (matched && state !== inst.state) {
+          for (var mk in matched) { if (matched.hasOwnProperty(mk)) inst.ctx[mk] = matched[mk]; }
+          // Defer so mp-where routing can use the route table
+          (function (targetState) {
+            var doNav = function () { inst.to(targetState); };
+            if (_routeTableReady) _routeTableReady.then(doNav);
+            else setTimeout(doNav, 0);
+          })(state);
+          break;
+        }
+      }
+
+      // Push URL for the initial state if it has mp-url
+      if (inst._urlMap[inst.state]) {
+        var initEntry = inst._urlMap[inst.state];
+        var initUrl = _resolveUrl(initEntry.pattern, initEntry.params, inst.ctx);
+        if (window.history && window.history.replaceState) history.replaceState({ mpState: inst.state }, '', initUrl);
+      }
     }
   }
 
@@ -1699,20 +1239,35 @@
     var stateMap = setup.stateMap;
     var stateNames = setup.stateNames;
     var stateTmpls = setup.stateTmpls;
+    var compoundChromes = setup.compoundChromes;
     var persistKey = setup.persistKey;
     var initial = setup.initial;
     var afterTimer = null;
     var stateIntervals = [];
+    // Expose for cleanup on machine destruction
+    el._mpTimers = {
+      getAfter: function () { return afterTimer; },
+      clearAfter: function () { if (afterTimer) { clearTimeout(afterTimer); afterTimer = null; } },
+      clearIntervals: function () { for (var i = 0; i < stateIntervals.length; i++) clearInterval(stateIntervals[i]); stateIntervals = []; }
+    };
 
-    // Evaluate mp-transition temporal expressions: (after ms state), (every ms body).
+    // Evaluate mp-temporal s-expressions: (animate), (after ms expr), (every ms expr).
     // Defined here so it closes over afterTimer/stateIntervals/ctx/el/inst.
     // Called from to() on state entry and from post-init for the initial state.
-    function _evalTransition(stateEl, stateName) {
-      var transVal = stateEl.getAttribute('mp-transition');
+    function _evalTemporal(stateEl, stateName) {
+      var transVal = stateEl.getAttribute('mp-temporal');
       if (!transVal) return;
       var tScope = _makeScope(ctx, stateName, el);
-      tScope.__mpAfterTimer = function (ms, st) {
-        afterTimer = setTimeout(function () { afterTimer = null; inst.to(st); }, ms);
+      tScope.__mpAfterTimer = function (ms, bodyNode) {
+        afterTimer = setTimeout(function () {
+          afterTimer = null;
+          var scope = _makeScope(inst.ctx, inst.state, el);
+          scope.__mpInst = inst;
+          _seval(bodyNode, scope);
+          _applyScope(scope, inst.ctx, inst);
+          if (scope.__mpTo) inst.to(scope.__mpTo);
+          else inst.update();
+        }, ms);
       };
       tScope.__mpEveryInterval = function (ms, bodyNode) {
         var id = setInterval(function () {
@@ -1723,6 +1278,9 @@
           inst.update();
         }, ms);
         stateIntervals.push(id);
+      };
+      tScope.__mpAnimate = function () {
+        _transitionEnter(stateEl);
       };
       _seval(_parse(transVal), tScope);
     }
@@ -1737,85 +1295,205 @@
       // ── to — state transition ──────────────────────────────────
       // Destroys leaving state's content, creates entering state's
       // content from template, runs enter/leave CSS transitions,
-      // rebuilds $refs, calls update(), fires mp:transition event,
-      // evaluates mp-transition temporal expressions.
-      to: function (target) {
-        if (target === '.') target = inst.state;
-        if (stateNames.length > 0 && stateNames.indexOf(target) === -1) {
+      // rebuilds $refs, calls update(), fires mp-temporal event,
+      // evaluates mp-temporal temporal expressions.
+      to: function (target, contentHtml) {
+
+        // Resolve target: try as-is, then relative to current compound parent
+        var resolvedTarget = null;
+        if (stateNames.indexOf(target) !== -1) {
+          resolvedTarget = target;
+        } else {
+          // Walk up from current state checking parent.target
+          var parts = inst.state.split('.');
+          for (var ri = parts.length - 1; ri >= 0; ri--) {
+            var candidate = parts.slice(0, ri).concat(target).join('.');
+            if (candidate && stateNames.indexOf(candidate) !== -1) {
+              resolvedTarget = candidate;
+              break;
+            }
+          }
+        }
+        if (!resolvedTarget) {
           console.warn('[mp] unknown state "' + target + '" in "' + name + '"');
           return false;
         }
+        target = resolvedTarget;
+
+        // If target is compound, descend to its initial atomic child
+        while (compoundChromes[target]) {
+          var childPrefix = target + '.';
+          var firstChild = null;
+          for (var fi = 0; fi < stateNames.length; fi++) {
+            if (stateNames[fi].indexOf(childPrefix) === 0 && stateNames[fi].indexOf('.', childPrefix.length) === -1) {
+              firstChild = stateNames[fi];
+              break;
+            }
+          }
+          if (!firstChild) break;
+          target = firstChild;
+        }
+
+        // ── State-level mp-where: capability routing ────────────────
+        if (!contentHtml && stateMap[target] && stateMap[target].hasAttribute('mp-where')) {
+          var whereExpr = stateMap[target].getAttribute('mp-where');
+          var required = _eval(whereExpr, ctx, inst.state, el);
+          if (Array.isArray(required) && required.length > 0) {
+            var hasAll = true;
+            for (var wi = 0; wi < required.length; wi++) {
+              if (_hostCapabilities.indexOf(required[wi]) === -1) { hasAll = false; break; }
+            }
+            if (!hasAll) {
+              var node = _findCapableNode(required);
+              if (!node) {
+                if (!_registry) {
+                  console.warn('[mp] mp-where="' + whereExpr + '" requires capabilities [' + required.join(', ') + '] but no registry is configured. Call MachinePerfect.init({ registry: url }) to set one.');
+                } else if (_routeTable.length === 0) {
+                  console.warn('[mp] mp-where requires [' + required.join(', ') + '] but the route table is empty. Check that the registry at ' + _registry + ' is running and nodes are registered.');
+                } else {
+                  console.warn('[mp] no registered node has capabilities [' + required.join(', ') + ']. Available nodes: ' + _routeTable.map(function (n) { return n.id + '=[' + n.capabilities.join(',') + ']'; }).join(', '));
+                }
+                return false;
+              }
+              var routeTarget = target;
+              if (engine.debug) console.log('[mp-debug] routing to ' + node.id + ' for ' + name + '/' + routeTarget);
+              _sendMachineToNode(el, node, routeTarget)
+                .then(function (html) {
+                  if (engine.debug) console.log('[mp-debug] received ' + html.length + ' bytes for ' + name + '/' + routeTarget);
+                  inst.to(routeTarget, html);
+                })
+                .catch(function (err) {
+                  console.warn('[mp] routing to ' + node.id + ' failed: ' + (err && err.message ? err.message : String(err)));
+                });
+              return true;
+            }
+          }
+        }
+
         if (afterTimer) { clearTimeout(afterTimer); afterTimer = null; }
         for (var ci = 0; ci < stateIntervals.length; ci++) clearInterval(stateIntervals[ci]);
         stateIntervals = [];
 
         var prev = inst.state;
         inst.state = target;
-        if (_debug) console.log('[mp:debug] ' + name + ': ' + prev + ' → ' + target);
-
-        // Invalidate binding cache — DOM structure is about to change
+        if (engine.debug) console.log('[mp-debug] ' + name + ': ' + prev + ' → ' + target);
         if (prev !== target) inst._mpBindCache = null;
 
-        // ── Destroy leaving state's content ──────────────────────────
-        if (prev && stateMap[prev] && prev !== target) {
-          var leaveEl = stateMap[prev];
-          // mp-exit: run cleanup before content is destroyed (cancel fetches, release resources)
+        // Self-transition with contentHtml: destroy and re-stamp without full exit/enter
+        if (prev === target && contentHtml && stateMap[target]) {
+          var selfEl = stateMap[target];
+          if (selfEl.hasAttribute('mp-exit')) _exec(selfEl.getAttribute('mp-exit'), ctx, target, el, null, inst);
+          var selfNested = selfEl.querySelectorAll('[mp]');
+          for (var sni = 0; sni < selfNested.length; sni++) _cleanupInstance(selfNested[sni]);
+          selfEl.innerHTML = contentHtml;
+          _scanBindAttrs(selfEl, el);
+          _attachDomEvents(selfEl, inst);
+          _initNested(selfEl);
+          selfEl.hidden = false;
+          ctx.$refs = _buildRefs(el);
+          inst.update();
+          if (selfEl.hasAttribute('mp-init')) {
+            var siExpr = selfEl.getAttribute('mp-init');
+            setTimeout(function () { _exec(siExpr, ctx, inst.state, el, null, inst); }, 0);
+          }
+          el.dispatchEvent(new CustomEvent('mp-state-change', { bubbles: true, detail: { machine: name, prev: prev, next: target, ctx: ctx } }));
+          if (inst._urlMap && inst._urlMap[target]) {
+            var urlEntry = inst._urlMap[target];
+            if (window.history && window.history.pushState) history.pushState({ mpState: target }, '', _resolveUrl(urlEntry.pattern, urlEntry.params, ctx));
+          }
+          if (stateMap[target]) _evalTemporal(stateMap[target], target);
+          return true;
+        }
+
+        var paths = _transitionPaths(prev, target);
+        var exitPath = paths.exitPath;
+        var enterPath = paths.enterPath;
+
+        // ── Exit states (innermost first) ───────────────────────────
+        for (var xi = 0; xi < exitPath.length; xi++) {
+          var exitState = exitPath[xi];
+          if (!stateMap[exitState]) continue;
+          var leaveEl = stateMap[exitState];
           if (leaveEl.hasAttribute('mp-exit')) {
-            _exec(leaveEl.getAttribute('mp-exit'), ctx, prev, el, null, inst);
+            _exec(leaveEl.getAttribute('mp-exit'), ctx, exitState, el, null, inst);
           }
-          var destroyContent = function () {
-            var nested = leaveEl.querySelectorAll('[mp]');
-            for (var i = 0; i < nested.length; i++) _cleanupInstance(nested[i]);
+          var nested = leaveEl.querySelectorAll('[mp]');
+          for (var ni2 = 0; ni2 < nested.length; ni2++) _cleanupInstance(nested[ni2]);
+          // For compound states, also clear chrome
+          if (compoundChromes[exitState]) {
+            // Remove chrome nodes (not child mp-state elements)
+            var chromeNodes = [];
+            for (var cn = 0; cn < leaveEl.childNodes.length; cn++) {
+              var node = leaveEl.childNodes[cn];
+              if (node.nodeType === 1 && node.hasAttribute && node.hasAttribute('mp-state')) continue;
+              chromeNodes.push(node);
+            }
+            for (var cn2 = 0; cn2 < chromeNodes.length; cn2++) leaveEl.removeChild(chromeNodes[cn2]);
+          } else {
             leaveEl.innerHTML = '';
-            leaveEl.hidden = true;
-          };
-          if (leaveEl.hasAttribute('mp-transition')) {
-            _transitionLeave(leaveEl, destroyContent);
-          } else {
-            destroyContent();
+          }
+          leaveEl.hidden = true;
+        }
+
+        // ── Enter states (outermost first) ──────────────────────────
+        for (var eni = 0; eni < enterPath.length; eni++) {
+          var enterState = enterPath[eni];
+          if (!stateMap[enterState]) continue;
+          var enterEl = stateMap[enterState];
+          enterEl.hidden = false;
+          if (compoundChromes[enterState]) {
+            // Compound state: stamp chrome
+            enterEl.appendChild(compoundChromes[enterState].content.cloneNode(true));
+            _scanBindAttrs(enterEl, el);
+            _attachDomEvents(enterEl, inst);
+          } else if (enterState === target) {
+            // Atomic target state: stamp content
+            if (contentHtml) {
+              enterEl.innerHTML = contentHtml;
+            } else if (stateTmpls[enterState]) {
+              enterEl.appendChild(stateTmpls[enterState].content.cloneNode(true));
+            }
+            _scanBindAttrs(enterEl, el);
+            _attachDomEvents(enterEl, inst);
+            _initNested(enterEl);
           }
         }
 
-        // ── Create entering state's content from template ────────────
-        if (stateMap[target] && stateTmpls[target] && prev !== target) {
-          var enterEl = stateMap[target];
-          enterEl.appendChild(stateTmpls[target].content.cloneNode(true));
-          // Set up the freshly stamped content
-          _scanBindAttrs(enterEl, el);
-          _attachDomEvents(enterEl, inst);
-          _initNested(enterEl);
-          if (enterEl.hasAttribute('mp-transition')) {
-            _transitionEnter(enterEl);
-          } else {
-            enterEl.hidden = false;
-          }
-        }
-
-        // Rebuild $refs (content changed, refs may have moved)
         ctx.$refs = _buildRefs(el);
-
         inst.update();
 
-        // mp-init on state elements: runs each time the state is entered.
-        // This is the entry action — use it for setup that needs fresh content
-        // (focus an input, render a chart, fetch detail data).
-        if (stateMap[target] && stateMap[target].hasAttribute('mp-init') && prev !== target) {
-          var stateInit = stateMap[target].getAttribute('mp-init');
-          setTimeout(function () { _exec(stateInit, ctx, inst.state, el); }, 0);
+        // Run mp-init on each entered state (outermost first).
+        // Deferred via setTimeout(0) so the DOM is fully stamped and bindings
+        // are evaluated before init runs — ensures $refs and focus targets exist.
+        for (var ini = 0; ini < enterPath.length; ini++) {
+          var initState = enterPath[ini];
+          if (stateMap[initState] && stateMap[initState].hasAttribute('mp-init') && initState !== prev) {
+            var stateInit = stateMap[initState].getAttribute('mp-init');
+            (function (expr) {
+              setTimeout(function () { _exec(expr, ctx, inst.state, el, null, inst); }, 0);
+            })(stateInit);
+          }
         }
 
-        el.dispatchEvent(new CustomEvent('mp:transition', {
+        el.dispatchEvent(new CustomEvent('mp-state-change', {
           bubbles: true,
           detail: { machine: name, prev: prev, next: target, ctx: ctx }
         }));
 
-        if (stateMap[target]) _evalTransition(stateMap[target], target);
+        // URL routing: push URL for the new state
+        if (inst._urlMap && inst._urlMap[target]) {
+          var urlEntry = inst._urlMap[target];
+          var resolvedUrl = _resolveUrl(urlEntry.pattern, urlEntry.params, ctx);
+          if (window.history && window.history.pushState) history.pushState({ mpState: target }, '', resolvedUrl);
+        }
+
+        if (stateMap[target]) _evalTemporal(stateMap[target], target);
         return true;
       },
 
-      emit: function (eventName) {
-        document.dispatchEvent(new CustomEvent('mp:' + eventName, {
-          detail: { source: el, ctx: ctx, state: inst.state }
+      emit: function (eventName, payload) {
+        document.dispatchEvent(new CustomEvent('mp-' + eventName, {
+          detail: { source: el, payload: payload }
         }));
       },
 
@@ -1825,8 +1503,22 @@
       }
     };
 
+    // Parse mp-let: alternating name/expression pairs for machine-scope computed values.
+    // parse() wraps multiple top-level forms as (do name1 expr1 name2 expr2 ...).
+    // Store parsed AST nodes directly — evaluated via _seval in _applyBindings.
+    var letAttr = el.getAttribute('mp-let');
+    if (letAttr) {
+      var letParsed = _parse(letAttr);
+      inst._mpLet = [];
+      if (Array.isArray(letParsed) && letParsed[0] && letParsed[0].v === 'do') {
+        for (var li = 1; li < letParsed.length - 1; li += 2) {
+          inst._mpLet.push({ name: letParsed[li].v, ast: letParsed[li + 1] });
+        }
+      }
+    }
+
     el._mp = inst;
-    _wireInstance(el, inst, setup, _evalTransition);
+    _wireInstance(el, inst, setup, _evalTemporal);
     return inst;
   }
 
@@ -1843,50 +1535,63 @@
 
     // mp-to: click → transition
     //
-    // When inside an mp-each item, the item scope ($item, $index, item
-    // properties) is available for reading in guards and actions, but
-    // ACTION MUTATIONS WRITE TO THE MACHINE'S CONTEXT, not the item scope.
-    // This lets (set! selected $item) work correctly from list items.
+    // Two modes, detected by leading '(':
+    //   mp-to="stateName"     — bare state name, simple transition
+    //   mp-to="(expression)"  — s-expression with full compositional power
+    //
+    // In s-expression mode, use (to state), (emit name), (prevent!),
+    // (stop!) as signal forms. Guards are just (when) / (if).
     document.addEventListener('click', function (e) {
       var toEl = e.target.closest('[mp-to]');
       if (!toEl) return;
+      e.preventDefault();
       var machineEl = toEl.closest('[mp]');
-      if (!machineEl || !machineEl._mp) return;
-      var inst = machineEl._mp;
-
-      // Get item scope for reads (has $item, $index, item properties)
-      var itemScope = _scopeFor(toEl, machineEl, inst.ctx);
-
-      // Guard evaluates against item scope (needs to read item data)
-      var guard = toEl.getAttribute('mp-guard');
-      if (guard && !_eval(guard, itemScope, inst.state, toEl)) {
-        toEl.dispatchEvent(new CustomEvent('mp:guard-failed', { bubbles: true }));
+      if (!machineEl || !machineEl._mp) {
+        console.warn('[mp] mp-to="' + toEl.getAttribute('mp-to') + '" is not inside a machine element ([mp]). Wrap it in a <div mp="name">.');
         return;
       }
+      var inst = machineEl._mp;
+      var value = toEl.getAttribute('mp-to');
 
-      // Action writes to MACHINE context, with item data overlaid for reads
-      var action = toEl.getAttribute('mp-action');
-      if (action) {
-        if (itemScope !== inst.ctx) {
-          // Inside mp-each: merge item scope into machine ctx for reads,
-          // but mutations land on machine ctx
-          var merged = Object.create(inst.ctx);
-          for (var k in itemScope) {
-            if (itemScope.hasOwnProperty(k)) merged[k] = itemScope[k];
+      if (value.charAt(0) === '(') {
+        // S-expression mode: decompose into { target, guard, action, emit }
+        var slots = engine.decomposeMpTo(value);
+        var itemScope = _scopeFor(toEl, machineEl, inst.ctx);
+
+        // Evaluate guard
+        if (slots.guard) {
+          var guardResult = _eval(slots.guard, itemScope, inst.state, toEl);
+          if (!guardResult) {
+            if (engine.debug) console.log('[mp-debug] guard blocked: ' + slots.guard);
+            return;
           }
-          _exec(action, merged, inst.state, toEl, e);
-          _applyScope(merged, inst.ctx, inst);
-        } else {
-          _exec(action, inst.ctx, inst.state, toEl, e, inst);
         }
+
+        // Execute action
+        if (slots.action) {
+          if (itemScope !== inst.ctx) {
+            var merged = Object.create(inst.ctx);
+            for (var k in itemScope) { if (itemScope.hasOwnProperty(k)) merged[k] = itemScope[k]; }
+            _exec(slots.action, merged, inst.state, machineEl, e, inst);
+            _applyScope(merged, inst.ctx, inst);
+          } else {
+            _exec(slots.action, inst.ctx, inst.state, machineEl, e, inst);
+          }
+        }
+
+        // Emit — evaluate payload in the element's scope (includes mp-each item data)
+        if (slots.emit) {
+          var emitPayload = slots.emitPayload ? _eval(slots.emitPayload, itemScope, inst.state, toEl) : undefined;
+          inst.emit(slots.emit, emitPayload);
+        }
+
+        // Transition
+        if (slots.target) inst.to(slots.target);
+        else inst.update();
+      } else {
+        // Bare state name mode: simple transition
+        inst.to(value);
       }
-
-      var emit = toEl.getAttribute('mp-emit');
-      if (emit) inst.emit(emit);
-
-      var target = toEl.getAttribute('mp-to');
-      if (target === '.') target = inst.state;
-      inst.to(target);
     });
 
     // mp-model: input → context
@@ -1916,10 +1621,13 @@
       _modelSet(modelEl, machineEl);
     });
 
-    // mp-model on <select>
+    // mp-model on <select>, <input type="radio">, <input type="file">
+    // These fire 'change' not 'input'
     document.addEventListener('change', function (e) {
-      var modelEl = e.target.closest('select[mp-model]');
+      var modelEl = e.target.closest('[mp-model]');
       if (!modelEl) return;
+      var tag = modelEl.tagName.toLowerCase();
+      if (tag !== 'select' && !(tag === 'input' && (modelEl.type === 'radio' || modelEl.type === 'file' || modelEl.type === 'checkbox'))) return;
       var machineEl = modelEl.closest('[mp]');
       if (!machineEl || !machineEl._mp) return;
       _modelSet(modelEl, machineEl);
@@ -1936,7 +1644,7 @@
     var styleEl = document.createElement('style');
     styleEl.id = 'mp-css';
     styleEl.textContent =
-      '[mp-state][hidden],[mp-show][hidden],[mp-hide][hidden]{display:none!important}';
+      '[mp-state][hidden],[mp-show][hidden]{display:none!important}';
     document.head.appendChild(styleEl);
   }
 
@@ -1965,10 +1673,13 @@
       _templates[tmplEls[i].getAttribute('mp-define')] = tmplEls[i];
     }
 
-    // Init all machines
+    // Init all machines that are still in the live DOM. A parent machine's
+    // _discoverStates may have moved nested machines into a <template>
+    // DocumentFragment. Those are no longer in the document and will be
+    // initialized by _initNested when their parent state is entered.
     var els = root.querySelectorAll('[mp]');
     for (var i = 0; i < els.length; i++) {
-      if (!els[i]._mp) _createInstance(els[i]);
+      if (!els[i]._mp && document.contains(els[i])) _createInstance(els[i]);
     }
   }
 
@@ -1990,9 +1701,11 @@
     if (!el._mp) return;
     // Remove from inter-machine event registry, clean up empty channels
     for (var name in _events) {
+      var handler = _events[name]._handler;
       _events[name] = _events[name].filter(function (e) { return e.inst.el !== el; });
-      if (_events[name].length === 0 && _events[name]._handler) {
-        document.removeEventListener('mp:' + name, _events[name]._handler);
+      _events[name]._handler = handler;
+      if (_events[name].length === 0 && handler) {
+        document.removeEventListener('mp-' + name, handler);
         delete _events[name];
       }
     }
@@ -2000,6 +1713,12 @@
     if (el._mpCleanups) {
       for (var i = 0; i < el._mpCleanups.length; i++) el._mpCleanups[i]();
       delete el._mpCleanups;
+    }
+    // Clear active timers to prevent ghost callbacks on dead machines
+    if (el._mpTimers) {
+      el._mpTimers.clearAfter();
+      el._mpTimers.clearIntervals();
+      delete el._mpTimers;
     }
     delete el._mp;
   }
@@ -2068,20 +1787,148 @@
   // ║  Public API                                                             ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
 
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  Capability-based routing                                               ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+  //
+  // The browser is a capability host. It declares what it can do and what
+  // formats it accepts. When a transition has mp-where and the browser can't
+  // satisfy the required capabilities, it looks up the route table and sends
+  // the machine to a capable node.
+
+  var _registry = null;
+  var _routeTable = [];
+  var _hostCapabilities = ['dom', 'user-input', 'localstorage', 'css-transition'];
+  var _defaultLoading = '<div class="mp-loading" style="display:flex;align-items:center;justify-content:center;padding:2rem;opacity:0.5">Loading\u2026</div>';
+
+
+  var _routeTableReady = null; // promise that resolves when route table is loaded
+
+  function _fetchRouteTable() {
+    if (!_registry) return Promise.resolve();
+    _routeTableReady = fetch(_registry + '/routes')
+      .then(function (res) { return res.json(); })
+      .then(function (nodes) {
+        _routeTable = nodes;
+        if (engine.debug) console.log('[mp-debug] route table loaded: ' + nodes.length + ' nodes');
+      })
+      .catch(function () {
+        if (engine.debug) console.log('[mp-debug] registry not available');
+      });
+    return _routeTableReady;
+  }
+
+  function _findCapableNode(requires) {
+    for (var i = 0; i < _routeTable.length; i++) {
+      var node = _routeTable[i];
+      var hasAll = true;
+      for (var j = 0; j < requires.length; j++) {
+        if (node.capabilities.indexOf(requires[j]) === -1) { hasAll = false; break; }
+      }
+      if (hasAll) return node;
+    }
+    return null;
+  }
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  URL routing                                                            ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+  //
+  // mp-url on state elements maps machine state to browser URL.
+  // Plain string: mp-url="/orders"
+  // S-expression:  mp-url="(path '/orders/:id' _actionId)"
+  //   — :id placeholder bound to _actionId in context.
+  //
+  // One machine owns the URL. States without mp-url don't touch it.
+
+  var _urlOwner = null; // the inst that owns the URL bar
+
+  // Parse a mp-url value into { pattern, params }.
+  // params maps placeholder name → context key.
+  function _parseUrlAttr(value) {
+    if (!value) return null;
+    if (value.charAt(0) !== '(') {
+      return { pattern: value, params: {} };
+    }
+    // S-expression: (path '/orders/:id' contextKey1 contextKey2 ...)
+    var parsed = _parse(value);
+    if (!Array.isArray(parsed) || !parsed[0] || parsed[0].v !== 'path') return null;
+    var pattern = parsed[1] && parsed[1].t === 'S' ? parsed[1].v : String(parsed[1].v);
+    var placeholders = pattern.match(/:([a-zA-Z_]\w*)/g) || [];
+    var params = {};
+    for (var pi = 0; pi < placeholders.length; pi++) {
+      var paramName = placeholders[pi].substring(1);
+      var contextKey = parsed[pi + 2] ? parsed[pi + 2].v : paramName;
+      params[paramName] = contextKey;
+    }
+    return { pattern: pattern, params: params };
+  }
+
+  // Resolve a URL pattern with context values.
+  function _resolveUrl(pattern, params, ctx) {
+    return pattern.replace(/:([a-zA-Z_]\w*)/g, function (m, name) {
+      var key = params[name] || name;
+      return encodeURIComponent(ctx[key] != null ? ctx[key] : '');
+    });
+  }
+
+  // Match a pathname against a URL pattern. Returns extracted params or null.
+  function _matchUrl(pathname, pattern, params) {
+    var regex = '^' + pattern.replace(/:([a-zA-Z_]\w*)/g, '([^/]+)') + '$';
+    var match = pathname.match(new RegExp(regex));
+    if (!match) return null;
+    var placeholders = pattern.match(/:([a-zA-Z_]\w*)/g) || [];
+    var extracted = {};
+    for (var i = 0; i < placeholders.length; i++) {
+      var paramName = placeholders[i].substring(1);
+      var contextKey = params[paramName] || paramName;
+      extracted[contextKey] = decodeURIComponent(match[i + 1]);
+    }
+    return extracted;
+  }
+
+
+  function _sendMachineToNode(machineEl, node, targetState) {
+    if (!machineEl || !machineEl._mp) return Promise.reject(new Error('no machine'));
+
+    // Sync context to markup
+    machineEl._mp.update();
+
+    var body = machineEl.outerHTML;
+    var targetUrl = node.address + '/api/machine';
+
+    var headers = { 'Content-Type': 'text/html' };
+    if (targetState) headers['X-MP-Target'] = targetState;
+    var machineName = machineEl.getAttribute('mp');
+    if (machineName) headers['X-MP-Machine'] = machineName;
+
+    return fetch(targetUrl, {
+      method: 'POST',
+      headers: headers,
+      body: body
+    }).then(function (res) { return res.text(); });
+  }
+
   return {
-    init: init,
-    get: function (el) { return (el && el._mp) || null; },
-    destroy: function (el) {
-      if (!el) return;
-      var nested = _querySafe(el, '[mp]');
-      for (var i = 0; i < nested.length; i++) _cleanupInstance(nested[i]);
-      _cleanupInstance(el);
+    init: function (rootOrConfig) {
+      if (rootOrConfig && typeof rootOrConfig === 'object' && !rootOrConfig.nodeType) {
+        // Config mode — set registry and capabilities. Don't re-run init().
+        // _boot() handles init() after imports load.
+        var config = rootOrConfig;
+        if (config.registry) {
+          _registry = config.registry;
+          _fetchRouteTable();
+        }
+        if (config.debug) engine.debug = true;
+        if (config.capabilities) _hostCapabilities = config.capabilities;
+        if (config.loading) _defaultLoading = config.loading;
+      } else {
+        init(rootOrConfig);
+      }
     },
     fn: function (name, func) { _userFns[name] = func; },
     store: _store,
-    templates: _templates,
-    version: '0.5.0',
-    get debug() { return _debug; },
-    set debug(v) { _debug = !!v; }
+    get debug() { return engine.debug; },
+    set debug(v) { engine.debug = !!v; }
   };
 });

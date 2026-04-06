@@ -1,0 +1,70 @@
+<%# Pipeline result — static server-rendered output, not a live machine.
+    Uses EJS loops for effects/history because this is a one-shot diagnostic
+    view stamped into the submitted state. The "View All Orders" button
+    uses mp-to because it lives inside the purchase-order machine's DOM. %>
+<div class="max-w-3xl mx-auto space-y-4">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-bold text-mp-gold">Pipeline Complete</h2>
+    <button mp-to="(emit order-approved)"
+            class="btn btn-primary btn-sm gap-1">View All Orders</button>
+  </div>
+
+  <!-- Status card -->
+  <div class="card shadow-xl <%= blocked ? 'bg-error/10 border border-error' : 'bg-success/10 border border-success' %>">
+    <div class="card-body p-4 gap-2">
+      <div class="flex items-center gap-3">
+        <div class="text-3xl"><%- blocked ? '&#x2717;' : '&#x2713;' %></div>
+        <div>
+          <h3 class="font-bold"><%- blocked ? 'Order Rejected' : 'Order Approved &amp; Fulfilled' %></h3>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <% if (effects.length > 0) { %>
+  <!-- Effects -->
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body p-4 gap-2">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40">Side effects triggered via invoke!</h3>
+      <% for (var effect of effects) { %>
+        <div class="flex items-center gap-2 text-xs bg-base-200 rounded px-3 py-2">
+          <span class="badge badge-xs <%= effect.type === 'log' ? 'badge-info' : effect.type === 'notify' ? 'badge-warning' : effect.type === 'fulfil' ? 'badge-success' : 'badge-ghost' %>"><%= effect.type %></span>
+          <span class="badge badge-xs badge-outline"><%= effect.service %></span>
+          <span class="text-base-content/60 font-mono flex-1"><%= typeof effect.input === 'object' ? JSON.stringify(effect.input) : String(effect.input || '') %></span>
+        </div>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
+
+  <% if (history.length > 0) { %>
+  <!-- Audit trail -->
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body p-4 gap-2">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40">Audit trail</h3>
+      <% for (var entry of history) { %>
+        <div class="flex items-center gap-2 text-xs bg-base-200 rounded px-3 py-2">
+          <span class="badge badge-xs <%= entry.event === 'submitted' ? 'badge-info' : entry.event === 'approved' ? 'badge-success' : entry.event === 'rejected' ? 'badge-error' : 'badge-ghost' %>"><%= entry.event %></span>
+          <span class="text-base-content/60 font-mono"><%= entry.from %> &rarr; <%= entry.to %></span>
+        </div>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
+
+  <!-- SCXML that travelled -->
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body p-4 gap-2">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40">SCXML that travelled between services</h3>
+      <div class="mockup-code text-xs"><pre class="px-4 scxml-box"><%- scxml.replace(/&/g,'&amp;').replace(/</g,'&lt;') %></pre></div>
+    </div>
+  </div>
+
+  <!-- HTML that came back -->
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body p-4 gap-2">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40">HTML machine markup returned</h3>
+      <div class="mockup-code text-xs"><pre class="px-4 scxml-box"><%- htmlBack.replace(/&/g,'&amp;').replace(/</g,'&lt;') %></pre></div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,44 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+
+       initial="procurement">
+
+  <datamodel>
+    <data id="asset_tag" expr="nil"/>
+    <data id="location" expr="nil"/>
+    <data id="commissioned_at" expr="nil"/>
+    <data id="decommissioned_at" expr="nil"/>
+  </datamodel>
+
+  <state id="procurement">
+    <transition event="receive"
+                mp-to="(do (set! asset_tag (str 'AST-' (now))) (to received))"/>
+  </state>
+
+  <state id="received">
+    <transition event="commission"
+                mp-to="(do (set! commissioned_at (now)) (to in-service))"/>
+    <transition event="reject-delivery" target="returned"/>
+  </state>
+
+  <state id="in-service">
+    <transition event="decommission"
+                mp-to="(do (set! decommissioned_at (now)) (to decommissioned))"/>
+    <transition event="repair" target="maintenance"/>
+    <transition event="transfer"
+                mp-to="(do (set! location (get $event :location)) (to transferring))"/>
+  </state>
+
+  <state id="transferring">
+    <transition event="arrive" target="in-service"/>
+  </state>
+
+  <state id="maintenance">
+    <transition event="return-to-service" target="in-service"/>
+    <transition event="write-off" target="disposed"/>
+  </state>
+
+  <final id="decommissioned"/>
+  <final id="disposed"/>
+  <final id="returned"/>
+
+</scxml>
