@@ -1,7 +1,7 @@
 /**
  * adapters.js — interface validation tests.
  *
- * Run: node mp/tests/adapters.test.js
+ * Run: node mn/tests/adapters.test.js
  */
 
 var adapters = require('../adapters');
@@ -53,7 +53,7 @@ eq(adapters.validateHost(makeValidHost()), undefined, 'full host passes (no thro
 
 describe('validateHost — capabilities is required');
 // Bug 8 — adapters.js Design Issue: host.capabilities not in validated interface
-// machine.js reads host.capabilities || []; adapter without it silently disables mp-where
+// machine.js reads host.capabilities || []; adapter without it silently disables mn-where
 throws(function () {
   adapters.validateHost(makeValidHost({ capabilities: undefined }));
 }, 'capabilities', 'rejects host without capabilities array');

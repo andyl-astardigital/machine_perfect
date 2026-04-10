@@ -1,28 +1,28 @@
-<div mp="live-stats" mp-ctx='<%- JSON.stringify(stats) %>'>
-  <div mp-state="display" class="stats shadow bg-base-100 w-full">
+<div mn="live-stats" mn-ctx='<%- JSON.stringify(stats) %>'>
+  <div mn-state="display" class="stats shadow bg-base-100 w-full">
     <div class="stat py-3 px-4">
       <div class="stat-title text-xs">Orders</div>
-      <div class="stat-value text-lg"><mp-text>total</mp-text></div>
+      <div class="stat-value text-lg"><mn-text>total</mn-text></div>
     </div>
     <div class="stat py-3 px-4">
       <div class="stat-title text-xs">Fulfilled</div>
-      <div class="stat-value text-lg text-success"><mp-text>fulfilled</mp-text></div>
+      <div class="stat-value text-lg text-success"><mn-text>fulfilled</mn-text></div>
     </div>
     <div class="stat py-3 px-4">
       <div class="stat-title text-xs">Rejected</div>
-      <div class="stat-value text-lg text-error"><mp-text>rejected</mp-text></div>
+      <div class="stat-value text-lg text-error"><mn-text>rejected</mn-text></div>
     </div>
     <div class="stat py-3 px-4">
       <div class="stat-title text-xs">Total value</div>
-      <div class="stat-value text-lg font-mono"><mp-text>(str '£' totalValue)</mp-text></div>
+      <div class="stat-value text-lg font-mono"><mn-text>(str '£' totalValue)</mn-text></div>
     </div>
     <div class="stat py-3 px-4">
       <div class="stat-title text-xs">Avg</div>
-      <div class="stat-value text-lg font-mono"><mp-text>(str '£' avgValue)</mp-text></div>
+      <div class="stat-value text-lg font-mono"><mn-text>(str '£' avgValue)</mn-text></div>
     </div>
     <div class="stat py-3 px-4">
       <div class="stat-title text-xs">Updated</div>
-      <div class="stat-value text-sm font-mono"><mp-text>(date-fmt lastUpdated)</mp-text></div>
+      <div class="stat-value text-sm font-mono"><mn-text>(date-fmt lastUpdated)</mn-text></div>
     </div>
   </div>
 </div>

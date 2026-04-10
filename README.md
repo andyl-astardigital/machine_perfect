@@ -1,477 +1,197 @@
 <p align="center">
-  <img src="logo.svg" alt="machine_perfect" width="120" />
+  <img src="logo.svg" alt="machine_native" width="120" />
 </p>
 
-# machine_perfect
+# machine_native
 
-An application platform where state machines are the unit of definition, execution, and exchange. S-expressions for logic. Markup as the substrate. One engine runs in both browser and Node. Designed for distributed deployment across capability pools.
+The application is the markup. The markup is the transport. The transport is the application.
+
+A machine_native application is a state machine defined in markup. In the browser, that markup is HTML. On the server, it's SCXML. Between nodes, it's whichever format the receiving host speaks. The machine carries its states, guards, actions, context, and capability requirements in one document. It serialises, posts to a capable host, executes there, and comes back with its state updated. Same machine. Same engine. No API layer between them.
 
 ```html
-<script src="mp/engine.js"></script>
-<script src="mp/browser.js"></script>
+<script src="mn/engine.js"></script>
+<script src="mn/browser.js"></script>
 
-<div mp="door">
-  <mp-ctx>{"code":""}</mp-ctx>
+<div mn="purchase-order">
+  <mn-ctx>{"title":"","amount":0,"items":[],"submitted_at":null}</mn-ctx>
 
-  <div mp-state="locked">
-    <mp-transition event="unlock" to="unlocked">
-      <mp-guard>(= code '1234')</mp-guard>
-    </mp-transition>
-    <p>The door is locked.</p>
-    <input mp-model="code" placeholder="Enter code" />
-    <button mp-to="unlock">Unlock</button>
+  <!-- The form. Browser renders this. -->
+  <div mn-state="draft">
+    <mn-transition event="submit" to="submitted">
+      <mn-guard>(and (> (count items) 0) (> amount 0))</mn-guard>
+      <mn-action>(set! submitted_at (now))</mn-action>
+    </mn-transition>
+    <input mn-model="title" placeholder="Title" />
+    <input mn-model="amount" type="number" placeholder="Amount" />
+    <button mn-to="submit">Send to Pipeline</button>
   </div>
 
-  <div mp-state="unlocked">
-    <mp-transition event="lock" to="locked">
-      <mp-action>(set! code '')</mp-action>
-    </mp-transition>
-    <p>The door is unlocked.</p>
-    <button mp-to="open">Open</button>
-    <button mp-to="lock">Lock</button>
+  <!-- The pipeline. Browser can't do this — routes to a capable server. -->
+  <div mn-state="submitted">
+    <mn-where>(requires 'persist' 'notify')</mn-where>
+    <mn-transition event="approve" to="approved">
+      <mn-guard>(<= amount 100000)</mn-guard>
+      <mn-action>(invoke! :type 'notify' :input (obj :to 'finance@co' :subject title))</mn-action>
+    </mn-transition>
+    <mn-transition event="reject" to="rejected">
+      <mn-guard>(> amount 100000)</mn-guard>
+    </mn-transition>
   </div>
 
-  <div mp-state="open">
-    <p>The door is open.</p>
-    <button mp-to="unlocked">Close</button>
-  </div>
+  <div mn-state="approved" mn-final></div>
+  <div mn-state="rejected" mn-final></div>
 </div>
 ```
 
-That's a complete interactive state machine. No JavaScript. The HTML is the application.
+The browser renders `draft`, a form with two-way binding and a guarded submit button. When the user submits, the machine transitions to `submitted`. That state declares `(requires 'persist' 'notify')`, capabilities the browser doesn't have. The runtime serialises the machine, sends it to a server that does, and the server runs the pipeline: approve or reject based on the amount, dispatch effects, return the result. The browser renders it.
 
-Transitions are structural elements — `<mp-transition>` defines what can happen, `<mp-guard>` controls when, `<mp-action>` controls what changes. The button's `mp-to` fires an event by name. No s-expressions in attributes. Parentheses belong in elements.
-
----
-
-## Why machine_perfect
-
-State management is bolted on to most frameworks as an afterthought. machine_perfect starts from the position that state machines are the component model, and builds everything else from that.
-
-A machine carries its state, its rules, and its data in one document. Every machine is always in a known, named state. You can query what transitions are available, what guards must pass, and what data it holds. The machine definition is the specification, the implementation, and the runtime state in one place.
-
-In the browser, that document is HTML. On the server, it's SCXML. The same s-expression engine evaluates guards and actions in both hosts without translation.
-
-**Machines are data, and the expression language is closed.** A machine definition is a string. It serializes, crosses the wire, and deserializes without losing fidelity. The s-expression stdlib is fixed and enumerated. There is no `eval()`, no dynamic import, no ambient scope. Guards are structurally forbidden from causing side effects: the evaluator rejects `!` mutation forms before running them. An AI generating a machine definition operates inside hard constraints: every function call resolves against a known list, every guard is statically verifiable as pure before execution, every transition target is checkable against the declared state list. This is not possible with arbitrary code.
-
-**Zero dependencies, zero build step.** Include two script tags and write HTML. No npm install required. No bundler. No transpiler.
-
-New to machine_perfect? Start with the **[interactive tutorial](examples/learn.html)**.
+No REST endpoint was defined. No shared types were written. The machine carried its own rules to the server. The guard `(<= amount 100000)` evaluated identically in both places. One expression language. One engine. Two hosts.
 
 ---
 
-## Distributed execution
+## Why
 
-The same engine that runs machines in the browser runs them on the server. Any process with the engine and some effect adapters is a node. Nodes register their capabilities with a registry:
+Traditional architectures split behaviour across nodes and then build infrastructure to keep them in sync. The browser node has a state management library. The server node has API endpoints. Shared types keep them from drifting. Integration tests verify they agree. Each node implements its own view of the same business rules.
+
+machine_native puts the rules in the machine, not in the nodes. The machine carries its states, its transition rules, its data, and its capability requirements. Nodes provide capabilities (DOM rendering, persistence, email, solving). The machine travels to whichever node has the capabilities it needs. The expression language is closed: ~120 built-in functions, no `eval()`, no ambient scope, guards structurally forbidden from side effects. A guard that passes on one node will pass on any other. Arbitrary code cannot make that guarantee.
+
+Zero dependencies, zero build step. Two script tags in a browser node. `require('machine-native')` in a server node. Drop an `[mn]` element into any page and a MutationObserver auto-initialises it.
+
+Start with the [interactive tutorial](examples/learn.html). 24 lessons, zero setup.
+
+---
+
+## How it works
+
+### One engine, two hosts
+
+The same s-expression engine runs on every node. The browser is a node with DOM capabilities (`dom`, `user-input`, `css-transition`, `localstorage`). A server is a node with service capabilities (`persist`, `notify`, `fulfil`). Each node has a native markup format: HTML for the browser, SCXML for the server. The `transforms` module converts between them at the edge. Same states. Same guards. Same context. Different serialisation for each node.
+
+### Capability registry and routing
+
+Any process that has the engine and some effect adapters is a node. Nodes register with a capability registry, itself a machine running on the engine:
 
 ```
 POST /register
-{ "address": "http://10.0.1.5:4000", "capabilities": ["persist", "log", "notify"], "formats": ["html", "scxml"] }
+{
+  "address": "http://10.0.1.5:4000",
+  "capabilities": ["persist", "log", "notify", "fulfil"],
+  "formats": ["html", "scxml"]
+}
 ```
 
-The registry (itself a machine running on the engine) maintains a route table. States declare what they need. The runtime routes automatically.
+The registry maintains a route table. When a machine enters a state that declares capability requirements, the runtime looks up which nodes can satisfy them:
 
 ```html
-<div mp-state="orders">
-  <mp-where>(requires 'ui-render')</mp-where>
-  <span class="loading-spinner"></span>
+<div mn-state="submitted">
+  <mn-where>(requires 'persist' 'notify')</mn-where>
+  ...
 </div>
 ```
 
-The browser renders a spinner, sends the machine to a capable node, gets content back, and stamps it in. One mechanism for every transition source: click, receive, timer, initial state entry.
+The browser node doesn't have `persist` or `notify`. It checks the route table, finds a node that does, serialises the machine, and sends it. The receiving node compiles, executes the pipeline, dispatches effects through its adapters, and returns the result.
 
-On the server, machines are SCXML:
+The registry, the routing, the capability discovery, and the `mn-where` mechanism all work today.
 
-```xml
-<scxml id="purchase-order" initial="draft">
-  <datamodel>
-    <data id="amount" expr="0"/>
-    <data id="items" expr="[]"/>
-  </datamodel>
-  <state id="draft">
-    <transition event="submit" target="submitted">
-      <mp-guard>(and (> amount 0) (> (count items) 0))</mp-guard>
-    </transition>
-  </state>
-  <state id="submitted">
-    <transition event="approve" target="approved">
-      <mp-guard>(<= amount 100000)</mp-guard>
-      <mp-action>(set! approved_at (now))</mp-action>
-    </transition>
-    <transition event="reject" target="rejected"/>
-  </state>
-  <final id="approved"/>
-  <final id="rejected"/>
-</scxml>
+### Effects and the async pipeline
+
+Machines declare effects but don't implement them. `(invoke! :type 'persist' :input data)` says "I need persistence." The host provides the adapter:
+
+```javascript
+var result = await machine.executePipelineAsync(def, {
+  effects: {
+    persist: async function(input) { return await db.insert(input); },
+    notify: async function(input) { return await sendEmail(input); },
+    solver: async function(input) { return await runCPSAT(input); }
+  }
+});
 ```
 
-Send this to procurement. They advance it to `approved`. Send it to fulfillment. They don't need an SDK or API docs. The machine definition is the contract.
+Each adapter is awaited. The `bind` field on `invoke!` injects the return value back into context. `(invoke! :type 'solver' :bind 'schedule' :input data)` means the solver's result lands in `context.schedule` and the next guard can read it. `on-success` and `on-error` route events back into the machine when adapters resolve or reject. The entire server-side execution model for the [purchase order app](examples/purchase-order/) is 94 lines.
 
-### What it replaces
+### The expression language
 
-REST and gRPC separate the contract from the implementation. AWS Step Functions are JSON blobs pointing at Lambda ARNs, with behaviour scattered across your AWS account. Temporal workflows are code, not data, so you cannot inspect, transform, or validate them structurally. XState is a state machine library for JavaScript, but machines are JSON config objects that require a JS runtime to inspect and cannot cross the client/server boundary as portable documents. WS-BPEL had the right idea twenty years ago but was bloated and committee-designed into irrelevance.
-
----
-
-## Two ideas
-
-**1. UI is a state machine.** Every `mp` element has named states. Only one is active. Only declared transitions exist. The markup structure is the state chart.
-
-**2. Logic is s-expressions.** One syntax for all logic: `(function arg1 arg2)`. Not a style choice. S-expressions are data: they serialize as strings, cross host boundaries without translation, and parse to an AST in one pass. The evaluator enforces a hard split between a pure read path (`eval`) and a mutating write path (`exec`). Guards cannot cause side effects. There is no `eval()`, no `new Function()`, no access to the outer scope. The expression language is closed, sandboxed, and the same on every host.
-
-```html
-<div mp="counter">
-  <mp-ctx>{"count": 0}</mp-ctx>
-
-  <div mp-state="counting">
-    <mp-transition event="increment" to="counting">
-      <mp-action>(inc! count)</mp-action>
-    </mp-transition>
-    <mp-transition event="reset" to="confirm">
-      <mp-guard>(> count 0)</mp-guard>
-    </mp-transition>
-    <p><mp-text>(str count ' items')</mp-text></p>
-    <button mp-to="increment">+1</button>
-    <button mp-to="reset">Reset</button>
-  </div>
-  <div mp-state="confirm">
-    <mp-transition event="yes" to="counting">
-      <mp-action>(set! count 0)</mp-action>
-    </mp-transition>
-    <p>Reset to zero?</p>
-    <button mp-to="yes">Yes</button>
-    <button mp-to="counting">No</button>
-  </div>
-</div>
-```
-
----
-
-## The DSL
-
-Five forms cover everything:
+One syntax for all logic: `(function arg1 arg2)`.
 
 ```clojure
-(when cond value)              ;; conditional value
-(do a b c)                     ;; sequence, return last
+(when cond value)              ;; conditional
+(do a b c)                     ;; sequence
 (set! key value)               ;; mutation
-(->> x (f) (g) (h))            ;; pipeline, thread through functions
+(->> x (f) (g) (h))            ;; pipeline
 (fn [x] body)  or  #(> % 0)   ;; lambda
 ```
 
-Conventions:
-- `!` suffix = mutation: `set!`, `inc!`, `push!`, `toggle!`, `prevent!`
-- `$` prefix = framework value: `$state`, `$event`, `$item`, `$refs`, `$store`, `$detail`
-- `:keyword` = string key: `(obj :name 'Andrew' :age 42)` produces `{name: "Andrew", age: 42}`
+~120 built-in functions. The language is closed: no `eval()`, no `new Function()`, no ambient scope. Guards are structurally forbidden from causing side effects. The evaluator rejects `!` mutation forms before running them on the pure read path. Conventions: `!` = mutation, `$` = framework value, `:keyword` = string key. Full reference in [REFERENCE.md](REFERENCE.md).
+
+### How the pieces compose
+
+```
+┌─────────────┐         ┌──────────────┐         ┌──────────────┐
+│ Browser Node │         │   Registry   │         │ Server Node  │
+│              │         │              │         │              │
+│  engine.js   │         │  (a machine  │         │  engine.js   │
+│  browser.js  │────────▶│   running on │────────▶│  machine.js  │
+│              │  route  │   the engine)│  lookup  │  scxml.js    │
+│  capabilities:│  table  │              │         │  transforms  │
+│   dom        │◀────────│  GET /routes │         │              │
+│   user-input │         │              │         │  capabilities:│
+│   css-trans  │         └──────────────┘         │   persist    │
+│   localstorage│                                 │   notify     │
+│              │──── POST machine ────────────────▶│   fulfil     │
+│              │                                  │   log        │
+│              │◀─── result ──────────────────────│              │
+└──────────────┘                                  └──────────────┘
+```
+
+Every node discovers capabilities via the registry. States declare what they need via `mn-where`. The runtime routes automatically. The receiving node compiles the machine into its native format, runs the pipeline, converts back, and returns the result. No hand-written API. No service contracts. The machine definition is the contract.
 
 ---
 
-## Attributes and elements
+## What this becomes
 
-**The rule:** attributes carry bare identifiers and static values. S-expressions go in elements.
+Today that's one hop: browser to server and back. The architecture is designed for chains. A machine enters a procurement node that adds approval states based on its business rules, moves to a fulfilment node that adds shipping states, and reaches a persistence node that executes the assembled machine and stores the result. Each node contributes markup. The final document is the complete, auditable record of every decision every host made.
 
-### Attributes (bare values only)
-
-| Attribute | Purpose |
-|-----------|---------|
-| `mp="name"` | Declare a machine instance |
-| `mp-state="name"` | Declare a state (content created on entry, destroyed on exit) |
-| `mp-to="state"` | Click transitions to named state |
-| `mp-ctx='{"key":"val"}'` | Initial context data (JSON) |
-| `mp-initial="state"` | Override initial state (default: first mp-state) |
-| `mp-final` | Mark state as terminal (no further transitions) |
-| `mp-text="field"` | Set textContent from bare variable (shorthand) |
-| `mp-model="path"` | Two-way input binding |
-| `mp-each="items"` | Repeat template for each item in bare array name |
-| `mp-key="field"` | Keyed reconciliation |
-| `mp-ref="name"` | Reference element as `$refs.name` |
-| `mp-persist="key"` | Save/restore context to localStorage |
-| `mp-url="/path"` | Map state to browser URL (static path) |
-
-### Elements (all logic)
-
-Transitions with guards and actions:
-```html
-<mp-transition event="submit" to="done">
-  <mp-guard>(and (> (count title) 0) (> amount 0))</mp-guard>
-  <mp-action>(set! submitted_at (now))</mp-action>
-  <mp-emit>order-created</mp-emit>
-</mp-transition>
-```
-
-Bindings (textContent, visibility, classes, attributes):
-```html
-<p><mp-text>(str count ' items')</mp-text></p>
-<div><mp-show>(> count 0)</mp-show>visible content</div>
-<div class="badge"><mp-class>(when done 'badge-success')</mp-class>Status</div>
-<button><mp-bind attr="disabled">(not valid)</mp-bind>Submit</button>
-```
-
-> **Shorthand:** `mp-text="field"` is valid for bare variables (no parentheses). The element form `<mp-text>expr</mp-text>` is required for s-expressions and is the primary syntax.
-
-DOM events with modifiers (`.prevent`, `.stop`, `.self`, `.once`, `.outside`):
-```html
-<div>
-  <mp-on event="keydown">(when (= (get $event :key) 'Escape') (to closed))</mp-on>
-  <input mp-model="title" />
-</div>
-<form>
-  <mp-on event="submit.prevent">(do (push! items (obj :name newName)) (to idle))</mp-on>
-  ...
-</form>
-```
-
-Inter-machine events:
-```html
-<!-- Sender -->
-<mp-transition event="save" to="done"><mp-emit>saved</mp-emit></mp-transition>
-
-<!-- Receiver -->
-<mp-receive event="saved">(to show)</mp-receive>
-```
-
-Lists with filtering and sorting:
-```html
-<!-- Bare array name -->
-<template mp-each="items" mp-key="name">
-  <div><span><mp-text>name</mp-text></span></div>
-</template>
-
-<!-- Expression inside element -->
-<template mp-key="id">
-  <mp-each>(->> items (filter #(> (get % :score) 80)) (sort-by :name) (take 10))</mp-each>
-  <div>
-    <span><mp-text>name</mp-text></span>
-    <span><mp-text>(str 'Score: ' score)</mp-text></span>
-  </div>
-</template>
-```
-
-`$item` = current item. `$index` = current index.
-
-### Composition
-
-| Attribute | Purpose |
-|-----------|---------|
-| `<template mp-define="name">` | Define a reusable machine template |
-| `<mp-slot name="x">` | Content projection point in templates |
-| `<link rel="mp-import" href="file.mp.html">` | Import components from external files |
-
-```html
-<template mp-define="card">
-  <div mp-state="front">
-    <mp-slot name="content">Default content</mp-slot>
-    <button mp-to="back">Flip</button>
-  </div>
-  <div mp-state="back">
-    <mp-slot name="reveal">Default reveal</mp-slot>
-    <button mp-to="front">Back</button>
-  </div>
-</template>
-
-<div mp="card"><p slot="content">Question</p><p slot="reveal">Answer</p></div>
-<div mp="card"><p slot="content">Another</p><p slot="reveal">One</p></div>
-```
-
-### Temporal behaviour
-
-`<mp-temporal>` scopes temporal activities to the state lifecycle. When the state is entered, temporal behaviours start. When the state is exited, they are cleaned up automatically. Content is an s-expression using `(animate)`, `(after)`, and `(every)`.
-
-```html
-<!-- CSS enter/leave animation -->
-<div mp-state="detail">
-  <mp-temporal>(animate)</mp-temporal>
-</div>
-
-<!-- Auto-transition after delay -->
-<div mp-state="toast">
-  <mp-temporal>(after 2000 (to idle))</mp-temporal>
-</div>
-
-<!-- Repeating interval (polling, clock, animation) -->
-<div mp-state="monitoring">
-  <mp-temporal>(every 5000 (then! (fetch-status) :data))</mp-temporal>
-</div>
-
-<!-- Combined -->
-<div mp-state="countdown">
-  <mp-temporal>(do (animate) (every 1000 (dec! remaining)) (after 10000 (to expired)))</mp-temporal>
-</div>
-```
-
-```css
-.mp-enter-active, .mp-leave-active { transition: all 0.2s ease; }
-.mp-enter-from, .mp-leave-to { opacity: 0; transform: translateY(8px); }
-```
-
-### Lifecycle elements
-
-| Element | Purpose |
-|---------|---------|
-| `<mp-init>expr</mp-init>` | Run on machine creation or state entry |
-| `<mp-exit>expr</mp-exit>` | Run before state content is destroyed |
-| `<mp-let name="x">expr</mp-let>` | Machine-scope computed binding (derived, not persisted) |
-| `mp-ref="name"` | Reference element as `$refs.name` (attribute) |
-| `mp-persist="key"` | Save/restore context to localStorage (attribute) |
-| `mp-url="/path"` | Map state to browser URL (static or `(path '/p/:k' ctxKey)`) |
-
-### Global state
-
-```html
-<mp-store name="user" value='{"name": "Andrew", "role": "engineer"}'></mp-store>
-
-<!-- Any machine can read it -->
-<span><mp-text>$store.user.name</mp-text></span>
-```
+The document flows through infrastructure the way a packet flows through a network, routed by what it needs, not by where it was built. See [ROADMAP.md](ROADMAP.md) for the concrete plan.
 
 ---
 
-## S-expression reference
+## AI and machine generation
 
-### Control flow
-```clojure
-(if cond then else)            (when cond value)
-(unless cond value)            (cond c1 v1 c2 v2)
-(and a b c)                    (or a b c)
-(not x)                        (do a b c)
-(let [x 1 y 2] body)           (fn [x y] body)  or  #(> % 0)
-(-> x (f a) (g b))             (->> x (f) (g))
-```
+LLMs produce better output when the output format is constrained. A machine_native definition is maximally constrained:
 
-### Math
-```clojure
-(+ a b)  (- a b)  (* a b)  (/ a b)  (mod a b)
-(inc x)  (dec x)  (abs x)  (min a b)  (max a b)
-(round x)  (floor x)  (ceil x)
-```
+- The function set is fixed and enumerated. An LLM cannot invent functions that don't exist.
+- Guards are structurally verified as pure before execution. A generated guard cannot cause side effects.
+- Every transition target can be checked against the declared state list. A generated transition to a nonexistent state is caught by `validate()` before the machine runs.
+- `validate()` walks every guard and action AST and flags references to context keys that don't exist in the definition. A typo in a generated expression is caught statically, not at runtime.
 
-### Comparison
-```clojure
-(= a b)  (not= a b)  (> a b)  (< a b)  (>= a b)  (<= a b)
-(nil? x)  (some? x)  (empty? x)
-```
+An LLM generating JavaScript can produce code that type-checks, passes a linter, and still does the wrong thing at runtime. An LLM generating a machine_native definition produces a document that can be structurally verified to be internally consistent before it executes anywhere.
 
-### Strings
-```clojure
-(str a b c)  (upper s)  (lower s)  (trim s)
-(split s sep)  (join arr sep)  (replace s old new)
-(contains? s sub)  (starts? s pre)  (ends? s suf)
-```
-
-### Collections
-```clojure
-(count coll)  (first coll)  (last coll)  (nth coll n)
-(rest coll)  (take n coll)  (drop n coll)  (reverse coll)
-(concat a b)  (includes? coll val)  (distinct coll)  (range a b)
-(map f coll)  (filter f coll)  (find f coll)  (reduce f init coll)
-(sort-by f coll)  (every? f coll)  (some f coll)  (mapcat f coll)
-```
-
-### Objects
-```clojure
-(obj :k1 v1 :k2 v2)           ;; create
-(get obj :key)                 ;; read
-(keys obj)  (vals obj)         ;; enumerate
-(assoc obj :k v)               ;; new obj with key set
-(dissoc obj :k)                ;; new obj with key removed
-(merge obj1 obj2)              ;; combine
-```
-
-### Mutation
-```clojure
-(set! key value)               ;; set context value
-(inc! key)  (dec! key)         ;; increment/decrement
-(toggle! key)                  ;; flip boolean
-(push! arr value)              ;; append to array
-(remove-where! arr :key val)   ;; remove matching items
-(splice! arr idx count)        ;; remove by index
-```
-
-### Machine
-```clojure
-(to state)                     ;; signal transition (any s-expression context)
-(emit name)                    ;; signal event (no payload, $detail = nil)
-(emit name payload)            ;; signal event with data ($detail = payload)
-(prevent!)                     ;; preventDefault on $event
-(stop!)                        ;; stopPropagation on $event
-(after ms expr)                ;; timed behaviour (inside mp-temporal)
-(every ms expr)                ;; repeating interval (inside mp-temporal)
-(animate)                      ;; CSS enter/leave animation (inside mp-temporal)
-(then! promise :key 'ok' 'err') ;; async: resolve → ok state, reject → err state
-(requires 'cap1' 'cap2')       ;; capability declaration (inside mp-where)
-```
-
-### Special variables
-```
-$state    Current state name
-$event    DOM event (inside <mp-on>)
-$item     Current item (inside mp-each)
-$index    Current index (inside mp-each)
-$detail   Emit payload (inside mp-receive)
-$refs     Element references (via mp-ref)
-$store    Global store
-$el       Machine element
-```
+In the capability node model, an LLM is just another node. It receives a partial machine, contributes states based on its domain knowledge (approval rules, pricing logic, compliance checks), and passes the machine on. The contributed markup is inspectable, diffable, and subject to the same structural validation as human-authored markup. No special integration. No SDK. The machine format is the interface.
 
 ---
 
-## JS escape hatch
+## Examples
 
-For browser APIs that the s-expression language does not cover (fetch, WebSocket, canvas, D3), register functions in JavaScript and call them from expressions:
-
-```js
-MachinePerfect.fn('fetch-json', function(url) {
-    return fetch(url).then(function(r) { return r.json(); });
-});
-```
-
-```html
-<div mp-state="loading">
-  <mp-init>(then! (fetch-json '/api/data') :items 'ready')</mp-init>
-</div>
-```
-
-Application logic lives in s-expressions. JavaScript is the escape hatch for platform APIs that require it.
-
-### Runtime configuration
-
-```js
-MachinePerfect.init({
-  registry: 'http://localhost:3100',   // capability registry URL
-  loading: '<div class="spinner"></div>' // global loading indicator for mp-where states
-});
-```
-
----
-
-## Using with existing pages
-
-Drop an `[mp]` element into any page. Include the two script tags. A MutationObserver auto-initialises new machine elements, so machines work alongside other frameworks, inside HTMX swaps, or added dynamically via JavaScript. No global state pollution, no conflicts.
+- [Interactive Tutorial](examples/learn.html): 24 lessons, learn by building
+- [Sticky Notes](examples/sticky-notes.html): CRUD app, zero JavaScript
+- [Snow Check SPA](examples/spa/): multi-page app with components, command palette, live weather
+- [Purchase Order](examples/purchase-order/): full-stack browser form to server pipeline with async effects
+- [Batch Reactor](examples/batch-reactor/): ISA-88 industrial process control with compound states
 
 ---
 
 ## Install
 
 ```html
-<script src="https://unpkg.com/machine-perfect/mp/engine.js"></script>
-<script src="https://unpkg.com/machine-perfect/mp/browser.js"></script>
+<script src="https://unpkg.com/machine-native/mn/engine.js"></script>
+<script src="https://unpkg.com/machine-native/mn/browser.js"></script>
 ```
 
 ```
-npm install machine-perfect
+npm install machine-native
 ```
 
 Zero dependencies. Eight files. One folder. No build step.
-
----
-
-## Examples
-
-- **[Interactive Tutorial](examples/learn.html)** - learn the concepts step by step
-- **[Snow Check SPA](examples/spa/)** - ski resort finder with reusable components, command palette, and live weather via JS escape hatch
-- **[Sticky Notes](examples/sticky-notes.html)** - CRUD app with zero JavaScript
-- **[Purchase Order](examples/purchase-order/)** - full-stack: browser form, server-side SCXML pipeline, capability registry. The entire server-side execution model is 94 lines (`services.js`): four effect adapters and a call to `executePipeline`
-- **[Batch Reactor](examples/batch-reactor/)** - ISA-88 industrial process control with hierarchical compound states
 
 ---
 

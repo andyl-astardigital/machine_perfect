@@ -1,37 +1,37 @@
 {
-  "name": "machine-perfect",
+  "name": "machine-native",
   "version": "0.5.0",
   "description": "Application platform where state machines are the unit of definition, execution, and exchange. S-expressions for logic. Markup as substrate.",
-  "main": "mp/engine.js",
-  "browser": "mp/browser.js",
+  "main": "mn/engine.js",
+  "browser": "mn/browser.js",
   "exports": {
-    ".": "./mp/engine.js",
-    "./engine": "./mp/engine.js",
-    "./machine": "./mp/machine.js",
-    "./browser": "./mp/browser.js",
-    "./scxml": "./mp/scxml.js",
-    "./transforms": "./mp/transforms.js",
-    "./host": "./mp/host.js",
-    "./registry": "./mp/registry.js",
-    "./adapters": "./mp/adapters.js"
+    ".": "./mn/engine.js",
+    "./engine": "./mn/engine.js",
+    "./machine": "./mn/machine.js",
+    "./browser": "./mn/browser.js",
+    "./scxml": "./mn/scxml.js",
+    "./transforms": "./mn/transforms.js",
+    "./host": "./mn/host.js",
+    "./registry": "./mn/registry.js",
+    "./adapters": "./mn/adapters.js"
   },
   "files": [
-    "mp/engine.js",
-    "mp/machine.js",
-    "mp/transforms.js",
-    "mp/browser.js",
-    "mp/scxml.js",
-    "mp/adapters.js",
-    "mp/host.js",
-    "mp/registry.js",
+    "mn/engine.js",
+    "mn/machine.js",
+    "mn/transforms.js",
+    "mn/browser.js",
+    "mn/scxml.js",
+    "mn/adapters.js",
+    "mn/host.js",
+    "mn/registry.js",
     "LICENSE",
     "README.md",
     "REFERENCE.md"
   ],
   "scripts": {
     "dev": "npx serve .",
-    "test": "node mp/tests/engine.test.js && node mp/tests/machine.test.js && node mp/tests/transforms.test.js && node mp/tests/scxml.test.js && node mp/tests/host.test.js && node mp/tests/adapters.test.js && node mp/tests/registry.test.js",
-    "start": "node mp/host.js"
+    "test": "node mn/tests/engine.test.js && node mn/tests/machine.test.js && node mn/tests/transforms.test.js && node mn/tests/scxml.test.js && node mn/tests/host.test.js && node mn/tests/adapters.test.js && node mn/tests/registry.test.js",
+    "start": "node mn/host.js"
   },
   "keywords": [
     "state-machine",
@@ -50,12 +50,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/andyl-astardigital/machine_perfect.git"
+    "url": "https://github.com/andyl-astardigital/machine_native.git"
   },
   "bugs": {
-    "url": "https://github.com/andyl-astardigital/machine_perfect/issues"
+    "url": "https://github.com/andyl-astardigital/machine_native/issues"
   },
-  "homepage": "https://github.com/andyl-astardigital/machine_perfect",
+  "homepage": "https://github.com/andyl-astardigital/machine_native",
   "devDependencies": {
     "ejs": "^5.0.1",
     "puppeteer": "^24.40.0"

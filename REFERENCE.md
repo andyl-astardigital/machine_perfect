@@ -1,40 +1,40 @@
-# machine_perfect Language Reference
+# machine_native Language Reference
 
 ## Two concepts
 
-**State machines:** `mp-state` elements define states. Only one is active. Content is created on entry, destroyed on exit. Transitions are declared with `mp-to` or `<mp-transition>`. If a transition doesn't exist in the markup, it can't happen.
+**State machines.** `mn-state` elements define states. Only one is active. Content is created on entry, destroyed on exit. Transitions are declared with `mn-to` or `<mn-transition>`. If a transition doesn't exist in the markup, it can't happen.
 
-**S-expressions:** `(function arg1 arg2)`. One syntax for all logic. Bare words resolve to context values. Lists apply functions. Five control forms cover everything.
+**S-expressions.** `(function arg1 arg2)`. One syntax for all logic. Bare words resolve to context values. Lists apply functions. Five control forms cover everything.
 
-**The rule:** attributes carry bare identifiers and static values. S-expressions go in elements.
+**The rule.** Attributes carry bare identifiers and static values. S-expressions go in elements.
 
 ---
 
 ## Attributes
 
 ```
-mp="name"                   Machine instance
-mp-state="name"             State (lazy: created on entry, destroyed on exit)
-mp-to="state"               Click → transition to named state
-mp-ctx='{"k":"v"}'          Initial context (JSON — or use <mp-ctx> element)
-mp-initial="state"          Override initial state
-mp-final                    Mark state as terminal (no further transitions)
+mn="name"                   Machine instance
+mn-state="name"             State (lazy: created on entry, destroyed on exit)
+mn-to="state"               Click → transition to named state
+mn-ctx='{"k":"v"}'          Initial context (JSON — or use <mn-ctx> element)
+mn-initial="state"          Override initial state
+mn-final                    Mark state as terminal (no further transitions)
 
-mp-text="field"             textContent from bare variable (shorthand for <mp-text>)
-mp-model="path"             Two-way input binding
+mn-text="field"             textContent from bare variable (shorthand for <mn-text>)
+mn-model="path"             Two-way input binding
 
-mp-each="items"             Repeat template for each item in bare array name
-mp-key="field"              Keyed reconciliation (bare field name)
+mn-each="items"             Repeat template for each item in bare array name
+mn-key="field"              Keyed reconciliation (bare field name)
 
-mp-ref="name"               Element reference → $refs.name
-mp-persist="key"            localStorage persistence
-mp-url="/path"              Map state to browser URL (static path)
+mn-ref="name"               Element reference → $refs.name
+mn-persist="key"            localStorage persistence
+mn-url="/path"              Map state to browser URL (static path)
 
-<template mp-define="name"> Reusable machine template
-<mp-slot name="x">          Content projection point
-<link rel="mp-import"
-      href="file.mp.html">  Import external component
-<mp-store name value>       Global shared state → $store.name
+<template mn-define="name"> Reusable machine template
+<mn-slot name="x">          Content projection point
+<link rel="mn-import"
+      href="file.mn.html">  Import external component
+<mn-store name value>       Global shared state → $store.name
 ```
 
 ---
@@ -47,111 +47,111 @@ Elements carry all logic. If it has parentheses, it is an element, not an attrib
 
 ```html
 <!-- Context — inline JSON or expression -->
-<mp-ctx>{"title":"","amount":0}</mp-ctx>
+<mn-ctx>{"title":"","amount":0}</mn-ctx>
 
 <!-- Computed binding — available throughout the machine, not persisted -->
-<mp-let name="valid">(and (> (count title) 0) (> amount 0))</mp-let>
+<mn-let name="valid">(and (> (count title) 0) (> amount 0))</mn-let>
 
 <!-- Receive inter-machine events -->
-<mp-receive event="order-approved">(to done)</mp-receive>
+<mn-receive event="order-approved">(to done)</mn-receive>
 
 <!-- Capability-based routing (server-side) -->
-<mp-where>(requires 'log' 'notify')</mp-where>
+<mn-where>(requires 'log' 'notify')</mn-where>
 
 <!-- Parameterised URL mapping -->
-<mp-url>(path '/orders/:id' ctx)</mp-url>
+<mn-url>(path '/orders/:id' ctx)</mn-url>
 ```
 
 ### Transitions
 
 ```html
-<mp-transition event="submit" to="submitted">
-  <mp-guard>(and (> (count title) 0) (> amount 0))</mp-guard>
-  <mp-action>(set! submitted_at (now))</mp-action>
-  <mp-emit>order-created</mp-emit>
-</mp-transition>
+<mn-transition event="submit" to="submitted">
+  <mn-guard>(and (> (count title) 0) (> amount 0))</mn-guard>
+  <mn-action>(set! submitted_at (now))</mn-action>
+  <mn-emit>order-created</mn-emit>
+</mn-transition>
 ```
 
-- `<mp-guard>` — pure expression; if falsy, transition is blocked
-- `<mp-action>` — effectful expression; runs on transition
-- `<mp-emit>` — dispatches a named inter-machine event
+- `<mn-guard>`: pure expression. If falsy, transition is blocked.
+- `<mn-action>`: effectful expression. Runs on transition.
+- `<mn-emit>`: dispatches a named inter-machine event.
 
 ### Lifecycle
 
 ```html
-<mp-init>(focus! $refs.titleInput)</mp-init>   <!-- on state entry -->
-<mp-exit>(set! draft '')</mp-exit>              <!-- before state exit -->
-<mp-temporal>(animate)</mp-temporal>            <!-- CSS animation -->
-<mp-temporal>(after 3000 (to idle))</mp-temporal>
-<mp-temporal>(every 5000 (then! (fetch-data) :data))</mp-temporal>
+<mn-init>(focus! $refs.titleInput)</mn-init>   <!-- on state entry -->
+<mn-exit>(set! draft '')</mn-exit>              <!-- before state exit -->
+<mn-temporal>(animate)</mn-temporal>            <!-- CSS animation -->
+<mn-temporal>(after 3000 (to idle))</mn-temporal>
+<mn-temporal>(every 5000 (then! (fetch-data) :data))</mn-temporal>
 ```
 
-`<mp-init>` and `<mp-exit>` appear inside a state or at the machine root. `<mp-temporal>` appears inside a state.
+`<mn-init>` and `<mn-exit>` appear inside a state or at the machine root. `<mn-temporal>` appears inside a state.
 
 ### Bindings
 
 ```html
 <!-- textContent from expression -->
-<p><mp-text>(str count ' items')</mp-text></p>
+<p><mn-text>(str count ' items')</mn-text></p>
 
 <!-- Visibility from expression -->
-<div><mp-show>(> count 0)</mp-show>...</div>
+<div><mn-show>(> count 0)</mn-show>...</div>
 
 <!-- CSS classes from expression -->
 <div class="badge">
-  <mp-class>(cond (= status 'done') 'badge-success' true 'badge-ghost')</mp-class>
+  <mn-class>(cond (= status 'done') 'badge-success' true 'badge-ghost')</mn-class>
 </div>
 
 <!-- Attribute binding -->
-<button><mp-bind attr="disabled">(not valid)</mp-bind>Submit</button>
-<a><mp-bind attr="href">url</mp-bind>Link</a>
+<button><mn-bind attr="disabled">(not valid)</mn-bind>Submit</button>
+<a><mn-bind attr="href">url</mn-bind>Link</a>
 
-<!-- Void element — <mp-bind> appears as sibling, still binds to void element -->
+<!-- Void element — <mn-bind> appears as sibling, still binds to void element -->
 <img class="photo" />
-<mp-bind attr="src">imageUrl</mp-bind>
+<mn-bind attr="src">imageUrl</mn-bind>
 ```
 
 ### DOM events
 
 ```html
 <!-- Standard event -->
-<button><mp-on event="click">(do (inc! count) (to counting))</mp-on>+</button>
+<button><mn-on event="click">(do (inc! count) (to counting))</mn-on>+</button>
 
 <!-- With modifiers: prevent, stop, self, once, outside -->
 <form>
-  <mp-on event="submit.prevent">(do (push! items newItem) (to idle))</mp-on>
+  <mn-on event="submit.prevent">(do (push! items newItem) (to idle))</mn-on>
   ...
 </form>
 
 <!-- Key filtering uses $event -->
 <div>
-  <mp-on event="keydown">(when (= (get $event :key) 'Enter') (to submit))</mp-on>
-  <input mp-model="title" />
+  <mn-on event="keydown">(when (= (get $event :key) 'Enter') (to submit))</mn-on>
+  <input mn-model="title" />
 </div>
 
 <!-- Click outside to close -->
-<div mp-state="open">
-  <mp-on event="click.outside">(to closed)</mp-on>
+<div mn-state="open">
+  <mn-on event="click.outside">(to closed)</mn-on>
   ...
 </div>
 ```
 
-Event modifiers: `.prevent` (preventDefault), `.stop` (stopPropagation), `.self` (only if event.target is the element), `.once` (remove after first fire), `.outside` (fire when clicking outside the element). Modifiers combine: `<mp-on event="submit.prevent.stop">`.
+Event modifiers: `.prevent` (preventDefault), `.stop` (stopPropagation), `.self` (only if event.target is the element), `.once` (remove after first fire), `.outside` (fire when clicking outside the element). Modifiers combine: `<mn-on event="submit.prevent.stop">`.
 
-> **`<mp-on>` vs `<mp-transition>`:** DOM event handlers defined with `<mp-on>` are browser-only. They do not travel to SCXML. For transitions that need to be part of the machine's definition and transport to the server, use `<mp-transition>`. A button's `mp-to="eventName"` fires a named event that `<mp-transition event="eventName">` handles.
+> `<mn-on>` vs `<mn-transition>`: DOM event handlers defined with `<mn-on>` are browser-only. They do not travel to SCXML. For transitions that need to be part of the machine's definition and transport to the server, use `<mn-transition>`. A button's `mn-to="eventName"` fires a named event that `<mn-transition event="eventName">` handles.
 
 ### Lists
 
 ```html
 <!-- Bare array name -->
-<template mp-each="items" mp-key="name">
-  <div><span><mp-text>name</mp-text></span></div>
+<template mn-each="items" mn-key="name">
+  <div><span><mn-text>name</mn-text></span></div>
 </template>
 
 <!-- Expression in element — complex filtering and sorting -->
-<template mp-key="name">
-  <mp-each>(->> items (filter #(> (get % :score) 80)) (sort-by :name))</mp-each>
-  <div><span><mp-text>name</mp-text></span></div>
+<template mn-key="name">
+  <mn-each>(->> items (filter #(> (get % :score) 80)) (sort-by :name))</mn-each>
+  <div><span><mn-text>name</mn-text></span></div>
 </template>
 ```
 
@@ -168,9 +168,9 @@ nil                 null
 :keyword            string key (for objects)
 name                symbol → context lookup
 $state              current state name
-$event              DOM event (in <mp-on>)
-$item  $index       current item/index (in mp-each)
-$detail             emit payload (in <mp-receive>)
+$event              DOM event (in <mn-on>)
+$item  $index       current item/index (in mn-each)
+$detail             emit payload (in <mn-receive>)
 $refs               element references
 $store              global store
 $el                 machine element
@@ -281,13 +281,13 @@ $el                 machine element
 (to state)                   signal transition (any s-expression context)
 (emit name)                  signal event dispatch (no payload, $detail = nil)
 (emit name payload)          signal event dispatch ($detail = payload in receiver)
-(prevent!)                   preventDefault (inside <mp-on>)
-(stop!)                      stopPropagation (inside <mp-on>)
-(after ms expr)              one-shot timer (inside <mp-temporal>)
-(every ms expr)              repeating interval (inside <mp-temporal>)
-(animate)                    CSS enter/leave animation (inside <mp-temporal>)
+(prevent!)                   preventDefault (inside <mn-on>)
+(stop!)                      stopPropagation (inside <mn-on>)
+(after ms expr)              one-shot timer (inside <mn-temporal>)
+(every ms expr)              repeating interval (inside <mn-temporal>)
+(animate)                    CSS enter/leave animation (inside <mn-temporal>)
 (then! expr :key 'ok' 'err') async: resolve → ok state, reject → err state
-(requires 'cap1' 'cap2')     capability declaration (inside <mp-where>)
+(requires 'cap1' 'cap2')     capability declaration (inside <mn-where>)
 (in-state? 'name')           true if current state matches or is a child of name
 (focus! element)             focus a DOM element (browser only)
 ```
@@ -307,10 +307,10 @@ $el                 machine element
 ## Global stores
 
 ```html
-<mp-store name="user" value='{"name":"Andrew","role":"admin"}'></mp-store>
+<mn-store name="user" value='{"name":"Andrew","role":"admin"}'></mn-store>
 ```
 
-Readable in any machine as `$store.user.name`. Writable with `(set! $store.user.name 'New')`. Shared by reference. When one machine writes, all machines see the change on their next update. Use `<mp-emit>` or `(emit name)` inside `<mp-on>` to notify other machines to re-render.
+Readable in any machine as `$store.user.name`. Writable with `(set! $store.user.name 'New')`. Shared by reference. When one machine writes, all machines see the change on their next update. Use `<mn-emit>` or `(emit name)` inside `<mn-on>` to notify other machines to re-render.
 
 ---
 
@@ -327,13 +327,13 @@ Readable in any machine as `$store.user.name`. Writable with `(set! $store.user.
 
 ## Lifecycle
 
-**State entry:** content cloned from template, bindings evaluated, nested machines initialised, `<mp-init>` runs, `<mp-temporal>` behaviours start (animate, after, every).
+**State entry.** Content cloned from template, bindings evaluated, nested machines initialised, `<mn-init>` runs, `<mn-temporal>` behaviours start (animate, after, every).
 
-**State exit:** `<mp-exit>` runs, CSS leave animation plays, temporal behaviours cleared, nested machines cleaned up, content destroyed.
+**State exit.** `<mn-exit>` runs, CSS leave animation plays, temporal behaviours cleared, nested machines cleaned up, content destroyed.
 
-**Machine creation:** context parsed from `<mp-ctx>` or `mp-ctx` attribute, `mp-persist` restores saved values, `$store` and `$refs` attached, initial state stamped, machine-level `<mp-init>` runs, `<mp-receive>` listeners registered.
+**Machine creation.** Context parsed from `<mn-ctx>` or `mn-ctx` attribute, `mn-persist` restores saved values, `$store` and `$refs` attached, initial state stamped, machine-level `<mn-init>` runs, `<mn-receive>` listeners registered.
 
-**DOM mutation:** MutationObserver auto-initialises new `[mp]` elements and cleans up removed ones. Works with HTMX, fetch, SSE, or any mechanism that mutates the DOM.
+**DOM mutation.** MutationObserver auto-initialises new `[mn]` elements and cleans up removed ones. Works with HTMX, fetch, SSE, or any mechanism that mutates the DOM.
 
 ---
 
@@ -342,21 +342,21 @@ Readable in any machine as `$store.user.name`. Writable with `(set! $store.user.
 Enable debug mode to log transitions, guard evaluations, routing decisions, and binding updates to the console:
 
 ```js
-MachinePerfect.debug = true;
+MachineNative.debug = true;
 ```
 
-**When an s-expression has an error:** the engine logs a warning to the console with the expression and element tag, then returns `null`. Bindings with errors render empty. Guards with errors fail (transition blocked). Actions with errors are skipped.
+When an s-expression has an error, the engine logs a warning to the console with the expression and element tag, then returns `null`. Bindings with errors render empty. Guards with errors fail (transition blocked). Actions with errors are skipped.
 
-**When an unknown function is called:** a `[mp] unknown function: name` warning appears in the console. The call returns `null`.
+When an unknown function is called, a `[mn] unknown function: name` warning appears in the console. The call returns `null`.
 
-**When a guard blocks a transition:** in debug mode, a message logs which guard expression failed and on which element.
+When a guard blocks a transition, debug mode logs which guard expression failed and on which element.
 
 **Common mistakes:**
 - Forgetting single quotes around strings: `(= name Andrew)` looks up a variable `Andrew`. Use `(= name 'Andrew')`.
-- Putting s-expressions in attributes: `mp-text="(str a b)"` is not valid. Use `<mp-text>(str a b)</mp-text>` inside the element.
-- Mutations in bindings: `<mp-text>(inc! x)</mp-text>` throws an error. Mutations are only allowed in `<mp-action>`, `<mp-on>`, `<mp-init>`, `<mp-exit>`.
-- Missing `mp-key` on `mp-each`: works but logs a warning. Without keys, the reconciler cannot efficiently track items.
-- `<mp-text>` overwrites sibling text: `<span><mp-text>count</mp-text> items</span>` — the " items" text is overwritten on update. Put static text inside the expression: `<mp-text>(str count ' items')</mp-text>`.
+- Putting s-expressions in attributes: `mn-text="(str a b)"` is not valid. Use `<mn-text>(str a b)</mn-text>` inside the element.
+- Mutations in bindings: `<mn-text>(inc! x)</mn-text>` throws an error. Mutations are only allowed in `<mn-action>`, `<mn-on>`, `<mn-init>`, `<mn-exit>`.
+- Missing `mn-key` on `mn-each`: works but logs a warning. Without keys, the reconciler cannot efficiently track items.
+- `<mn-text>` overwrites sibling text: `<span><mn-text>count</mn-text> items</span>`. The " items" text is overwritten on update. Put static text inside the expression: `<mn-text>(str count ' items')</mn-text>`.
 
 **Clojure divergences:**
 - `(join arr sep)` takes array first, separator second. Clojure's `clojure.string/join` takes separator first.
@@ -369,7 +369,7 @@ MachinePerfect.debug = true;
 
 ## SCXML support
 
-machine_perfect implements a subset of the W3C SCXML specification, extended with `<mp->` child elements for guards, actions, and capability routing.
+machine_native implements a subset of the W3C SCXML specification, extended with `<mn->` child elements for guards, actions, and capability routing.
 
 | Feature | Status |
 |---------|--------|
@@ -377,11 +377,11 @@ machine_perfect implements a subset of the W3C SCXML specification, extended wit
 | `<state>` with `id` | Supported |
 | `<final>` with `id` | Supported |
 | `<transition>` with `event`, `target`, `cond` | Supported |
-| `<mp-guard>` / `<mp-action>` child elements | Supported (MP extension) |
+| `<mn-guard>` / `<mn-action>` child elements | Supported (MP extension) |
 | `<datamodel>` / `<data>` | Supported |
-| `<mp-init>`, `<mp-exit>` on states | Supported (MP extension) |
-| `<mp-where>` on states | Supported (MP extension) |
-| `<mp-temporal>` on states | Supported (MP extension) |
+| `<mn-init>`, `<mn-exit>` on states | Supported (MP extension) |
+| `<mn-where>` on states | Supported (MP extension) |
+| `<mn-temporal>` on states | Supported (MP extension) |
 | Compound (nested) states | Supported |
 | Parallel states | Not yet |
 | History states | Not yet |
@@ -393,8 +393,8 @@ machine_perfect implements a subset of the W3C SCXML specification, extended wit
 ## Node execution API
 
 ```javascript
-var machine = require('machine-perfect/machine');
-var scxml = require('machine-perfect/scxml');
+var machine = require('machine-native/machine');
+var scxml = require('machine-native/scxml');
 ```
 
 | Function | Purpose |
@@ -448,4 +448,13 @@ After the adapter resolves, `context.schedule` contains the result. The next gua
 
 ```
 (invoke! :type 'api' :on-success 'completed' :on-error 'failed' :input request)
+```
+
+`effectTimeout` sets a deadline (in ms) for each adapter call. If an adapter doesn't resolve in time, it rejects with a timeout error and routes via `on-error` like any other failure:
+
+```javascript
+var result = await machine.executePipelineAsync(def, {
+  effects: { solver: solveFn },
+  effectTimeout: 5000  // 5 second deadline per adapter call
+});
 ```

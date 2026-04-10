@@ -1,7 +1,7 @@
 /**
  * engine.js — deep unit tests.
  *
- * Run: node mp/tests/engine.test.js
+ * Run: node mn/tests/engine.test.js
  * Tests every public function, every stdlib function,
  * every special form, every error path.
  */
@@ -154,17 +154,17 @@ execExpr('(toggle! player.active)', dotMutCtx);
 eq(dotMutCtx.player.active, false, 'toggle! on dot-path');
 
 describe('special — inc!/dec!/toggle! record dirty keys');
-var dirtyMutCtx = { count: 0, __mpInst: { _mpDirty: {} } };
+var dirtyMutCtx = { count: 0, __mnInst: { _mnDirty: {} } };
 execExpr('(inc! count)', dirtyMutCtx);
 eq(dirtyMutCtx.count, 1, 'inc! mutated');
-eq(dirtyMutCtx.__mpInst._mpDirty['count'], true, 'inc! recorded dirty key');
-dirtyMutCtx.__mpInst._mpDirty = {};
+eq(dirtyMutCtx.__mnInst._mnDirty['count'], true, 'inc! recorded dirty key');
+dirtyMutCtx.__mnInst._mnDirty = {};
 execExpr('(dec! count)', dirtyMutCtx);
-eq(dirtyMutCtx.__mpInst._mpDirty['count'], true, 'dec! recorded dirty key');
-dirtyMutCtx.__mpInst._mpDirty = {};
+eq(dirtyMutCtx.__mnInst._mnDirty['count'], true, 'dec! recorded dirty key');
+dirtyMutCtx.__mnInst._mnDirty = {};
 dirtyMutCtx.flag = true;
 execExpr('(toggle! flag)', dirtyMutCtx);
-eq(dirtyMutCtx.__mpInst._mpDirty['flag'], true, 'toggle! recorded dirty key');
+eq(dirtyMutCtx.__mnInst._mnDirty['flag'], true, 'toggle! recorded dirty key');
 
 describe('special — push!');
 var pushCtx = { items: [1, 2] };
@@ -185,15 +185,15 @@ deepEq(spliceCtx.items, ['a', 'd'], 'splice! removes by index');
 describe('special — to / emit signals');
 var scope = engine.makeScope({}, 'idle', null);
 engine.seval(engine.parse("(to active)"), scope);
-eq(scope.__mpTo, 'active', 'to sets __mpTo');
+eq(scope.__mnTo, 'active', 'to sets __mnTo');
 engine.seval(engine.parse("(emit saved)"), scope);
-eq(scope.__mpEmit, 'saved', 'emit sets __mpEmit');
-eq(scope.__mpEmitPayload, undefined, 'emit without payload sets no payload');
+eq(scope.__mnEmit, 'saved', 'emit sets __mnEmit');
+eq(scope.__mnEmitPayload, undefined, 'emit without payload sets no payload');
 
 engine.seval(engine.parse("(emit info (obj :id 42 :name 'test'))"), scope);
-eq(scope.__mpEmit, 'info', 'emit with payload sets __mpEmit');
-eq(scope.__mpEmitPayload.id, 42, 'emit payload .id');
-eq(scope.__mpEmitPayload.name, 'test', 'emit payload .name');
+eq(scope.__mnEmit, 'info', 'emit with payload sets __mnEmit');
+eq(scope.__mnEmitPayload.id, 42, 'emit payload .id');
+eq(scope.__mnEmitPayload.name, 'test', 'emit payload .name');
 
 describe('emit payload — exec() returns emitPayload');
 var emitResult = engine.exec("(emit saved (obj :x 99))", { x: 99 }, null, null, null, null);
@@ -483,7 +483,7 @@ evalExpr('nonexistent', {});
 engine.debug = false;
 console.warn = origWarn;
 eq(warnings.length, 1, 'exactly one warning for undefined var');
-eq(warnings[0], '[mp-debug] undefined variable "nonexistent"', 'warning message is exact');
+eq(warnings[0], '[mn-debug] undefined variable "nonexistent"', 'warning message is exact');
 
 describe('debug — no warning when variable exists');
 warnings = [];
@@ -492,7 +492,7 @@ engine.debug = true;
 evalExpr('x', { x: 1 });
 engine.debug = false;
 console.warn = origWarn;
-eq(warnings.filter(function (w) { return w.indexOf('mp-debug') !== -1; }).length, 0, 'no warning for defined var');
+eq(warnings.filter(function (w) { return w.indexOf('mn-debug') !== -1; }).length, 0, 'no warning for defined var');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -555,8 +555,8 @@ describe('fix — concat is variadic');
 deepEq(evalExpr('(concat [1] [2] [3])'), [1,2,3], '(concat [1] [2] [3])');
 
 describe('fix — inc!/dec!/toggle! record dirty keys');
-var dirtyCtx = { n: 5, flag: true, __mpInst: { _mpDirty: null } };
-engine.exec('(inc! n)', dirtyCtx, null, null, null, { _mpDirty: null });
+var dirtyCtx = { n: 5, flag: true, __mnInst: { _mnDirty: null } };
+engine.exec('(inc! n)', dirtyCtx, null, null, null, { _mnDirty: null });
 // inc! should have recorded dirty key — check ctx was mutated
 eq(dirtyCtx.n, 6, 'inc! mutated value');
 
@@ -645,26 +645,26 @@ eq(evalExpr('((comp inc inc) 0)'), 2, 'comp chains');
 eq(evalExpr('((partial + 10) 5)'), 15, 'partial applies');
 
 describe('mutation — swap!');
-var swapCtx = { count: 5, items: [1, 2], __mpInst: { _mpDirty: {} } };
-engine.exec("(swap! count inc)", swapCtx, 'test', null, null, swapCtx.__mpInst);
+var swapCtx = { count: 5, items: [1, 2], __mnInst: { _mnDirty: {} } };
+engine.exec("(swap! count inc)", swapCtx, 'test', null, null, swapCtx.__mnInst);
 eq(swapCtx.count, 6, 'swap! applies inc to count');
-eq(swapCtx.__mpInst._mpDirty.count, true, 'swap! marks dirty');
-swapCtx.__mpInst._mpDirty = {};
-engine.exec("(swap! items conj 3)", swapCtx, 'test', null, null, swapCtx.__mpInst);
+eq(swapCtx.__mnInst._mnDirty.count, true, 'swap! marks dirty');
+swapCtx.__mnInst._mnDirty = {};
+engine.exec("(swap! items conj 3)", swapCtx, 'test', null, null, swapCtx.__mnInst);
 deepEq(swapCtx.items, [1, 2, 3], 'swap! with conj appends');
-eq(swapCtx.__mpInst._mpDirty.items, true, 'swap! conj marks dirty');
+eq(swapCtx.__mnInst._mnDirty.items, true, 'swap! conj marks dirty');
 
 describe('mutation — dirty tracking');
-var dirtyInst = { _mpDirty: {} };
-var dirtyCtx = { items: [1, 2], tags: [{id:1},{id:2}], arr: [10,20,30], __mpInst: dirtyInst };
+var dirtyInst = { _mnDirty: {} };
+var dirtyCtx = { items: [1, 2], tags: [{id:1},{id:2}], arr: [10,20,30], __mnInst: dirtyInst };
 engine.exec("(push! items 3)", dirtyCtx, 'test', null, null, dirtyInst);
-eq(dirtyInst._mpDirty.items, true, 'push! marks dirty');
-dirtyInst._mpDirty = {};
+eq(dirtyInst._mnDirty.items, true, 'push! marks dirty');
+dirtyInst._mnDirty = {};
 engine.exec("(remove-where! tags :id 1)", dirtyCtx, 'test', null, null, dirtyInst);
-eq(dirtyInst._mpDirty.tags, true, 'remove-where! marks dirty');
-dirtyInst._mpDirty = {};
+eq(dirtyInst._mnDirty.tags, true, 'remove-where! marks dirty');
+dirtyInst._mnDirty = {};
 engine.exec("(splice! arr 0 1)", dirtyCtx, 'test', null, null, dirtyInst);
-eq(dirtyInst._mpDirty.arr, true, 'splice! marks dirty');
+eq(dirtyInst._mnDirty.arr, true, 'splice! marks dirty');
 
 describe('special — in-state?');
 var isCtx1 = { $state: 'running.filling' };

@@ -4,7 +4,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  machine_perfect                     │
+│                  machine_native                     │
 │                                                      │
 │  ┌────────────────┐          ┌────────────────┐      │
 │  │  Browser Host   │          │   Node Host     │     │
@@ -53,17 +53,17 @@
 
 | Component | Responsibility |
 |-----------|---------------|
-| HTML compiler | Read `mp-*` attributes → canonical machine definition |
-| DOM bindings | `<mp-text>`, `mp-model`, `<mp-show>`, `<mp-class>`, `<mp-bind>` |
-| Event delegation | `mp-to` click handler, `<mp-on>`, `mp-model` input/change |
-| Template system | `mp-define`, `mp-slot`, `mp-import` |
-| Temporal behaviour | `mp-temporal` — (animate), (after), (every) |
-| List rendering | `mp-each` with keyed reconciliation |
-| Capability routing | `mp-where` on states and transitions — `to()` checks target state, routes to capable host |
-| Persistence | `mp-persist` via localStorage |
-| Context sync | Phase 5: `mp-ctx` attribute synced on every update, markup reflects live state |
-| Lifecycle | `mp-init`, `mp-exit`, `mp-ref` |
-| Inter-machine events | `(emit name)` inside `mp-to`, `mp-receive` |
+| HTML compiler | Read `mn-*` attributes → canonical machine definition |
+| DOM bindings | `<mn-text>`, `mn-model`, `<mn-show>`, `<mn-class>`, `<mn-bind>` |
+| Event delegation | `mn-to` click handler, `<mn-on>`, `mn-model` input/change |
+| Template system | `mn-define`, `mn-slot`, `mn-import` |
+| Temporal behaviour | `mn-temporal`: (animate), (after), (every) |
+| List rendering | `mn-each` with keyed reconciliation |
+| Capability routing | `mn-where` on states and transitions. `to()` checks target state, routes to capable host |
+| Persistence | `mn-persist` via localStorage |
+| Context sync | Phase 5: `mn-ctx` attribute synced on every update, markup reflects live state |
+| Lifecycle | `mn-init`, `mn-exit`, `mn-ref` |
+| Inter-machine events | `(emit name)` inside `mn-to`, `mn-receive` |
 | Auto-init | MutationObserver for dynamic DOM |
 
 ## Level 2: Node host
@@ -72,12 +72,12 @@
 |-----------|---------------|
 | SCXML compiler | Parse SCXML + MP extensions → canonical machine definition |
 | Machine core | `createInstance`, `sendEvent`, `inspect`, `snapshot`, `restore`, `validate`, `executePipeline` |
-| Effect adapters | Capability declarations — persist, notify, fulfil, log, etc. |
+| Effect adapters | Capability declarations: persist, notify, fulfil, log, etc. |
 | Durable timers | Persist `after`/`every` across restarts |
-| Transforms | HTML ↔ SCXML structural conversion, `extractContext`, `extractMachine` |
+| Transforms | HTML/SCXML structural conversion, `extractContext`, `extractMachine` |
 | Server | HTTP server, serves machine markup, receives machine markup |
 
-## Level 2: Capability-based hosting (proposed — ADR-012)
+## Level 2: Capability-based hosting (proposed, ADR-012)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -100,7 +100,7 @@
 ```
 
 Services dissolve into capability pools: engine instances with specific
-effect adapters registered. A state with `<mp-where>(requires 'persist')</mp-where>`
+effect adapters registered. A state with `<mn-where>(requires 'persist')</mn-where>`
 routes to any host in a pool that has a `persist` adapter.
 
 The machine definition carries its own routing requirements. The route table
@@ -125,8 +125,8 @@ Both compilers produce this shape:
           action: "(set! submitted_at (now))" // s-expression string
         }]
       },
-      init: null,     // mp-init / onentry expression
-      exit: null      // mp-exit / onexit expression
+      init: null,     // mn-init / onentry expression
+      exit: null      // mn-exit / onexit expression
     },
     submitted: {
       on: {

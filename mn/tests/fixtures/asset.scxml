@@ -11,24 +11,24 @@
 
   <state id="procurement">
     <transition event="receive" target="received">
-      <mp-action>(set! asset_tag (str 'AST-' (now)))</mp-action>
+      <mn-action>(set! asset_tag (str 'AST-' (now)))</mn-action>
     </transition>
   </state>
 
   <state id="received">
     <transition event="commission" target="in-service">
-      <mp-action>(set! commissioned_at (now))</mp-action>
+      <mn-action>(set! commissioned_at (now))</mn-action>
     </transition>
     <transition event="reject-delivery" target="returned"/>
   </state>
 
   <state id="in-service">
     <transition event="decommission" target="decommissioned">
-      <mp-action>(set! decommissioned_at (now))</mp-action>
+      <mn-action>(set! decommissioned_at (now))</mn-action>
     </transition>
     <transition event="repair" target="maintenance"/>
     <transition event="transfer" target="transferring">
-      <mp-action>(set! location (get $event :location))</mp-action>
+      <mn-action>(set! location (get $event :location))</mn-action>
     </transition>
   </state>
 

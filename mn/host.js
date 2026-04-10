@@ -1,14 +1,14 @@
 /**
- * machine_perfect — backend HTTP server.
+ * machine_native — backend HTTP server.
  *
  * Machine-native API. No Express, no Fastify, no dependencies.
  * Loads SCXML definitions, creates instances, accepts events,
  * returns machine state + enabled transitions.
  *
  * Usage:
- *   node mp/host.js                                 # start on port 4000
- *   node mp/host.js --port 8080                     # custom port
- *   node mp/host.js --machines ./my-machines         # custom definitions dir
+ *   node mn/host.js                                 # start on port 4000
+ *   node mn/host.js --port 8080                     # custom port
+ *   node mn/host.js --machines ./my-machines         # custom definitions dir
  *
  * API:
  *   GET  /definitions                     List loaded definitions
@@ -99,7 +99,7 @@ function createMemoryStorage(options) {
 
 function loadDefinitions(directory, storage) {
   if (!fs.existsSync(directory)) {
-    console.log('[mp-server] machines directory not found: ' + directory);
+    console.log('[mn-server] machines directory not found: ' + directory);
     return 0;
   }
 
@@ -116,10 +116,10 @@ function loadDefinitions(directory, storage) {
     try {
       var def = scxml.compile(xmlContent, { id: id });
       storage.putDefinition(def);
-      console.log('[mp-server] loaded definition: ' + id + ' (' + def.stateNames.length + ' states)');
+      console.log('[mn-server] loaded definition: ' + id + ' (' + def.stateNames.length + ' states)');
       loaded++;
     } catch (err) {
-      console.warn('[mp-server] failed to compile ' + files[i] + ': ' + err.message);
+      console.warn('[mn-server] failed to compile ' + files[i] + ': ' + err.message);
     }
   }
 
@@ -144,7 +144,7 @@ function createServer(options) {
 
   // Load definitions from disk
   var loaded = loadDefinitions(machinesDir, storage);
-  console.log('[mp-server] ' + loaded + ' definition(s) loaded from ' + machinesDir);
+  console.log('[mn-server] ' + loaded + ' definition(s) loaded from ' + machinesDir);
 
   // ── Route matching ──
   // Simple pattern matching — no router dependency.
@@ -173,7 +173,7 @@ function createServer(options) {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, X-MP-Target, X-MP-Machine'
+      'Access-Control-Allow-Headers': 'Content-Type, X-MN-Target, X-MN-Machine'
     });
     res.end(body);
   }
@@ -232,7 +232,7 @@ function createServer(options) {
       res.writeHead(204, {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-MP-Target, X-MP-Machine'
+        'Access-Control-Allow-Headers': 'Content-Type, X-MN-Target, X-MN-Machine'
       });
       res.end();
       return;
@@ -353,7 +353,7 @@ function createServer(options) {
               var type = effect.type;
               var adapter = effects[type];
               if (!adapter) {
-                console.warn('[mp-server] no effect adapter for "' + type + '"');
+                console.warn('[mn-server] no effect adapter for "' + type + '"');
                 effectResults.push({ type: type, status: 'no-adapter' });
                 return;
               }
@@ -375,7 +375,7 @@ function createServer(options) {
                       machine.sendEvent(inst, effect['on-error'], { error: String(err) });
                       storage.putInstance(inst);
                     } else {
-                      console.warn('[mp-server] effect "' + type + '" failed:', err);
+                      console.warn('[mn-server] effect "' + type + '" failed:', err);
                     }
                   });
                   effectResults.push({ type: type, status: 'dispatched' });
@@ -394,7 +394,7 @@ function createServer(options) {
                   machine.sendEvent(inst, effect['on-error'], { error: String(err) });
                   storage.putInstance(inst);
                 } else {
-                  console.warn('[mp-server] effect "' + type + '" failed:', err);
+                  console.warn('[mn-server] effect "' + type + '" failed:', err);
                 }
                 effectResults.push({ type: type, status: 'error', error: String(err) });
               }
@@ -425,8 +425,8 @@ function createServer(options) {
   });
 
   server.listen(port, function () {
-    console.log('[mp-server] machine_perfect backend running on http://localhost:' + port);
-    console.log('[mp-server] endpoints:');
+    console.log('[mn-server] machine_native backend running on http://localhost:' + port);
+    console.log('[mn-server] endpoints:');
     console.log('  GET  /definitions');
     console.log('  GET  /definitions/:id');
     console.log('  POST /definitions/:id/validate');

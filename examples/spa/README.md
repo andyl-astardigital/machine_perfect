@@ -1,22 +1,22 @@
-# Snow Check — machine_perfect SPA Demo
+# Snow Check, machine_native SPA Demo
 
-A European ski resort snow conditions finder. Live weather data from Open-Meteo, resort images from Wikipedia. Built entirely in HTML with machine_perfect.
+A European ski resort snow conditions finder. Live weather data from Open-Meteo, resort images from Wikipedia. Built entirely in HTML with machine_native.
 
 ## Architecture
 
 ```
-index.html              Main page — all machines, stores, layout
+index.html              Main page: all machines, stores, layout
 components/
-  resort-card.mp.html   Reusable resort display (used in browse, compare, saved)
-  toast.mp.html         Auto-dismissing notification
-  command-palette.mp.html  Ctrl+K search overlay
+  resort-card.mn.html   Reusable resort display (used in browse, compare, saved)
+  toast.mn.html         Auto-dismissing notification
+  command-palette.mn.html  Ctrl+K search overlay
 ```
 
 ## Machines
 
 | Machine | States | Role |
 |---------|--------|------|
-| `shell` | (stateless) | Theme switcher, mp-bind on `<html>` data-theme |
+| `shell` | (stateless) | Theme switcher, mn-bind on `<html>` data-theme |
 | `app` | loading, error, browse, detail, compare, saved | Main application router |
 | `filters` | (stateless) | Sidebar filter controls, writes to $store.filters |
 | `picks` | (stateless) | Sidebar saved/compare lists |
@@ -36,16 +36,16 @@ components/
 ## Data flow
 
 1. On load, `app` starts in `loading` state
-2. `mp-init` calls `(then! (load-resorts) :_x 'browse')` — fetches resort list, transitions to browse
-3. Browse state renders resort cards via `mp-each` over `$store.resorts` with filter/sort pipeline
+2. `mn-init` calls `(then! (load-resorts) :_x 'browse')` — fetches resort list, transitions to browse
+3. Browse state renders resort cards via `mn-each` over `$store.resorts` with filter/sort pipeline
 4. Weather data arrives asynchronously — store items mutated in place, `app.update()` called
 5. Keyed reconciliation diffs child resort-card machines — only changed cards re-render
 6. Filters machine writes to `$store.filters` and emits `filters-changed`
-7. App receives `filters-changed` and re-renders (mp-each re-evaluates filter pipeline)
+7. App receives `filters-changed` and re-renders (mn-each re-evaluates filter pipeline)
 
 ## JavaScript escape hatch
 
-Four functions registered via `MachinePerfect.fn()`:
+Four functions registered via `MachineNative.fn()`:
 
 | Function | Purpose |
 |----------|---------|
@@ -58,13 +58,13 @@ These are the ONLY JavaScript in the application. Everything else — routing, f
 
 ## Key patterns demonstrated
 
-- **Hash routing**: `mp-route` + `mp-path` for SPA navigation
-- **Lazy state rendering**: 6 app states, only active state's DOM exists
-- **Keyed list reconciliation**: 27 resort cards with efficient diffing
-- **Component reuse**: resort-card used in browse grid, compare grid, and saved grid with different slot content
-- **Inter-machine events**: filters emits, app receives
-- **Temporal behavior**: live-clock uses `(every)`, toast uses `(after)`
-- **Global stores**: 3 stores shared across 8 machines
-- **Dependency tracking**: weather updates only re-evaluate affected bindings
-- **Async data**: `(then!)` for initial load, `MachinePerfect.fn()` for API calls
-- **mp-import**: components loaded from separate .mp.html files
+- Hash routing via `mn-route` + `mn-path` for SPA navigation
+- Lazy state rendering. 6 app states, only the active state's DOM exists.
+- Keyed list reconciliation. 27 resort cards with efficient diffing.
+- Component reuse. resort-card used in browse grid, compare grid, and saved grid with different slot content.
+- Inter-machine events. filters emits, app receives.
+- Temporal behavior. live-clock uses `(every)`, toast uses `(after)`.
+- Global stores. 3 stores shared across 8 machines.
+- Dependency tracking. Weather updates only re-evaluate affected bindings.
+- Async data. `(then!)` for initial load, `MachineNative.fn()` for API calls.
+- `mn-import` for components loaded from separate .mn.html files.

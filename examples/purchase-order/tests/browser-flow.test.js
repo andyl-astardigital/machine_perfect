@@ -9,7 +9,7 @@
  */
 
 var http = require('http');
-var PORT = 4000;
+var PORT = parseInt(process.env.PORT, 10) || 4000;
 
 function req(method, path, body) {
   return new Promise(function (resolve, reject) {
@@ -38,19 +38,30 @@ function browserOuterHTML(title, amount, items) {
   // Double-quote encode: " becomes &quot;
   var encodedCtx = ctx.replace(/"/g, '&quot;');
 
-  return '<div mp="purchase-order" mp-ctx="' + encodedCtx + '">' +
-    '<div mp-state="draft">' +
-    "<button mp-to=\"(when (and (&gt; (count items) 0) (&gt; amount 0) (not (empty? title))) (do (set! submitted_at (now)) (invoke! :type 'log' :input (str 'Order: ' title)) (to submitted)))\" hidden>submit</button>" +
+  return '<div mn="purchase-order" mn-ctx="' + encodedCtx + '">' +
+    '<div mn-state="draft">' +
+    '<mn-transition event="submit" to="submitted">' +
+    '<mn-guard>(and (&gt; (count items) 0) (&gt; amount 0) (not (empty? title)))</mn-guard>' +
+    "<mn-action>(do (set! submitted_at (now)) (invoke! :type 'log' :input (str 'Order: ' title)))</mn-action>" +
+    '</mn-transition>' +
+    '<button mn-to="submit" hidden>submit</button>' +
     '</div>' +
-    '<div mp-state="submitted">' +
-    "<button mp-to=\"(when (some? title) (do (set! approved_at (now)) (invoke! :type 'notify' :input (obj :to 'f@co' :subject (str 'OK: ' title))) (to approved)))\">approve</button>" +
-    '<button mp-to="rejected">reject</button>' +
+    '<div mn-state="submitted">' +
+    '<mn-transition event="approve" to="approved">' +
+    '<mn-guard>(&lt;= amount 100000)</mn-guard>' +
+    "<mn-action>(do (set! approved_at (now)) (invoke! :type 'notify' :input (obj :to 'f@co' :subject (str 'OK: ' title))))</mn-action>" +
+    '</mn-transition>' +
+    '<mn-transition event="reject" to="rejected">' +
+    '<mn-guard>(&gt; amount 100000)</mn-guard>' +
+    '</mn-transition>' +
     '</div>' +
-    '<div mp-state="approved">' +
-    "<button mp-to=\"(do (invoke! :type 'fulfil' :input (obj :title title :items items)) (invoke! :type 'persist' :input (obj :title title :amount amount :items items)) (to fulfilled))\">fulfil</button>" +
+    '<div mn-state="approved">' +
+    '<mn-transition event="fulfil" to="fulfilled">' +
+    "<mn-action>(do (invoke! :type 'fulfil' :input (obj :title title :items items)) (invoke! :type 'persist' :input (obj :title title :amount amount :items items)))</mn-action>" +
+    '</mn-transition>' +
     '</div>' +
-    '<div mp-state="fulfilled" mp-final></div>' +
-    '<div mp-state="rejected" mp-final></div>' +
+    '<div mn-state="fulfilled" mn-final></div>' +
+    '<div mn-state="rejected" mn-final></div>' +
     '</div>';
 }
 

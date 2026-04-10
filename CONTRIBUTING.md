@@ -1,15 +1,15 @@
-# Contributing to machine_perfect
+# Contributing to machine_native
 
 ## Principles
 
-The entire framework lives in `mp/`. Read the source before contributing. The coding standards below are non-negotiable.
+The entire framework lives in `mn/`. Read the source before contributing. The coding standards below are non-negotiable.
 
 ## Architecture
 
 ```
-mp/
+mn/
   engine.js         s-expression evaluator, stdlib, dep tracking
-  machine.js        canonical machine execution, mp-where route signals
+  machine.js        canonical machine execution, mn-where route signals
   transforms.js     HTML to SCXML structural transforms
   browser.js        DOM bindings, events, routing, lifecycle
   scxml.js          SCXML compiler
@@ -23,24 +23,24 @@ examples/
     tests/          Puppeteer integration tests
   spa/              client-side only (Snow Check)
 tests/
-  run-browser-tests.js  Puppeteer runner for mp/tests/browser.test.html
+  run-browser-tests.js  Puppeteer runner for mn/tests/browser.test.html
 ```
 
 ## API surface
 
-**9 shared attributes** (same in HTML and SCXML, all `mp-`):
-`mp`, `mp-state`, `mp-initial`, `mp-final`, `mp-ctx`, `mp-to`, `mp-where`, `mp-init`, `mp-exit`
+**9 shared attributes** (same in HTML and SCXML, all `mn-`):
+`mn`, `mn-state`, `mn-initial`, `mn-final`, `mn-ctx`, `mn-to`, `mn-where`, `mn-init`, `mn-exit`
 
 **Browser-only attributes:**
-`mp-model`, `mp-each`, `mp-key`, `mp-persist`, `mp-ref`, `mp-url`, `mp-loading`, `mp-store`, `mp-define`, `mp-slot`, `mp-import`
+`mn-model`, `mn-each`, `mn-key`, `mn-persist`, `mn-ref`, `mn-url`, `mn-loading`, `mn-store`, `mn-define`, `mn-slot`, `mn-import`
 
 **Structural child elements (all s-expression logic):**
-`<mp-text>`, `<mp-show>`, `<mp-class>`, `<mp-bind>`, `<mp-on>`, `<mp-let>`, `<mp-transition>`, `<mp-guard>`, `<mp-action>`, `<mp-emit>`, `<mp-init>`, `<mp-exit>`, `<mp-temporal>`, `<mp-receive>`, `<mp-where>`, `<mp-each>`, `<mp-ctx>`
+`<mn-text>`, `<mn-show>`, `<mn-class>`, `<mn-bind>`, `<mn-on>`, `<mn-let>`, `<mn-transition>`, `<mn-guard>`, `<mn-action>`, `<mn-emit>`, `<mn-init>`, `<mn-exit>`, `<mn-temporal>`, `<mn-receive>`, `<mn-where>`, `<mn-each>`, `<mn-ctx>`
 
 **2 JS methods, 2 JS properties:**
 `init(config)`, `fn(name, func)`, `store`, `debug`
 
-All attributes use the `mp-` prefix in both HTML and SCXML.
+All attributes use the `mn-` prefix in both HTML and SCXML.
 
 ## Development
 
@@ -54,12 +54,12 @@ npm test
 node --test tests/run-browser-tests.js
 
 # Run PO integration tests (requires registry + server running)
-node mp/registry.js &
+node mn/registry.js &
 node examples/purchase-order/server.js &
 node --test examples/purchase-order/tests/integration.test.js
 
 # Open browser tests manually
-# Serve from project root, open mp/tests/browser.test.html
+# Serve from project root, open mn/tests/browser.test.html
 ```
 
 ## Testing
@@ -76,7 +76,7 @@ Browser tests use the same `assert`/`eq`/`has` pattern with no framework. Integr
 - `$` prefix for framework context variables: `$state`, `$el`, `$event`, `$store`
 - `!` suffix for mutation: `set!`, `inc!`, `toggle!`
 - `?` suffix for predicates: `nil?`, `some?`, `empty?`
-- DOM element properties: `_mp` prefix + descriptive camelCase
+- DOM element properties: `_mn` prefix + descriptive camelCase
 - No single-letter variable names outside the stdlib hot path
 
 ### Design before code
@@ -89,10 +89,10 @@ Under 150 lines. `sevalInner` is the only exception because a flat switch is the
 Major sections get box-drawing headers with prose. Subsections get `// -- name --` headers. Inline comments explain why, not what. `// perf:` prefix for performance-motivated code. No TODO, FIXME, or HACK.
 
 ### Error handling
-All `JSON.parse` calls wrapped in try/catch with helpful error messages. Binding errors re-throw with element tag and expression. Unknown functions warn and return null. Invalid attribute combinations warn with specific guidance. Debug mode (`MachinePerfect.debug = true`) logs transitions, guard failures, and routing decisions.
+All `JSON.parse` calls wrapped in try/catch with helpful error messages. Binding errors re-throw with element tag and expression. Unknown functions warn and return null. Invalid attribute combinations warn with specific guidance. Debug mode (`MachineNative.debug = true`) logs transitions, guard failures, and routing decisions.
 
 ### Purity
-`eval` rejects all `!` mutation forms. Bindings (`<mp-text>`, `<mp-show>`, `<mp-class>`, `<mp-bind>`) cannot change state. `exec` allows mutations and is used by `<mp-action>`, `<mp-on>`, `<mp-init>`, and `<mp-exit>`. This split is structural, not conventional.
+`eval` rejects all `!` mutation forms. Bindings (`<mn-text>`, `<mn-show>`, `<mn-class>`, `<mn-bind>`) cannot change state. `exec` allows mutations and is used by `<mn-action>`, `<mn-on>`, `<mn-init>`, and `<mn-exit>`. This split is structural, not conventional.
 
 ### Style
 ES5 throughout the shared engine and browser runtime. `var`, `function`, `for`. Backend code may use modern Node.js features. Two blank lines between major sections. `== null` for null/undefined checks (intentional loose equality).

@@ -1,11 +1,11 @@
 /**
- * machine_perfect — Puppeteer runner for browser.test.html.
+ * machine_native — Puppeteer runner for browser.test.html.
  *
  * Serves browser.test.html over HTTP (required for history.pushState),
  * loads it in a headless browser, waits for the test suite to finish,
  * prints each result line, and exits with the appropriate code.
  *
- * Run: node mp/tests/browser.test.js
+ * Run: node mn/tests/browser.test.js
  */
 
 var puppeteer = require('puppeteer');
@@ -41,7 +41,7 @@ var fileServer = http.createServer(function (req, res) {
   if (urlPath === '/' || urlPath === '/browser.test.html') {
     return serveFile(res, path.join(SUITE_DIR, 'browser.test.html'));
   }
-  // Serve engine.js and browser.js from mp/
+  // Serve engine.js and browser.js from mn/
   if (urlPath === '/engine.js') return serveFile(res, path.join(MP_DIR, 'engine.js'));
   if (urlPath === '/browser.js') return serveFile(res, path.join(MP_DIR, 'browser.js'));
   // Serve logo from repo root

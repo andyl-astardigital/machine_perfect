@@ -1,5 +1,5 @@
 /**
- * machine_perfect — canonical machine execution.
+ * machine_native — canonical machine execution.
  *
  * Pure machine logic on top of the shared engine. No DOM, no HTTP,
  * no platform dependencies. Both browser and Node hosts compile their
@@ -98,10 +98,10 @@
             if (target) {
               var resolved = _resolveTarget(target, fullPath, stateTree);
               if (!resolved) {
-                throw new Error('[mp] transition target "' + target + '" does not exist in "' + defId + '" (from state "' + fullPath + '" on event "' + eventName + '")');
+                throw new Error('[mn] transition target "' + target + '" does not exist in "' + defId + '" (from state "' + fullPath + '" on event "' + eventName + '")');
               }
               if (resolved === fullPath) {
-                console.warn('[mp] self-transition in "' + defId + '": state "' + fullPath + '" targets itself on event "' + eventName + '". Consider decomposing into substates.');
+                console.warn('[mn] self-transition in "' + defId + '": state "' + fullPath + '" targets itself on event "' + eventName + '". Consider decomposing into substates.');
               }
             }
           }
@@ -116,14 +116,14 @@
   }
 
   function createDefinition(spec) {
-    if (!spec || !spec.id) throw new Error('[mp] definition requires an id');
-    if (!spec.states || Object.keys(spec.states).length === 0) throw new Error('[mp] definition "' + spec.id + '" has no states');
+    if (!spec || !spec.id) throw new Error('[mn] definition requires an id');
+    if (!spec.states || Object.keys(spec.states).length === 0) throw new Error('[mn] definition "' + spec.id + '" has no states');
 
     var stateNames = Object.keys(spec.states);
     var initial = spec.initial || stateNames[0];
 
     if (stateNames.indexOf(initial) === -1) {
-      throw new Error('[mp] initial state "' + initial + '" does not exist in "' + spec.id + '"');
+      throw new Error('[mn] initial state "' + initial + '" does not exist in "' + spec.id + '"');
     }
 
     // Deep-clone caller's states so _validateTransitions' array normalisation
@@ -192,7 +192,7 @@
       _definition: definition,
       _host: host,
       _timers: timers,
-      _mpDirty: null
+      _mnDirty: null
     };
 
     // Descend to atomic initial state (handles compound states)
@@ -212,7 +212,7 @@
       setupTimers(instance, initSpec, initAncestors[ii]);
     }
 
-    // Check mp-where on initial atomic state
+    // Check mn-where on initial atomic state
     var initialSpec = tree[initialPath].spec;
     if (initialSpec && initialSpec.where) {
       var required = engine.eval(initialSpec.where, context, instance.state, null) || [];
@@ -242,7 +242,7 @@
   function sendEvent(instance, eventName, eventData) {
     // Reentrancy guard: prevent sendEvent during sendEvent (e.g. synchronous timer)
     if (instance._processing) {
-      console.warn('[mp] sendEvent reentrancy detected (event: ' + eventName + '). Queued events are not supported.');
+      console.warn('[mn] sendEvent reentrancy detected (event: ' + eventName + '). Queued events are not supported.');
       return createResult(instance, instance.state, instance.state, eventName, false, 'reentrant');
     }
     instance._processing = true;
@@ -279,7 +279,7 @@
       return createResult(instance, fromState, fromState, eventName, false, 'no matching transition');
     }
 
-    // ── mp-where: distributed transition routing ──
+    // ── mn-where: distributed transition routing ──
     if (taken.where) {
       var required = engine.eval(taken.where, instance.context, instance.state, null) || [];
       var hostCaps = instance._host.capabilities || [];
@@ -297,14 +297,14 @@
     // ── Targetless transition: run action, no state change, no lifecycle ──
     if (!taken.target) {
       var oldCtxTargetless = instance._watchers && instance._watchers.length > 0 ? deepCopy(instance.context) : null;
-      instance._mpDirty = {};
+      instance._mnDirty = {};
       var targetlessEffects = [];
       if (taken.action) {
         var targetlessResult = engine.exec(taken.action, instance.context, fromState, null, null, instance);
         if (targetlessResult && targetlessResult.effects) targetlessEffects = targetlessResult.effects;
       }
-      var dirty = instance._mpDirty;
-      instance._mpDirty = null;
+      var dirty = instance._mnDirty;
+      instance._mnDirty = null;
       var result = createResult(instance, fromState, fromState, eventName, false, null);
       result.targetless = true;
       result.changed = Object.keys(dirty);
@@ -324,7 +324,7 @@
     var atomicTarget = _descendToAtomic(toState, tree);
 
     // Track dirty keys
-    instance._mpDirty = {};
+    instance._mnDirty = {};
     // Snapshot old context for watchers
     var oldCtx = instance._watchers && instance._watchers.length > 0 ? deepCopy(instance.context) : null;
 
@@ -422,7 +422,7 @@
       toState = autoAtomicTo;
       if (autoTaken.emit) { if (!emitsAuto) emitsAuto = []; emitsAuto.push(autoTaken.emit); }
     }
-    if (autoLimit < 0) console.warn('[mp] eventless transition loop limit reached in "' + definition.id + '" at state "' + instance.state + '"');
+    if (autoLimit < 0) console.warn('[mn] eventless transition loop limit reached in "' + definition.id + '" at state "' + instance.state + '"');
 
     // ── Collect emitted events ──
     var emits = [];
@@ -438,8 +438,8 @@
     }
 
     // ── Build result ──
-    var dirty = instance._mpDirty;
-    instance._mpDirty = null;
+    var dirty = instance._mnDirty;
+    instance._mnDirty = null;
 
     var result = createResult(instance, fromState, toState, eventName, true, null);
     result.changed = Object.keys(dirty);
@@ -569,7 +569,7 @@
       _timers: [],
       _pendingTimers: [],
       _stateTimers: {},
-      _mpDirty: null
+      _mnDirty: null
     };
 
     // Re-establish durable timers from snapshot, adjusting for elapsed time
@@ -713,15 +713,15 @@
       if (state.after && state.after.target) {
         var afterResolved = _resolveTarget(state.after.target, stateName, tree);
         if (!afterResolved) {
-          issues.push({ type: 'invalid-target', state: stateName, message: 'mp-after target "' + state.after.target + '" does not exist in state "' + stateName + '"' });
+          issues.push({ type: 'invalid-target', state: stateName, message: 'mn-after target "' + state.after.target + '" does not exist in state "' + stateName + '"' });
         }
       }
       if (state.after && (typeof state.after.ms !== 'number' || state.after.ms <= 0)) {
-        issues.push({ type: 'invalid-timer', state: stateName, message: 'mp-after ms must be a positive number in state "' + stateName + '", got: ' + state.after.ms });
+        issues.push({ type: 'invalid-timer', state: stateName, message: 'mn-after ms must be a positive number in state "' + stateName + '", got: ' + state.after.ms });
       }
       if (state.every) {
         if (typeof state.every.ms !== 'number' || state.every.ms <= 0) {
-          issues.push({ type: 'invalid-timer', state: stateName, message: 'mp-every ms must be a positive number in state "' + stateName + '", got: ' + state.every.ms });
+          issues.push({ type: 'invalid-timer', state: stateName, message: 'mn-every ms must be a positive number in state "' + stateName + '", got: ' + state.every.ms });
         }
         if (state.every.action) {
           try { engine.parse(state.every.action); } catch (err) { issues.push({ type: 'parse', state: stateName, expression: state.every.action, message: 'Every action parse error: ' + err.message }); }
@@ -738,6 +738,60 @@
             }
             if (trans[ti].action) {
               try { engine.parse(trans[ti].action); } catch (err) { issues.push({ type: 'parse', state: stateName, event: en3, expression: trans[ti].action, message: 'Action parse error: ' + err.message }); }
+            }
+          }
+        }
+      }
+    }
+
+    // Check for undefined context key references in guards and actions.
+    // Walk each expression's AST and collect bare symbol references. Warn on
+    // any symbol not in definition context, not a $ variable, not in stdlib.
+    var knownSymbols = Object.create(null);
+    for (var ck in definition.context) { if (definition.context.hasOwnProperty(ck)) knownSymbols[ck] = true; }
+    for (var sk in engine.stdlib) { if (engine.stdlib.hasOwnProperty(sk)) knownSymbols[sk] = true; }
+    // Special forms handled by the evaluator's switch, not in stdlib
+    var specialForms = ['if','when','unless','cond','do','let','fn','set!','inc!','dec!','toggle!',
+      'push!','remove-where!','splice!','assoc!','swap!','to','emit','invoke!','prevent!','stop!',
+      'focus!','then!','in-state?','when-state','and','or','not','->','->>','#'];
+    for (var sfi = 0; sfi < specialForms.length; sfi++) knownSymbols[specialForms[sfi]] = true;
+
+    function _collectUndefinedRefs(node, refs) {
+      if (!node) return;
+      if (node.t === 'Y' && node.v.charAt(0) !== '$' && node.v.indexOf('.') === -1 && !knownSymbols[node.v]) {
+        refs[node.v] = true;
+      }
+      if (Array.isArray(node)) {
+        for (var ri = 0; ri < node.length; ri++) _collectUndefinedRefs(node[ri], refs);
+      }
+      if (node.t === 'V' && Array.isArray(node.v)) {
+        for (var vi = 0; vi < node.v.length; vi++) _collectUndefinedRefs(node.v[vi], refs);
+      }
+    }
+
+    for (var si3 = 0; si3 < allNames.length; si3++) {
+      var sName = allNames[si3];
+      var sSpec = tree[sName].spec;
+      if (!sSpec.on) continue;
+      for (var en4 in sSpec.on) {
+        var sTrans = sSpec.on[en4];
+        for (var sti = 0; sti < sTrans.length; sti++) {
+          var guardExpr = sTrans[sti].guard;
+          var actionExpr = sTrans[sti].action;
+          if (guardExpr) {
+            var gRefs = {};
+            _collectUndefinedRefs(engine.parse(guardExpr), gRefs);
+            for (var gr in gRefs) {
+              issues.push({ type: 'undefined-reference', state: sName, symbol: gr, expression: guardExpr,
+                message: 'Symbol "' + gr + '" in state "' + sName + '" is not in the definition context' });
+            }
+          }
+          if (actionExpr) {
+            var aRefs = {};
+            _collectUndefinedRefs(engine.parse(actionExpr), aRefs);
+            for (var ar in aRefs) {
+              issues.push({ type: 'undefined-reference', state: sName, symbol: ar, expression: actionExpr,
+                message: 'Symbol "' + ar + '" in state "' + sName + '" is not in the definition context' });
             }
           }
         }
@@ -963,7 +1017,7 @@
 
     var inst = createInstance(definition, { host: host, context: options.context });
 
-    // Initial state may require routing (mp-where on initial state)
+    // Initial state may require routing (mn-where on initial state)
     if (inst.route) {
       clearTimers(inst);
       return {
@@ -1098,6 +1152,7 @@
     var eventSelector = options.eventSelector || function (events) { return events[0]; };
     var formatUpdater = options.formatUpdater || null;
     var format = options.format || null;
+    var effectTimeout = options.effectTimeout || 0;
     var effectLog = [];
 
     var host = {
@@ -1165,7 +1220,7 @@
 
       if (result.targetless) {
         if (result.effects && result.effects.length > 0) {
-          await _dispatchEffectsAsync(result.effects, effectAdapters, inst, effectLog);
+          await _dispatchEffectsAsync(result.effects, effectAdapters, inst, effectLog, 0, effectTimeout);
         }
         continue;
       }
@@ -1194,7 +1249,7 @@
 
       // Await each effect adapter — inject results into context via bind
       if (result.effects) {
-        await _dispatchEffectsAsync(result.effects, effectAdapters, inst, effectLog);
+        await _dispatchEffectsAsync(result.effects, effectAdapters, inst, effectLog, 0, effectTimeout);
       }
 
       if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
@@ -1211,7 +1266,7 @@
     } finally { clearTimers(inst); }
   }
 
-  async function _dispatchEffectsAsync(effects, adapters, inst, effectLog, depth) {
+  async function _dispatchEffectsAsync(effects, adapters, inst, effectLog, depth, timeout) {
     if (!depth) depth = 0;
     if (depth > 8) return; // prevent infinite effect chains
     for (var i = 0; i < effects.length; i++) {
@@ -1222,13 +1277,23 @@
         continue;
       }
       try {
-        var value = await adapter(effect.input, deepCopy(inst.context));
+        var adapterPromise = adapter(effect.input, deepCopy(inst.context));
+        // Wrap with timeout if configured
+        if (timeout > 0) {
+          adapterPromise = Promise.race([
+            adapterPromise,
+            new Promise(function (_, reject) {
+              setTimeout(function () { reject(new Error('effect adapter "' + effect.type + '" timed out after ' + timeout + 'ms')); }, timeout);
+            })
+          ]);
+        }
+        var value = await adapterPromise;
         if (effect.bind) inst.context[effect.bind] = value;
         effectLog.push({ type: effect.type, input: effect.input, service: 'host' });
         if (effect['on-success']) {
           var successResult = sendEvent(inst, effect['on-success'], value);
           if (successResult.effects && successResult.effects.length > 0) {
-            await _dispatchEffectsAsync(successResult.effects, adapters, inst, effectLog, depth + 1);
+            await _dispatchEffectsAsync(successResult.effects, adapters, inst, effectLog, depth + 1, timeout);
           }
         }
       } catch (err) {
@@ -1236,7 +1301,7 @@
         if (effect['on-error']) {
           var errorResult = sendEvent(inst, effect['on-error'], { error: err && err.message ? err.message : String(err) });
           if (errorResult.effects && errorResult.effects.length > 0) {
-            await _dispatchEffectsAsync(errorResult.effects, adapters, inst, effectLog, depth + 1);
+            await _dispatchEffectsAsync(errorResult.effects, adapters, inst, effectLog, depth + 1, timeout);
           }
         }
       }

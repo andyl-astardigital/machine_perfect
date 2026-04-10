@@ -10,7 +10,7 @@
 
 var http = require('http');
 var assert = require('assert');
-var transforms = require('../../../mp/transforms');
+var transforms = require('../../../mn/transforms');
 
 var PORT = parseInt(process.env.PORT, 10) || 4000;
 var passed = 0;
@@ -44,36 +44,36 @@ function notHas(html, str, msg) { assert(html.indexOf(str) === -1, msg + ' — s
 // ══════════════════════════════════════════════════════════════════
 
 function buildMachine(title, amount, items, notes) {
-  return '<div mp="purchase-order" mp-ctx=\'' + JSON.stringify({
+  return '<div mn="purchase-order" mn-ctx=\'' + JSON.stringify({
     title: title, amount: amount, items: items,
     notes: notes || '', submitted_at: null, approved_at: null
   }) + '\'>' +
-    '<div mp-state="draft">' +
-    '<mp-transition event="submit" to="submitted">' +
-    '<mp-guard>(and (> (count items) 0) (> amount 0) (not (empty? title)))</mp-guard>' +
-    '<mp-action>(do (set! submitted_at (now)) (invoke! :type \'log\' :input (str \'Order submitted: \' title \' — £\' amount)))</mp-action>' +
-    '</mp-transition>' +
+    '<div mn-state="draft">' +
+    '<mn-transition event="submit" to="submitted">' +
+    '<mn-guard>(and (> (count items) 0) (> amount 0) (not (empty? title)))</mn-guard>' +
+    '<mn-action>(do (set! submitted_at (now)) (invoke! :type \'log\' :input (str \'Order submitted: \' title \' — £\' amount)))</mn-action>' +
+    '</mn-transition>' +
     '</div>' +
-    '<div mp-state="submitted">' +
-    '<mp-transition event="approve" to="approved">' +
-    '<mp-guard>(<= amount 100000)</mp-guard>' +
-    '<mp-action>(do (set! approved_at (now)) (invoke! :type \'notify\' :input (obj :to \'finance@company.com\' :subject (str \'Approved: \' title) :amount amount)))</mp-action>' +
-    '<mp-emit>order-approved</mp-emit>' +
-    '</mp-transition>' +
-    '<mp-transition event="reject" to="rejected">' +
-    '<mp-guard>(> amount 100000)</mp-guard>' +
-    '<mp-action>(do (invoke! :type \'notify\' :input (obj :to \'requester@company.com\' :subject (str \'Rejected: \' title))) ' +
-    '(invoke! :type \'persist\' :input (obj :title title :amount amount :items items :notes notes :status \'rejected\' :created_at submitted_at)))</mp-action>' +
-    '</mp-transition>' +
+    '<div mn-state="submitted">' +
+    '<mn-transition event="approve" to="approved">' +
+    '<mn-guard>(<= amount 100000)</mn-guard>' +
+    '<mn-action>(do (set! approved_at (now)) (invoke! :type \'notify\' :input (obj :to \'finance@company.com\' :subject (str \'Approved: \' title) :amount amount)))</mn-action>' +
+    '<mn-emit>order-approved</mn-emit>' +
+    '</mn-transition>' +
+    '<mn-transition event="reject" to="rejected">' +
+    '<mn-guard>(> amount 100000)</mn-guard>' +
+    '<mn-action>(do (invoke! :type \'notify\' :input (obj :to \'requester@company.com\' :subject (str \'Rejected: \' title))) ' +
+    '(invoke! :type \'persist\' :input (obj :title title :amount amount :items items :notes notes :status \'rejected\' :created_at submitted_at)))</mn-action>' +
+    '</mn-transition>' +
     '</div>' +
-    '<div mp-state="approved">' +
-    '<mp-transition event="fulfil" to="fulfilled">' +
-    '<mp-action>(do (invoke! :type \'fulfil\' :input (obj :title title :items items)) ' +
-    '(invoke! :type \'persist\' :input (obj :title title :amount amount :items items :notes notes :created_at submitted_at)))</mp-action>' +
-    '</mp-transition>' +
+    '<div mn-state="approved">' +
+    '<mn-transition event="fulfil" to="fulfilled">' +
+    '<mn-action>(do (invoke! :type \'fulfil\' :input (obj :title title :items items)) ' +
+    '(invoke! :type \'persist\' :input (obj :title title :amount amount :items items :notes notes :created_at submitted_at)))</mn-action>' +
+    '</mn-transition>' +
     '</div>' +
-    '<div mp-state="fulfilled" mp-final></div>' +
-    '<div mp-state="rejected" mp-final></div>' +
+    '<div mn-state="fulfilled" mn-final></div>' +
+    '<div mn-state="rejected" mn-final></div>' +
     '</div>';
 }
 
@@ -115,7 +115,7 @@ request('POST', '/api/orders/reset', '', function () {
     test('audit trail has approved', function () { has(body, 'approved', 'has approved event'); });
     test('audit trail has fulfilled', function () { has(body, 'fulfilled', 'has fulfilled event'); });
     test('SCXML shown', function () { has(body, 'scxml', 'has scxml content'); });
-    test('HTML markup shown', function () { has(body, 'mp-current-state', 'has returned HTML'); });
+    test('HTML markup shown', function () { has(body, 'mn-current-state', 'has returned HTML'); });
     test('SCXML has fulfilled state', function () { has(body, 'initial="fulfilled"', 'SCXML final state is fulfilled'); });
     test('contains Laptop Stand', function () { has(body, 'Laptop Stand', 'title in response'); });
 
@@ -160,8 +160,8 @@ request('POST', '/api/orders/reset', '', function () {
           test('contains Laptop Stand (from happy path)', function () { has(body4, 'Laptop Stand', 'persisted order'); });
           // Bug 25: rejected orders are now persisted too — Expensive should appear
           test('contains Expensive (rejected, persisted)', function () { has(body4, 'Expensive', 'rejected order in list'); });
-          test('order card uses mp-define template', function () { has(body4, 'mp="order-card"', 'uses template'); });
-          test('card has mp-ctx', function () { has(body4, 'mp-ctx=', 'has context'); });
+          test('order card uses mn-define template', function () { has(body4, 'mn="order-card"', 'uses template'); });
+          test('card has mn-ctx', function () { has(body4, 'mn-ctx=', 'has context'); });
           // Both fulfilled (£750) and rejected (£150,000) orders are stored
           test('stats show 2 orders', function () { has(body4, '>2<', 'total count'); });
           test('stats show £750 (fulfilled)', function () { has(body4, '750', 'total value includes £750'); });
@@ -178,11 +178,11 @@ request('POST', '/api/orders/reset', '', function () {
 
           request('GET', '/api/orders/' + orderId, null, function (err5, status5, body5) {
             test('detail returns HTML', function () { has(body5, '<div', 'is HTML'); });
-            test('detail is a machine', function () { has(body5, 'mp="order-detail"', 'has machine'); });
-            test('has mp-each for items', function () { has(body5, 'mp-each', 'has list'); });
-            test('has mp-class with cond', function () { has(body5, 'cond', 'has conditional class'); });
-            test('has mp-on click.outside', function () { has(body5, 'event="click.outside"', 'has outside click'); });
-            test('has mp-temporal', function () { has(body5, 'mp-temporal', 'has transition'); });
+            test('detail is a machine', function () { has(body5, 'mn="order-detail"', 'has machine'); });
+            test('has mn-each for items', function () { has(body5, 'mn-each', 'has list'); });
+            test('has mn-class with cond', function () { has(body5, 'cond', 'has conditional class'); });
+            test('has mn-on click.outside', function () { has(body5, 'event="click.outside"', 'has outside click'); });
+            test('has mn-temporal', function () { has(body5, 'mn-temporal', 'has transition'); });
             test('has sort-by expression', function () { has(body5, 'sort-by', 'has sort-by'); });
             test('has let expression', function () { has(body5, 'let', 'has let'); });
 
@@ -207,8 +207,8 @@ request('POST', '/api/orders/reset', '', function () {
 
               console.log('\nstats — GET /api/stats');
               request('GET', '/api/stats', null, function (err7, status7, body7) {
-                test('returns machine markup', function () { has(body7, 'mp="live-stats"', 'has machine'); });
-                test('has mp-text bindings', function () { has(body7, '<mp-text>', 'has bindings'); });
+                test('returns machine markup', function () { has(body7, 'mn="live-stats"', 'has machine'); });
+                test('has mn-text bindings', function () { has(body7, '<mn-text>', 'has bindings'); });
                 test('has date-fmt', function () { has(body7, 'date-fmt', 'has date formatting'); });
 
 
@@ -218,18 +218,18 @@ request('POST', '/api/orders/reset', '', function () {
 
                 console.log('\ncreate form — GET /api/orders/new');
                 request('GET', '/api/orders/new', null, function (err8, status8, body8) {
-                  test('is a machine', function () { has(body8, 'mp="purchase-order"', 'has machine'); });
-                  test('has mp-model', function () { has(body8, 'mp-model=', 'has binding'); });
-                  test('has guard via when in mp-to', function () { has(body8, '(when ', 'has guard via when'); });
-                  test('has mp-each', function () { has(body8, 'mp-each=', 'has list'); });
-                  test('has mp-persist', function () { has(body8, 'mp-persist=', 'has persistence'); });
-                  test('has mp-ref', function () { has(body8, 'mp-ref=', 'has refs'); });
-                  test('has mp-on keydown', function () { has(body8, '<mp-on event="keydown">', 'has keyboard'); });
+                  test('is a machine', function () { has(body8, 'mn="purchase-order"', 'has machine'); });
+                  test('has mn-model', function () { has(body8, 'mn-model=', 'has binding'); });
+                  test('has guard via when in mn-to', function () { has(body8, '(when ', 'has guard via when'); });
+                  test('has mn-each', function () { has(body8, 'mn-each=', 'has list'); });
+                  test('has mn-persist', function () { has(body8, 'mn-persist=', 'has persistence'); });
+                  test('has mn-ref', function () { has(body8, 'mn-ref=', 'has refs'); });
+                  test('has mn-on keydown', function () { has(body8, '<mn-on event="keydown">', 'has keyboard'); });
                   test('has pipeline states', function () {
-                    has(body8, 'mp-state="submitted"', 'has submitted');
-                    has(body8, 'mp-state="approved"', 'has approved');
-                    has(body8, 'mp-state="fulfilled"', 'has fulfilled');
-                    has(body8, 'mp-state="rejected"', 'has rejected');
+                    has(body8, 'mn-state="submitted"', 'has submitted');
+                    has(body8, 'mn-state="approved"', 'has approved');
+                    has(body8, 'mn-state="fulfilled"', 'has fulfilled');
+                    has(body8, 'mn-state="rejected"', 'has rejected');
                   });
                   test('has invoke! effects', function () { has(body8, 'invoke!', 'has effects'); });
                   test('has focus!', function () { has(body8, 'focus!', 'has focus'); });
@@ -264,9 +264,9 @@ request('POST', '/api/orders/reset', '', function () {
 
                         console.log('\nBug 27 — maxSteps blocked message');
                         // A→B→A cycling machine with named event 'go' — never final, exhausts maxSteps
-                        var stalledMachine = '<div mp="loop-test" mp-ctx=\'{"n":0}\'>' +
-                          '<div mp-state="a"><mp-transition event="go" to="b"><mp-action>(inc! n)</mp-action></mp-transition></div>' +
-                          '<div mp-state="b"><mp-transition event="go" to="a"><mp-action>(inc! n)</mp-action></mp-transition></div>' +
+                        var stalledMachine = '<div mn="loop-test" mn-ctx=\'{"n":0}\'>' +
+                          '<div mn-state="a"><mn-transition event="go" to="b"><mn-action>(inc! n)</mn-action></mn-transition></div>' +
+                          '<div mn-state="b"><mn-transition event="go" to="a"><mn-action>(inc! n)</mn-action></mn-transition></div>' +
                           '</div>';
 
                         request('POST', '/api/machine', stalledMachine, function (errS, statusS, bodyS) {

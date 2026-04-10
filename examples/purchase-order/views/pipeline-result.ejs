@@ -1,12 +1,12 @@
 <%# Pipeline result — static server-rendered output, not a live machine.
     Uses EJS loops for effects/history because this is a one-shot diagnostic
     view stamped into the submitted state. The "View All Orders" button
-    uses mp-to because it lives inside the purchase-order machine's DOM. %>
+    uses mn-to because it lives inside the purchase-order machine's DOM. %>
 <div class="max-w-3xl mx-auto space-y-4">
   <div class="flex items-center justify-between">
-    <h2 class="text-xl font-bold text-mp-gold"><%= blocked ? 'Pipeline Result' : 'Pipeline Complete' %></h2>
+    <h2 class="text-xl font-bold text-mn-gold"><%= blocked ? 'Pipeline Result' : 'Pipeline Complete' %></h2>
     <button id="btn-view-all-orders" class="btn btn-primary btn-sm gap-1">
-      <mp-on event="click">(emit navigate-orders)</mp-on>
+      <mn-on event="click">(emit navigate-orders)</mn-on>
       View All Orders
     </button>
   </div>

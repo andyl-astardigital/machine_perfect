@@ -27,6 +27,6 @@
 | CV1 | `!` suffix = mutation (`set!`, `inc!`, `push!`) | S-expression language |
 | CV2 | `?` suffix = predicate (`nil?`, `some?`, `empty?`) | S-expression language |
 | CV3 | `$` prefix = framework variable (`$state`, `$store`, `$event`) | Runtime context |
-| CV4 | `_mp` prefix = DOM expando property | Frontend runtime |
+| CV4 | `_mn` prefix = DOM expando property | Frontend runtime |
 | CV5 | Functions under 150 lines (except evaluator switch) | All code |
 | CV6 | Comments explain WHY, not what | All code |

@@ -1,7 +1,7 @@
 /**
- * machine_perfect engine v0.5.0 — S-expression evaluator and runtime core.
+ * machine_native engine v0.5.0 — S-expression evaluator and runtime core.
  *
- * The shared heart of machine_perfect. Zero DOM dependencies.
+ * The shared heart of machine_native. Zero DOM dependencies.
  * Used by the frontend (browser) and backend (Node/SCXML) runtimes.
  *
  * Contains: tokenizer, parser, evaluator, standard library (~120 functions),
@@ -38,7 +38,7 @@
       if (ch === "'") {
         var j = i + 1;
         while (j < len && str[j] !== "'") j++;
-        if (j >= len) throw new Error('[mp] unterminated string literal starting at position ' + i);
+        if (j >= len) throw new Error('[mn] unterminated string literal starting at position ' + i);
         tokens.push({ t: 'S', v: str.slice(i + 1, j) });
         i = j + 1; continue;
       }
@@ -67,21 +67,21 @@
     if (tok === '(') {
       var list = [];
       while (tokens.length > 0 && tokens[0] !== ')') list.push(parseOne(tokens));
-      if (tokens.length === 0) throw new Error('[mp] unexpected end of expression — missing ")"');
+      if (tokens.length === 0) throw new Error('[mn] unexpected end of expression — missing ")"');
       tokens.shift();
       return list;
     }
     if (tok === '[') {
       var vec = [];
       while (tokens.length > 0 && tokens[0] !== ']') vec.push(parseOne(tokens));
-      if (tokens.length === 0) throw new Error('[mp] unexpected end of expression — missing "]"');
+      if (tokens.length === 0) throw new Error('[mn] unexpected end of expression — missing "]"');
       tokens.shift();
       return { t: 'V', v: vec };
     }
     if (tok === '#(') {
       var body = [];
       while (tokens.length > 0 && tokens[0] !== ')') body.push(parseOne(tokens));
-      if (tokens.length === 0) throw new Error('[mp] unexpected end of expression — missing ")" in #()');
+      if (tokens.length === 0) throw new Error('[mn] unexpected end of expression — missing ")" in #()');
       tokens.shift();
       // %1/%2/%3 are positional; % is an alias for %1 (first arg).
       // The fn case binds % = %1 when the first param is named %1.
@@ -120,7 +120,7 @@
 
   function seval(node, ctx) {
     if (node === null || node === undefined) return null;
-    if (++evalDepth > 512) { evalDepth--; throw new Error('[mp] expression too deeply nested (max depth 512)'); }
+    if (++evalDepth > 512) { evalDepth--; throw new Error('[mn] expression too deeply nested (max depth 512)'); }
     try { return sevalInner(node, ctx); } finally { evalDepth--; }
   }
 
@@ -136,7 +136,7 @@
   }
 
   function _markDirty(ctx, key) {
-    if (ctx.__mpInst) { if (!ctx.__mpInst._mpDirty) ctx.__mpInst._mpDirty = {}; ctx.__mpInst._mpDirty[depKey(key)] = true; }
+    if (ctx.__mnInst) { if (!ctx.__mnInst._mnDirty) ctx.__mnInst._mnDirty = {}; ctx.__mnInst._mnDirty[depKey(key)] = true; }
   }
 
   function sevalInner(node, ctx) {
@@ -173,7 +173,7 @@
           }
           if (firstClass[name]) return firstClass[name];
           if (userFns[name]) return userFns[name];
-          if (debug) console.warn('[mp-debug] undefined variable "' + name + '"');
+          if (debug) console.warn('[mn-debug] undefined variable "' + name + '"');
           return null;
       }
       return node;
@@ -331,12 +331,12 @@
         return true;
       case 'to':
         var target = n1.t === 'Y' ? n1.v : String(seval(n1, ctx));
-        ctx.__mpTo = target;
+        ctx.__mnTo = target;
         return target;
       case 'emit':
         var eName = n1.t === 'Y' ? n1.v : String(seval(n1, ctx));
-        ctx.__mpEmit = eName;
-        ctx.__mpEmitPayload = node.length > 2 ? seval(node[2], ctx) : undefined;
+        ctx.__mnEmit = eName;
+        ctx.__mnEmitPayload = node.length > 2 ? seval(node[2], ctx) : undefined;
         return eName;
       // (invoke! :type 'http.post' :input (obj ...) :bind :result :on-success 'ok' :on-error 'err')
       // Declares an effect for the host to execute. The machine says WHAT,
@@ -349,16 +349,16 @@
           var iVal = (ii + 1 < node.length) ? seval(node[ii + 1], ctx) : null;
           invokeArgs[iKey] = iVal;
         }
-        if (!ctx.__mpEffects) ctx.__mpEffects = [];
-        ctx.__mpEffects.push(invokeArgs);
+        if (!ctx.__mnEffects) ctx.__mnEffects = [];
+        ctx.__mnEffects.push(invokeArgs);
         return invokeArgs;
 
       case 'prevent!':
-        if (ctx.__mpEvent) ctx.__mpEvent.preventDefault();
+        if (ctx.__mnEvent) ctx.__mnEvent.preventDefault();
         else if (ctx.$event) ctx.$event.preventDefault();
         return null;
       case 'stop!':
-        if (ctx.__mpEvent) ctx.__mpEvent.stopPropagation();
+        if (ctx.__mnEvent) ctx.__mnEvent.stopPropagation();
         else if (ctx.$event) ctx.$event.stopPropagation();
         return null;
       case 'focus!':
@@ -368,15 +368,15 @@
         }
         return null;
       case 'animate':
-        if (ctx.__mpAnimate) ctx.__mpAnimate();
+        if (ctx.__mnAnimate) ctx.__mnAnimate();
         return null;
       case 'after':
         var ms = seval(n1, ctx);
-        if (ctx.__mpAfterTimer) ctx.__mpAfterTimer(ms, n2);
+        if (ctx.__mnAfterTimer) ctx.__mnAfterTimer(ms, n2);
         return null;
       case 'every':
         var ems = seval(n1, ctx);
-        if (ctx.__mpEveryInterval) ctx.__mpEveryInterval(ems, n2, ctx);
+        if (ctx.__mnEveryInterval) ctx.__mnEveryInterval(ems, n2, ctx);
         return null;
       case 'then!':
         var promise = seval(n1, ctx);
@@ -386,23 +386,23 @@
         var machineEl = ctx.$el;
         if (promise && typeof promise.then === 'function') {
           promise.then(function (result) {
-            if (machineEl && machineEl._mp) {
-              if (key) machineEl._mp.ctx[key] = result;
-              if (thenState) machineEl._mp.to(thenState);
-              else machineEl._mp.update();
-            } else if (ctx.__mpResolve) {
-              ctx.__mpResolve(key, result, thenState);
+            if (machineEl && machineEl._mn) {
+              if (key) machineEl._mn.ctx[key] = result;
+              if (thenState) machineEl._mn.to(thenState);
+              else machineEl._mn.update();
+            } else if (ctx.__mnResolve) {
+              ctx.__mnResolve(key, result, thenState);
             }
           }).catch(function (err) {
-            if (machineEl && machineEl._mp) {
+            if (machineEl && machineEl._mn) {
               if (errorState) {
-                if (key) machineEl._mp.ctx[key] = err;
-                machineEl._mp.to(errorState);
+                if (key) machineEl._mn.ctx[key] = err;
+                machineEl._mn.to(errorState);
               } else {
-                console.warn('[mp] async error:', err);
+                console.warn('[mn] async error:', err);
               }
-            } else if (ctx.__mpReject) {
-              ctx.__mpReject(key, err, errorState);
+            } else if (ctx.__mnReject) {
+              ctx.__mnReject(key, err, errorState);
             }
           });
         }
@@ -433,7 +433,7 @@
     var headVal = fn ? ctx[fn] : seval(head, ctx);
     if (typeof headVal === 'function') return headVal.apply(null, args);
 
-    console.warn('[mp] unknown function: ' + fn);
+    console.warn('[mn] unknown function: ' + fn);
     return null;
   }
 
@@ -464,8 +464,8 @@
     '+':   function (a) { return a.reduce(function (x, y) { return x + y; }, 0); },
     '-':   function (a) { if (a.length === 1) return -a[0]; var r = a[0]; for (var i = 1; i < a.length; i++) r -= a[i]; return r; },
     '*':   function (a) { return a.reduce(function (x, y) { return x * y; }, 1); },
-    '/':   function (a) { var r = a[0]; for (var i = 1; i < a.length; i++) { if (a[i] === 0) throw new Error('[mp] division by zero'); r /= a[i]; } return r; },
-    'mod': function (a) { if (a[1] === 0) throw new Error('[mp] modulo by zero'); return a[0] % a[1]; },
+    '/':   function (a) { var r = a[0]; for (var i = 1; i < a.length; i++) { if (a[i] === 0) throw new Error('[mn] division by zero'); r /= a[i]; } return r; },
+    'mod': function (a) { if (a[1] === 0) throw new Error('[mn] modulo by zero'); return a[0] % a[1]; },
     'inc': function (a) { return a[0] + 1; },
     'dec': function (a) { return a[0] - 1; },
     'abs': function (a) { return Math.abs(a[0]); },
@@ -535,7 +535,7 @@
     'now':       function () { return Date.now(); },
     'timestamp': function (a) { return new Date(a[0]).getTime(); },
     'uuid': function () {
-      return 'mp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+      return 'mn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     },
     'date-fmt': function (a) {
       if (!a[0]) return '';
@@ -544,7 +544,7 @@
     },
     'requires': function (a) {
       for (var i = 0; i < a.length; i++) {
-        if (typeof a[i] !== 'string') console.warn('[mp] requires expects string arguments. Got ' + typeof a[i] + ' for argument ' + (i + 1) + '. Did you forget quotes? Use (requires \'name\') not (requires name).');
+        if (typeof a[i] !== 'string') console.warn('[mn] requires expects string arguments. Got ' + typeof a[i] + ' for argument ' + (i + 1) + '. Did you forget quotes? Use (requires \'name\') not (requires name).');
       }
       return a;
     },
@@ -649,7 +649,7 @@
   function _checkPure(node) {
     if (!Array.isArray(node)) return;
     if (node.length > 0 && node[0] && node[0].t === 'Y' && mutationForms[node[0].v]) {
-      throw new Error('[mp] mutation "' + node[0].v + '" is not allowed in bindings. Move it to <mp-on>, <mp-init>, <mp-exit>, mp-to, or a transition <mp-action>.');
+      throw new Error('[mn] mutation "' + node[0].v + '" is not allowed in bindings. Move it to <mn-on>, <mn-init>, <mn-exit>, mn-to, or a transition <mn-action>.');
     }
     for (var i = 0; i < node.length; i++) {
       if (Array.isArray(node[i])) _checkPure(node[i]);
@@ -683,7 +683,7 @@
       return get(ctx, str);
     }
     if (trackingDeps) trackedDeps[str] = true;
-    if (debug && !(str in ctx)) console.warn('[mp-debug] undefined variable "' + str + '"');
+    if (debug && !(str in ctx)) console.warn('[mn-debug] undefined variable "' + str + '"');
     var val = ctx[str];
     return val !== undefined ? val : null;
   }
@@ -693,15 +693,15 @@
     var str = expr.trim();
     if (!str) return null;
     var scope = makeScope(ctx, state, el, event);
-    if (inst) scope.__mpInst = inst;
+    if (inst) scope.__mnInst = inst;
     seval(parse(str), scope);
     applyScope(scope, ctx, inst);
     // Return collected signals for the host to act on
     return {
-      to: scope.__mpTo || null,
-      emit: scope.__mpEmit || null,
-      emitPayload: scope.__mpEmitPayload !== undefined ? scope.__mpEmitPayload : null,
-      effects: scope.__mpEffects || null
+      to: scope.__mnTo || null,
+      emit: scope.__mnEmit || null,
+      emitPayload: scope.__mnEmitPayload !== undefined ? scope.__mnEmitPayload : null,
+      effects: scope.__mnEffects || null
     };
   }
 
@@ -722,9 +722,9 @@
 
   function applyScope(scope, target, inst) {
     for (var k in scope) {
-      if (scope.hasOwnProperty(k) && k.charAt(0) !== '$' && k.indexOf('__mp') !== 0) {
+      if (scope.hasOwnProperty(k) && k.charAt(0) !== '$' && k.indexOf('__mn') !== 0) {
         target[k] = scope[k];
-        if (inst) { if (!inst._mpDirty) inst._mpDirty = {}; inst._mpDirty[depKey(k)] = true; }
+        if (inst) { if (!inst._mnDirty) inst._mnDirty = {}; inst._mnDirty[depKey(k)] = true; }
       }
     }
   }

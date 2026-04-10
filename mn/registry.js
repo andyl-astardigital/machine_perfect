@@ -1,5 +1,5 @@
 /**
- * machine_perfect — capability registry server.
+ * machine_native — capability registry server.
  *
  * The registry is a machine. Nodes register by sending events.
  * Lookups query the machine's context. The route table IS the
@@ -10,7 +10,7 @@
  *   POST /deregister — remove a node
  *   GET  /routes    — the route table (registry machine context)
  *
- * Run: node mp/registry.js
+ * Run: node mn/registry.js
  */
 
 var http = require('http');
@@ -150,7 +150,7 @@ function createServer(options) {
   });
 
   server.listen(port, function () {
-    console.log('\n  machine_perfect — Capability Registry');
+    console.log('\n  machine_native — Capability Registry');
     console.log('  http://localhost:' + port);
     console.log('');
     console.log('  POST /register    — register a node');

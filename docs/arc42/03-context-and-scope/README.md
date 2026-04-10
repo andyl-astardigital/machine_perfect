@@ -4,7 +4,7 @@
 
 ```
                          ┌──────────────────────────────────┐
-                         │        machine_perfect            │
+                         │        machine_native            │
                          │                                   │
     HTML markup ────────►│  ┌──────────┐   ┌──────────┐     │◄──── SCXML markup
                          │  │ Browser  │   │  Node    │     │
@@ -24,15 +24,15 @@
 
 | Interface | Direction | Description |
 |-----------|-----------|-------------|
-| HTML attributes | In (browser) | `mp-state`, `<mp-transition event="name" to="target"><mp-guard>guard</mp-guard><mp-action>action</mp-action><mp-emit>name</mp-emit></mp-transition>`, etc. |
-| SCXML documents | In (backend) | `<state>`, `<transition>` with `cond`, `mp-action`, `mp-emit` attributes |
+| HTML attributes | In (browser) | `mn-state`, `<mn-transition event="name" to="target"><mn-guard>guard</mn-guard><mn-action>action</mn-action><mn-emit>name</mn-emit></mn-transition>`, etc. |
+| SCXML documents | In (backend) | `<state>`, `<transition>` with `cond`, `mn-action`, `mn-emit` attributes |
 | Canonical JSON | In/Out (both) | Machine definitions as portable computation documents |
 | DOM | Out (browser) | textContent, attributes, visibility, CSS classes |
 | HTTP API | In/Out (backend) | Events in, machine state + enabled transitions out |
 | Postgres | Out (backend) | Instance snapshots, audit log, definition storage |
 | External APIs | Out (backend) | Effect adapters (HTTP, email, queues) |
-| localStorage | In/Out (browser) | `mp-persist` state persistence |
-| MachinePerfect.fn() | In (both) | User-registered functions (JS escape hatch) |
+| localStorage | In/Out (browser) | `mn-persist` state persistence |
+| MachineNative.fn() | In (both) | User-registered functions (JS escape hatch) |
 | AI tooling | In/Out | Generate definitions, validate structure, simulate paths |
 
 ## Machine exchange model
@@ -46,7 +46,7 @@ A machine document flowing between systems carries:
 - Its history (where it has been)
 - Its enabled operations (what can be done RIGHT NOW)
 
-The receiving system does not need an SDK, API documentation, or prior knowledge. The machine document is the contract.
+The receiving system needs no SDK, no API documentation, and no prior knowledge. The machine document is the contract.
 
 ## What is NOT in scope (current phase)
 
@@ -56,4 +56,4 @@ The receiving system does not need an SDK, API documentation, or prior knowledge
 - SCXML parallel states and history states (deferred)
 - XSLT machine transformation (deferred)
 - XSD schema validation of machine documents (deferred)
-- Multi-language evaluator ports (Rust, Python — deferred)
+- Multi-language evaluator ports (Rust, Python, deferred)

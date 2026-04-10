@@ -34,10 +34,10 @@ async function withPage(fn) {
 
 async function waitForState(page, stateName, timeout) {
   await page.waitForFunction(function (name) {
-    var inst = document.querySelector('[mp="app"]');
-    if (!inst || !inst._mp) return false;
-    if (inst._mp.state !== name) return false;
-    var state = document.querySelector('[mp-state="' + name + '"]');
+    var inst = document.querySelector('[mn="app"]');
+    if (!inst || !inst._mn) return false;
+    if (inst._mn.state !== name) return false;
+    var state = document.querySelector('[mn-state="' + name + '"]');
     return state && !state.hidden && state.children.length > 0;
   }, { timeout: timeout || 15000 }, stateName);
   await new Promise(function (r) { setTimeout(r, 500); });
@@ -56,38 +56,38 @@ function resetOrders() {
 
 async function fillAndSubmitOrder(page, title, amount, items) {
   // Navigate to create
-  await page.click('button[mp-to="create"]');
+  await page.click('button[mn-to="create"]');
   await waitForState(page, 'create');
 
   // Wait for purchase-order machine
   await page.waitForFunction(function () {
-    return !!document.querySelector('[mp="purchase-order"]');
+    return !!document.querySelector('[mn="purchase-order"]');
   }, { timeout: 10000 });
   await new Promise(function (r) { setTimeout(r, 300); });
 
   // Fill title
-  await page.type('input[mp-model="title"]', title);
+  await page.type('input[mn-model="title"]', title);
 
   // Clear amount then type (initial value is 0, don't append)
-  var amountInput = await page.$('input[mp-model="amount"]');
+  var amountInput = await page.$('input[mn-model="amount"]');
   await amountInput.click({ clickCount: 3 });
   await amountInput.type(String(amount));
 
   // Add items
   for (var i = 0; i < items.length; i++) {
-    await page.type('input[mp-model="newItem"]', items[i]);
-    await page.click('button[mp-to="add-item"]');
+    await page.type('input[mn-model="newItem"]', items[i]);
+    await page.click('button[mn-to="add-item"]');
     await new Promise(function (r) { setTimeout(r, 200); });
   }
 
   // Click submit
-  var submitBtn = await page.$('button[mp-to="submit"]');
+  var submitBtn = await page.$('button[mn-to="submit"]');
   assert(submitBtn, 'submit button exists');
   await submitBtn.click();
 
   // Wait for pipeline result
   await page.waitForFunction(function () {
-    var stateEl = document.querySelector('[mp-state="submitted"]');
+    var stateEl = document.querySelector('[mn-state="submitted"]');
     if (!stateEl || stateEl.hidden) return false;
     return stateEl.innerHTML.indexOf('Pipeline Complete') !== -1;
   }, { timeout: 15000 });
@@ -103,15 +103,15 @@ test('page load — orders state renders with server content', async function ()
     await page.goto(URL, { waitUntil: 'networkidle0', timeout: 15000 });
 
     await page.waitForFunction(function () {
-      var el = document.querySelector('[mp-state="orders"]');
+      var el = document.querySelector('[mn-state="orders"]');
       if (!el || el.hidden) return false;
       return el.innerHTML.indexOf('loading-spinner') === -1 && el.innerHTML.trim().length > 20;
     }, { timeout: 15000 });
 
     var state = await page.evaluate(function () {
-      var el = document.querySelector('[mp-state="orders"]');
+      var el = document.querySelector('[mn-state="orders"]');
       return {
-        appState: document.querySelector('[mp="app"]')._mp.state,
+        appState: document.querySelector('[mn="app"]')._mn.state,
         hidden: el.hidden,
         hasSpinner: el.innerHTML.indexOf('loading-spinner') !== -1
       };
@@ -128,10 +128,10 @@ test('navbar — orders and create buttons navigate correctly', async function (
     await waitForState(page, 'orders');
 
     // Navigate to create
-    await page.click('button[mp-to="create"]');
+    await page.click('button[mn-to="create"]');
     await waitForState(page, 'create');
     var createState = await page.evaluate(function () {
-      return document.querySelector('[mp="app"]')._mp.state;
+      return document.querySelector('[mn="app"]')._mn.state;
     });
     assert.strictEqual(createState, 'create', 'navigated to create');
 
@@ -139,7 +139,7 @@ test('navbar — orders and create buttons navigate correctly', async function (
     await page.click('#btn-nav-orders');
     await waitForState(page, 'orders', 15000);
     var ordersState = await page.evaluate(function () {
-      return document.querySelector('[mp="app"]')._mp.state;
+      return document.querySelector('[mn="app"]')._mn.state;
     });
     assert.strictEqual(ordersState, 'orders', 'navigated back to orders');
   });
@@ -162,7 +162,7 @@ test('full journey: create order → pipeline approves → navigate to orders �
 
     // ── Step 2: Verify pipeline result ──
     var pipeline = await page.evaluate(function () {
-      var stateEl = document.querySelector('[mp-state="submitted"]');
+      var stateEl = document.querySelector('[mn-state="submitted"]');
       var html = stateEl.innerHTML;
       return {
         hasOrderApproved: html.indexOf('Order Approved') !== -1,
@@ -182,10 +182,10 @@ test('full journey: create order → pipeline approves → navigate to orders �
 
     // ── Step 4: Verify order appears in list ──
     var orderList = await page.evaluate(function () {
-      var ordersEl = document.querySelector('[mp-state="orders"]');
+      var ordersEl = document.querySelector('[mn-state="orders"]');
       var html = ordersEl.innerHTML;
       return {
-        appState: document.querySelector('[mp="app"]')._mp.state,
+        appState: document.querySelector('[mn="app"]')._mn.state,
         hasOrder: html.indexOf('Journey Test Order') !== -1,
         hasNoOrders: html.indexOf('No orders yet') !== -1,
         totalStat: (html.match(/Total<\/div>\s*<div[^>]*>(\d+)</) || [])[1] || '0'
@@ -215,7 +215,7 @@ test('two orders submitted → both appear in order list with correct stats', as
 
     // Verify approval
     var first = await page.evaluate(function () {
-      return document.querySelector('[mp-state="submitted"]').innerHTML.indexOf('Order Approved') !== -1;
+      return document.querySelector('[mn-state="submitted"]').innerHTML.indexOf('Order Approved') !== -1;
     });
     assert.strictEqual(first, true, 'first order approved');
 
@@ -227,7 +227,7 @@ test('two orders submitted → both appear in order list with correct stats', as
     await fillAndSubmitOrder(page, 'Second Order', 300, ['Gadget']);
 
     var second = await page.evaluate(function () {
-      return document.querySelector('[mp-state="submitted"]').innerHTML.indexOf('Order Approved') !== -1;
+      return document.querySelector('[mn-state="submitted"]').innerHTML.indexOf('Order Approved') !== -1;
     });
     assert.strictEqual(second, true, 'second order approved');
 
@@ -237,7 +237,7 @@ test('two orders submitted → both appear in order list with correct stats', as
 
     // ── Verify both orders in list ──
     var list = await page.evaluate(function () {
-      var html = document.querySelector('[mp-state="orders"]').innerHTML;
+      var html = document.querySelector('[mn-state="orders"]').innerHTML;
       return {
         hasFirst: html.indexOf('First Order') !== -1,
         hasSecond: html.indexOf('Second Order') !== -1,
@@ -260,43 +260,43 @@ test('form validation — submit button disabled without title/amount/items', as
     await page.goto(URL, { waitUntil: 'networkidle0', timeout: 15000 });
     await waitForState(page, 'orders');
 
-    await page.click('button[mp-to="create"]');
+    await page.click('button[mn-to="create"]');
     await waitForState(page, 'create');
     await page.waitForFunction(function () {
-      return !!document.querySelector('[mp="purchase-order"]');
+      return !!document.querySelector('[mn="purchase-order"]');
     }, { timeout: 10000 });
 
     // Submit button should be disabled with empty form
     var disabled = await page.evaluate(function () {
-      var btn = document.querySelector('button[mp-to="submit"]');
+      var btn = document.querySelector('button[mn-to="submit"]');
       return btn ? btn.disabled : 'no button';
     });
     assert.strictEqual(disabled, true, 'submit disabled when form is empty');
 
     // Fill only title — still disabled
-    await page.type('input[mp-model="title"]', 'Incomplete Order');
+    await page.type('input[mn-model="title"]', 'Incomplete Order');
     await new Promise(function (r) { setTimeout(r, 200); });
     var afterTitle = await page.evaluate(function () {
-      return document.querySelector('button[mp-to="submit"]').disabled;
+      return document.querySelector('button[mn-to="submit"]').disabled;
     });
     assert.strictEqual(afterTitle, true, 'submit disabled with only title');
 
     // Add amount — still disabled (no items)
-    var amountInput = await page.$('input[mp-model="amount"]');
+    var amountInput = await page.$('input[mn-model="amount"]');
     await amountInput.click({ clickCount: 3 });
     await amountInput.type('100');
     await new Promise(function (r) { setTimeout(r, 200); });
     var afterAmount = await page.evaluate(function () {
-      return document.querySelector('button[mp-to="submit"]').disabled;
+      return document.querySelector('button[mn-to="submit"]').disabled;
     });
     assert.strictEqual(afterAmount, true, 'submit disabled with no items');
 
     // Add item — now enabled
-    await page.type('input[mp-model="newItem"]', 'Final Item');
-    await page.click('button[mp-to="add-item"]');
+    await page.type('input[mn-model="newItem"]', 'Final Item');
+    await page.click('button[mn-to="add-item"]');
     await new Promise(function (r) { setTimeout(r, 300); });
     var afterItem = await page.evaluate(function () {
-      return document.querySelector('button[mp-to="submit"]').disabled;
+      return document.querySelector('button[mn-to="submit"]').disabled;
     });
     assert.strictEqual(afterItem, false, 'submit enabled with title + amount + item');
   });
@@ -315,14 +315,14 @@ test('cancel from create form returns to orders without submitting', async funct
     await waitForState(page, 'orders');
 
     // Go to create, fill some data, then cancel
-    await page.click('button[mp-to="create"]');
+    await page.click('button[mn-to="create"]');
     await waitForState(page, 'create');
     await page.waitForFunction(function () {
-      return !!document.querySelector('[mp="purchase-order"]');
+      return !!document.querySelector('[mn="purchase-order"]');
     }, { timeout: 10000 });
 
-    await page.type('input[mp-model="title"]', 'Should Not Persist');
-    var amountInput = await page.$('input[mp-model="amount"]');
+    await page.type('input[mn-model="title"]', 'Should Not Persist');
+    var amountInput = await page.$('input[mn-model="amount"]');
     await amountInput.click({ clickCount: 3 });
     await amountInput.type('999');
 
@@ -332,7 +332,7 @@ test('cancel from create form returns to orders without submitting', async funct
 
     // Verify no order was created
     var list = await page.evaluate(function () {
-      var html = document.querySelector('[mp-state="orders"]').innerHTML;
+      var html = document.querySelector('[mn-state="orders"]').innerHTML;
       return {
         hasNoOrders: html.indexOf('No orders yet') !== -1,
         hasCancelled: html.indexOf('Should Not Persist') !== -1
@@ -370,7 +370,7 @@ test('no console errors through create → submit → view orders lifecycle', as
     await waitForState(page, 'orders', 15000);
 
     // Navigate to create and back
-    await page.click('button[mp-to="create"]');
+    await page.click('button[mn-to="create"]');
     await waitForState(page, 'create');
     await page.click('#btn-nav-orders');
     await waitForState(page, 'orders', 15000);

@@ -8,33 +8,33 @@
     The browser only ever sees 'draft'. The server advances the rest. %>
 
 <div class="max-w-2xl mx-auto space-y-4">
-  <div mp="purchase-order" mp-persist="po-draft">
-    <mp-ctx>{"title":"","amount":0,"items":[],"newItem":"","notes":"","urgent":false,"submitted_at":null,"approved_at":null}</mp-ctx>
-    <mp-let name="valid">(and (>= (count title) 3) (> amount 0) (> (count items) 0))</mp-let>
+  <div mn="purchase-order" mn-persist="po-draft">
+    <mn-ctx>{"title":"","amount":0,"items":[],"newItem":"","notes":"","urgent":false,"submitted_at":null,"approved_at":null}</mn-ctx>
+    <mn-let name="valid">(and (>= (count title) 3) (> amount 0) (> (count items) 0))</mn-let>
 
     <!-- ── draft: the form UI ────────────────────────────────────── -->
-    <div mp-state="draft">
-      <mp-temporal>(animate)</mp-temporal>
-      <mp-init>(focus! $refs.titleInput)</mp-init>
-      <mp-exit>(set! newItem '')</mp-exit>
+    <div mn-state="draft">
+      <mn-temporal>(animate)</mn-temporal>
+      <mn-init>(focus! $refs.titleInput)</mn-init>
+      <mn-exit>(set! newItem '')</mn-exit>
 
-      <mp-transition event="submit" to="submitted">
-        <mp-guard>(and (>= (count title) 3) (> amount 0) (> (count items) 0))</mp-guard>
-        <mp-action>(set! submitted_at (now))</mp-action>
-      </mp-transition>
+      <mn-transition event="submit" to="submitted">
+        <mn-guard>(and (>= (count title) 3) (> amount 0) (> (count items) 0))</mn-guard>
+        <mn-action>(set! submitted_at (now))</mn-action>
+      </mn-transition>
 
-      <mp-transition event="add-item">
-        <mp-guard>(not (empty? newItem))</mp-guard>
-        <mp-action>(do (push! items (obj :name newItem :qty 1)) (set! newItem ''))</mp-action>
-      </mp-transition>
+      <mn-transition event="add-item">
+        <mn-guard>(not (empty? newItem))</mn-guard>
+        <mn-action>(do (push! items (obj :name newItem :qty 1)) (set! newItem ''))</mn-action>
+      </mn-transition>
 
-      <mp-transition event="navigate-orders">
-        <mp-action>(emit navigate-orders)</mp-action>
-      </mp-transition>
+      <mn-transition event="navigate-orders">
+        <mn-action>(emit navigate-orders)</mn-action>
+      </mn-transition>
 
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-bold text-mp-gold">New Purchase Order</h2>
-        <button mp-to="navigate-orders"
+        <h2 class="text-xl font-bold text-mn-gold">New Purchase Order</h2>
+        <button mn-to="navigate-orders"
                 class="btn btn-ghost btn-sm gap-1"><span class="text-xs">Esc</span> Cancel</button>
       </div>
 
@@ -44,11 +44,11 @@
           <!-- Title -->
           <div class="form-control">
             <label class="label"><span class="label-text font-bold">Title</span></label>
-            <input mp-model="title" mp-ref="titleInput" type="text"
+            <input mn-model="title" mn-ref="titleInput" type="text"
                    placeholder="What is this order for?"
                    class="input input-bordered" />
             <label class="label">
-              <mp-show>(and (> (count title) 0) (< (count title) 3))</mp-show>
+              <mn-show>(and (> (count title) 0) (< (count title) 3))</mn-show>
               <span class="label-text-alt text-warning">Title must be at least 3 characters</span>
             </label>
           </div>
@@ -56,10 +56,10 @@
           <!-- Amount -->
           <div class="form-control">
             <label class="label"><span class="label-text font-bold">Amount (£)</span></label>
-            <input mp-model="amount" type="number" placeholder="0"
+            <input mn-model="amount" type="number" placeholder="0"
                    class="input input-bordered" />
             <label class="label">
-              <mp-show>(< amount 0)</mp-show>
+              <mn-show>(< amount 0)</mn-show>
               <span class="label-text-alt text-warning">Amount must be positive</span>
             </label>
           </div>
@@ -67,17 +67,17 @@
           <!-- Notes -->
           <div class="form-control">
             <label class="label"><span class="label-text font-bold">Notes</span></label>
-            <textarea mp-model="notes" placeholder="Optional notes..."
+            <textarea mn-model="notes" placeholder="Optional notes..."
                       class="textarea textarea-bordered" rows="2"></textarea>
           </div>
 
           <!-- Urgent -->
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3">
-              <input mp-model="urgent" type="checkbox" class="checkbox checkbox-warning checkbox-sm" />
+              <input mn-model="urgent" type="checkbox" class="checkbox checkbox-warning checkbox-sm" />
               <span class="label-text font-bold">Urgent</span>
               <span class="badge badge-warning badge-sm">
-                <mp-show>urgent</mp-show>
+                <mn-show>urgent</mn-show>
                 Priority
               </span>
             </label>
@@ -88,36 +88,36 @@
             <label class="label">
               <span class="label-text font-bold">Items</span>
               <span class="label-text-alt">
-                <mp-text>(str (count items) ' added')</mp-text>
+                <mn-text>(str (count items) ' added')</mn-text>
               </span>
             </label>
             <div class="flex gap-2">
-              <input mp-model="newItem" type="text" placeholder="Add item... (Enter)"
-                     mp-ref="itemInput"
+              <input mn-model="newItem" type="text" placeholder="Add item... (Enter)"
+                     mn-ref="itemInput"
                      class="input input-bordered input-sm flex-1">
-                <mp-on event="keydown">
+                <mn-on event="keydown">
                   (when (and (= (get $event :key) 'Enter') (not (empty? newItem)))
                     (do (prevent!) (push! items (obj :name newItem :qty 1)) (set! newItem '') (to draft)))
-                </mp-on>
+                </mn-on>
               </input>
-              <button type="button" mp-to="add-item" class="btn btn-primary btn-sm">Add</button>
+              <button type="button" mn-to="add-item" class="btn btn-primary btn-sm">Add</button>
             </div>
           </div>
 
           <!-- Item list -->
           <div class="space-y-1">
-            <mp-show>(> (count items) 0)</mp-show>
-            <template mp-each="items" mp-key="name">
+            <mn-show>(> (count items) 0)</mn-show>
+            <template mn-each="items" mn-key="name">
               <div class="flex items-center gap-2 bg-base-200 rounded px-3 py-2">
                 <span class="text-xs text-base-content/40 font-mono w-5">
-                  <mp-text>(str (+ $index 1) '.')</mp-text>
+                  <mn-text>(str (+ $index 1) '.')</mn-text>
                 </span>
-                <span class="flex-1 text-sm font-medium"><mp-text>name</mp-text></span>
+                <span class="flex-1 text-sm font-medium"><mn-text>name</mn-text></span>
                 <label class="text-xs text-base-content/50">qty:</label>
-                <input mp-model="qty" type="number"
+                <input mn-model="qty" type="number"
                        class="input input-bordered input-xs w-16 text-center" />
                 <button type="button" class="btn btn-xs btn-ghost text-error">
-                  <mp-on event="click">(remove-where! items :name name)</mp-on>
+                  <mn-on event="click">(remove-where! items :name name)</mn-on>
                   &#x2715;
                 </button>
               </div>
@@ -125,7 +125,7 @@
           </div>
 
           <p class="text-xs text-base-content/40 italic">
-            <mp-show>(= (count items) 0)</mp-show>
+            <mn-show>(= (count items) 0)</mn-show>
             No items added yet.
           </p>
 
@@ -134,21 +134,21 @@
           <div class="flex items-center justify-between gap-4">
             <div>
               <p class="text-xs text-warning">
-                <mp-show>(not valid)</mp-show>
-                <mp-text>(cond
+                <mn-show>(not valid)</mn-show>
+                <mn-text>(cond
                   (empty? title) 'Enter a title'
                   (<= amount 0) 'Enter an amount'
                   (= (count items) 0) 'Add at least one item'
                   (< (count title) 3) 'Title must be at least 3 characters'
-                  true '')</mp-text>
+                  true '')</mn-text>
               </p>
               <p class="text-xs text-success">
-                <mp-show>valid</mp-show>
+                <mn-show>valid</mn-show>
                 Ready to submit
               </p>
             </div>
-            <button type="button" mp-to="submit" class="btn btn-primary gap-1">
-              <mp-bind attr="disabled">(not valid)</mp-bind>
+            <button type="button" mn-to="submit" class="btn btn-primary gap-1">
+              <mn-bind attr="disabled">(not valid)</mn-bind>
               Send to Pipeline
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
@@ -157,56 +157,56 @@
           </div>
 
           <p class="text-xs text-base-content/30 text-center">
-            Draft auto-saved to localStorage via mp-persist
+            Draft auto-saved to localStorage via mn-persist
           </p>
         </div>
       </form>
     </div>
 
-    <!-- Pipeline states. mp-where routes to capable host.
+    <!-- Pipeline states. mn-where routes to capable host.
          The server has log+notify+persist+fulfil capabilities.
          The browser sends the machine, server executes the pipeline. -->
 
-    <div mp-state="submitted">
-      <mp-where>(requires 'log' 'notify' 'persist' 'fulfil')</mp-where>
+    <div mn-state="submitted">
+      <mn-where>(requires 'log' 'notify' 'persist' 'fulfil')</mn-where>
 
-      <mp-transition event="approve" to="approved">
-        <mp-guard>(<= amount 100000)</mp-guard>
-        <mp-action>
+      <mn-transition event="approve" to="approved">
+        <mn-guard>(<= amount 100000)</mn-guard>
+        <mn-action>
           (do (set! approved_at (now))
               (invoke! :type 'notify' :input (obj :to 'finance@company.com'
                                                  :subject (str 'Approved: ' title)
                                                  :amount amount)))
-        </mp-action>
-        <mp-emit>order-approved</mp-emit>
-      </mp-transition>
+        </mn-action>
+        <mn-emit>order-approved</mn-emit>
+      </mn-transition>
 
-      <mp-transition event="reject" to="rejected">
-        <mp-guard>(> amount 100000)</mp-guard>
-        <mp-action>
+      <mn-transition event="reject" to="rejected">
+        <mn-guard>(> amount 100000)</mn-guard>
+        <mn-action>
           (do (invoke! :type 'notify' :input (obj :to 'requester@company.com'
                                                   :subject (str 'Rejected: ' title)))
               (invoke! :type 'persist' :input (obj :title title :amount amount
                                                    :items items :notes notes
                                                    :status 'rejected'
                                                    :created_at submitted_at)))
-        </mp-action>
-      </mp-transition>
+        </mn-action>
+      </mn-transition>
     </div>
 
-    <div mp-state="approved">
-      <mp-transition event="fulfil" to="fulfilled">
-        <mp-action>
+    <div mn-state="approved">
+      <mn-transition event="fulfil" to="fulfilled">
+        <mn-action>
           (do (invoke! :type 'fulfil' :input (obj :title title :items items))
               (invoke! :type 'persist' :input (obj :title title :amount amount
                                                   :items items :notes notes
                                                   :created_at submitted_at)))
-        </mp-action>
-      </mp-transition>
+        </mn-action>
+      </mn-transition>
     </div>
 
-    <div mp-state="fulfilled" mp-final></div>
-    <div mp-state="rejected" mp-final></div>
+    <div mn-state="fulfilled" mn-final></div>
+    <div mn-state="rejected" mn-final></div>
 
   </div>
 </div>

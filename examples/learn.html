@@ -4,19 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" type="image/svg+xml" href="../logo.svg" />
-  <title>Learn machine_perfect</title>
+  <title>Learn machine_native</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{mp:{purple:'#6d28d9',dark:'#4c1d95',gold:'#fbbf24',lavender:'#e9d5ff'}}}}}</script>
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" />
-  <script src="../mp/engine.js"></script>
-  <script src="../mp/browser.js"></script>
+  <script src="../mn/engine.js"></script>
+  <script src="../mn/browser.js"></script>
   <style>
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .light-circle { width: 4rem; height: 4rem; border-radius: 9999px; border: 3px solid rgba(255,255,255,0.1); transition: all 0.3s; }
     .light-on { box-shadow: 0 0 20px 5px currentColor; border-color: currentColor; }
-    .mp-enter-active, .mp-leave-active { transition: all 0.25s ease; }
-    .mp-enter-from { opacity: 0; transform: translateY(8px); }
-    .mp-leave-to { opacity: 0; transform: translateY(-8px); }
+    .mn-enter-active, .mn-leave-active { transition: all 0.25s ease; }
+    .mn-enter-from { opacity: 0; transform: translateY(8px); }
+    .mn-leave-to { opacity: 0; transform: translateY(-8px); }
     .sidebar-link { display: block; padding: 4px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; transition: background 0.15s; }
     .sidebar-link:hover { background: rgba(109,40,217,0.15); }
     .sidebar-topic { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #fbbf24; padding: 12px 12px 4px; }
@@ -25,56 +25,56 @@
 <body class="bg-base-200 text-base-content min-h-screen">
 
 <!-- ═══════════════════════════════════════════════════════════════════
-     The learn app IS a machine_perfect machine.
+     The learn app IS a machine_native machine.
      Sidebar = topic nav. Main area = lesson content via states.
      ═══════════════════════════════════════════════════════════════════ -->
-<div mp="learn" mp-initial="L1-1" mp-ctx='{}' class="flex min-h-screen">
+<div mn="learn" mn-initial="L1-1" mn-ctx='{}' class="flex min-h-screen">
 
-  <!-- Sidebar — inside the learn machine so mp-to buttons work -->
+  <!-- Sidebar — inside the learn machine so mn-to buttons work -->
   <aside class="w-64 bg-base-100 border-r border-base-300 p-2 overflow-y-auto shrink-0 hidden md:block">
     <div class="flex items-center gap-2 p-3 mb-2">
       <img src="../logo.svg" alt="" class="w-7 h-7 rounded" />
-      <span class="font-bold text-sm">Learn <span class="text-mp-purple">mp</span></span>
+      <span class="font-bold text-sm">Learn <span class="text-mn-purple">mp</span></span>
     </div>
 
     <div class="sidebar-topic">1. Foundations</div>
-    <button mp-to="L1-1" class="sidebar-link w-full text-left">1.1 Why state machines</button>
-    <button mp-to="L1-2" class="sidebar-link w-full text-left">1.2 Your first machine</button>
-    <button mp-to="L1-3" class="sidebar-link w-full text-left">1.3 Context and data</button>
-    <button mp-to="L1-4" class="sidebar-link w-full text-left">1.4 S-expression basics</button>
+    <button mn-to="L1-1" class="sidebar-link w-full text-left">1.1 Why state machines</button>
+    <button mn-to="L1-2" class="sidebar-link w-full text-left">1.2 Your first machine</button>
+    <button mn-to="L1-3" class="sidebar-link w-full text-left">1.3 Context and data</button>
+    <button mn-to="L1-4" class="sidebar-link w-full text-left">1.4 S-expression basics</button>
 
     <div class="sidebar-topic">2. Actions and Data</div>
-    <button mp-to="L2-1" class="sidebar-link w-full text-left">2.1 Mutation</button>
-    <button mp-to="L2-2" class="sidebar-link w-full text-left">2.2 Guards</button>
-    <button mp-to="L2-3" class="sidebar-link w-full text-left">2.3 Inputs and mp-show</button>
-    <button mp-to="L2-4" class="sidebar-link w-full text-left">2.4 Attribute binding</button>
+    <button mn-to="L2-1" class="sidebar-link w-full text-left">2.1 Mutation</button>
+    <button mn-to="L2-2" class="sidebar-link w-full text-left">2.2 Guards</button>
+    <button mn-to="L2-3" class="sidebar-link w-full text-left">2.3 Inputs and mn-show</button>
+    <button mn-to="L2-4" class="sidebar-link w-full text-left">2.4 Attribute binding</button>
 
     <div class="sidebar-topic">3. Lists and Time</div>
-    <button mp-to="L3-1" class="sidebar-link w-full text-left">3.1 Lists with mp-each</button>
-    <button mp-to="L3-2" class="sidebar-link w-full text-left">3.2 Collection functions</button>
-    <button mp-to="L3-3" class="sidebar-link w-full text-left">3.3 Temporal behavior</button>
+    <button mn-to="L3-1" class="sidebar-link w-full text-left">3.1 Lists with mn-each</button>
+    <button mn-to="L3-2" class="sidebar-link w-full text-left">3.2 Collection functions</button>
+    <button mn-to="L3-3" class="sidebar-link w-full text-left">3.3 Temporal behavior</button>
 
     <div class="sidebar-topic">4. Composition</div>
-    <button mp-to="L4-1" class="sidebar-link w-full text-left">4.1 Components</button>
-    <button mp-to="L4-2" class="sidebar-link w-full text-left">4.2 Slots</button>
-    <button mp-to="L4-3" class="sidebar-link w-full text-left">4.3 Emit and receive</button>
-    <button mp-to="L4-4" class="sidebar-link w-full text-left">4.4 Emit payloads</button>
-    <button mp-to="L4-5" class="sidebar-link w-full text-left">4.5 Nested machines</button>
+    <button mn-to="L4-1" class="sidebar-link w-full text-left">4.1 Components</button>
+    <button mn-to="L4-2" class="sidebar-link w-full text-left">4.2 Slots</button>
+    <button mn-to="L4-3" class="sidebar-link w-full text-left">4.3 Emit and receive</button>
+    <button mn-to="L4-4" class="sidebar-link w-full text-left">4.4 Emit payloads</button>
+    <button mn-to="L4-5" class="sidebar-link w-full text-left">4.5 Nested machines</button>
 
     <div class="sidebar-topic">5. State Management</div>
-    <button mp-to="L5-1" class="sidebar-link w-full text-left">5.1 Global stores</button>
-    <button mp-to="L5-2" class="sidebar-link w-full text-left">5.2 Computed bindings</button>
-    <button mp-to="L5-3" class="sidebar-link w-full text-left">5.3 Lifecycle hooks</button>
-    <button mp-to="L5-4" class="sidebar-link w-full text-left">5.4 Persistence</button>
+    <button mn-to="L5-1" class="sidebar-link w-full text-left">5.1 Global stores</button>
+    <button mn-to="L5-2" class="sidebar-link w-full text-left">5.2 Computed bindings</button>
+    <button mn-to="L5-3" class="sidebar-link w-full text-left">5.3 Lifecycle hooks</button>
+    <button mn-to="L5-4" class="sidebar-link w-full text-left">5.4 Persistence</button>
 
     <div class="sidebar-topic">6. Full-Stack</div>
-    <button mp-to="L6-1" class="sidebar-link w-full text-left">6.1 Capability routing</button>
-    <button mp-to="L6-2" class="sidebar-link w-full text-left">6.2 URL routing</button>
-    <button mp-to="L6-3" class="sidebar-link w-full text-left">6.3 Server pipelines</button>
-    <button mp-to="L6-4" class="sidebar-link w-full text-left">6.4 SCXML</button>
+    <button mn-to="L6-1" class="sidebar-link w-full text-left">6.1 Capability routing</button>
+    <button mn-to="L6-2" class="sidebar-link w-full text-left">6.2 URL routing</button>
+    <button mn-to="L6-3" class="sidebar-link w-full text-left">6.3 Server pipelines</button>
+    <button mn-to="L6-4" class="sidebar-link w-full text-left">6.4 SCXML</button>
 
     <div class="p-3 mt-4 text-xs text-base-content/30">
-      This sidebar, the navigation, and every demo on this page use zero JavaScript. It is all machine_perfect.
+      This sidebar, the navigation, and every demo on this page use zero JavaScript. It is all machine_native.
     </div>
   </aside>
 
@@ -84,12 +84,12 @@
 
 
     <!-- ═══ 1.1 Why state machines ══════════════════════════════════ -->
-    <div mp-state="L1-1">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L1-1">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-primary mb-2">1.1</div>
       <h2 class="text-2xl font-bold mb-4">Why state machines</h2>
 
-      <p class="mb-4">machine_perfect is a full-stack platform where state machines are the universal unit of definition, execution, and exchange. The same machine definition runs in the browser and on the server. The same expression language evaluates on both. Machines carry their own state, context, and routing requirements in the markup.</p>
+      <p class="mb-4">machine_native is a full-stack platform where state machines are the universal unit of definition, execution, and exchange. The same machine definition runs in the browser and on the server. The same expression language evaluates on both. Machines carry their own state, context, and routing requirements in the markup.</p>
 
       <p class="mb-4">Why machines instead of arbitrary code? Because machines make impossible states impossible. Three booleans (loading, data, error) create eight combinations. Half are bugs: loading AND error, data AND loading AND error. You prevent them by remembering to check. You will forget.</p>
 
@@ -120,25 +120,25 @@
         <div class="card bg-base-100 border border-success/20">
           <div class="card-body gap-3 p-5">
             <h3 class="font-bold text-success">State machine</h3>
-            <div mp="fetch-demo">
-              <div mp-state="idle">
+            <div mn="fetch-demo">
+              <div mn-state="idle">
                 <span class="badge badge-lg badge-outline">idle</span>
-                <button mp-to="loading" class="btn btn-xs btn-primary ml-2">Fetch</button>
+                <button mn-to="loading" class="btn btn-xs btn-primary ml-2">Fetch</button>
               </div>
-              <div mp-state="loading">
-                <mp-temporal>(after 1500 (to success))</mp-temporal>
+              <div mn-state="loading">
+                <mn-temporal>(after 1500 (to success))</mn-temporal>
                 <span class="badge badge-lg badge-info">loading</span>
                 <span class="loading loading-spinner loading-xs ml-2"></span>
               </div>
-              <div mp-state="success">
-                <mp-temporal>(animate)</mp-temporal>
+              <div mn-state="success">
+                <mn-temporal>(animate)</mn-temporal>
                 <span class="badge badge-lg badge-success">success</span>
-                <button mp-to="idle" class="btn btn-xs ml-2">Reset</button>
+                <button mn-to="idle" class="btn btn-xs ml-2">Reset</button>
               </div>
-              <div mp-state="error">
-                <mp-temporal>(animate)</mp-temporal>
+              <div mn-state="error">
+                <mn-temporal>(animate)</mn-temporal>
                 <span class="badge badge-lg badge-error">error</span>
-                <button mp-to="loading" class="btn btn-xs ml-2">Retry</button>
+                <button mn-to="loading" class="btn btn-xs ml-2">Retry</button>
               </div>
             </div>
             <p class="text-xs text-success mt-2">4 states. All valid. Cannot be loading AND error.</p>
@@ -146,54 +146,54 @@
         </div>
       </div>
 
-      <p class="mb-4">In machine_perfect, markup IS the state chart. States are elements. Transitions are attributes. If a transition does not exist in the markup, it cannot happen. This holds in the browser (HTML) and on the server (SCXML). The structure enforces the rules on every host.</p>
+      <p class="mb-4">In machine_native, markup IS the state chart. States are elements. Transitions are attributes. If a transition does not exist in the markup, it cannot happen. This holds in the browser (HTML) and on the server (SCXML). The structure enforces the rules on every host.</p>
 
       <div class="flex justify-end mt-6">
-        <button mp-to="L1-2" class="btn btn-primary btn-sm">Next: Your first machine</button>
+        <button mn-to="L1-2" class="btn btn-primary btn-sm">Next: Your first machine</button>
       </div>
     </div>
 
 
     <!-- ═══ 1.2 Your first machine ═════════════════════════════════ -->
-    <div mp-state="L1-2">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L1-2">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-primary mb-2">1.2</div>
       <h2 class="text-2xl font-bold mb-4">Your first machine</h2>
 
-      <p class="mb-4">Three attributes are all you need. <code class="mono">mp</code> creates a machine. <code class="mono">mp-state</code> declares a state. <code class="mono">mp-to</code> declares a transition. The first <code class="mono">mp-state</code> is the initial state.</p>
+      <p class="mb-4">Three attributes are all you need. <code class="mono">mp</code> creates a machine. <code class="mono">mn-state</code> declares a state. <code class="mono">mn-to</code> declares a transition. The first <code class="mono">mn-state</code> is the initial state.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="traffic" class="bg-base-300 rounded-2xl p-6 flex flex-col gap-3 items-center shadow-inner">
-          <div mp-state="red">
+        <div mn="traffic" class="bg-base-300 rounded-2xl p-6 flex flex-col gap-3 items-center shadow-inner">
+          <div mn-state="red">
             <div class="light-circle light-on bg-red-900" style="color:#ef4444"></div>
             <div class="light-circle bg-yellow-900 mt-3" style="color:#eab308"></div>
             <div class="light-circle bg-green-900 mt-3" style="color:#22c55e"></div>
-            <button type="button" mp-to="green" class="btn btn-sm btn-wide mt-4">NEXT</button>
+            <button type="button" mn-to="green" class="btn btn-sm btn-wide mt-4">NEXT</button>
           </div>
-          <div mp-state="green">
+          <div mn-state="green">
             <div class="light-circle bg-red-900" style="color:#ef4444"></div>
             <div class="light-circle bg-yellow-900 mt-3" style="color:#eab308"></div>
             <div class="light-circle light-on bg-green-900 mt-3" style="color:#22c55e"></div>
-            <button type="button" mp-to="yellow" class="btn btn-sm btn-wide mt-4">NEXT</button>
+            <button type="button" mn-to="yellow" class="btn btn-sm btn-wide mt-4">NEXT</button>
           </div>
-          <div mp-state="yellow">
+          <div mn-state="yellow">
             <div class="light-circle bg-red-900" style="color:#ef4444"></div>
             <div class="light-circle light-on bg-yellow-900 mt-3" style="color:#eab308"></div>
             <div class="light-circle bg-green-900 mt-3" style="color:#22c55e"></div>
-            <button type="button" mp-to="red" class="btn btn-sm btn-wide mt-4">NEXT</button>
+            <button type="button" mn-to="red" class="btn btn-sm btn-wide mt-4">NEXT</button>
           </div>
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
-            <pre data-prefix=""><code>&lt;div mp="traffic"&gt;</code></pre>
-            <pre data-prefix="" class="text-error"><code>  &lt;div mp-state="red"&gt;</code></pre>
-            <pre data-prefix="" class="text-error"><code>    &lt;button mp-to="green"&gt;NEXT&lt;/button&gt;</code></pre>
+            <pre data-prefix=""><code>&lt;div mn="traffic"&gt;</code></pre>
+            <pre data-prefix="" class="text-error"><code>  &lt;div mn-state="red"&gt;</code></pre>
+            <pre data-prefix="" class="text-error"><code>    &lt;button mn-to="green"&gt;NEXT&lt;/button&gt;</code></pre>
             <pre data-prefix="" class="text-error"><code>  &lt;/div&gt;</code></pre>
-            <pre data-prefix="" class="text-success"><code>  &lt;div mp-state="green"&gt;</code></pre>
-            <pre data-prefix="" class="text-success"><code>    &lt;button mp-to="yellow"&gt;NEXT&lt;/button&gt;</code></pre>
+            <pre data-prefix="" class="text-success"><code>  &lt;div mn-state="green"&gt;</code></pre>
+            <pre data-prefix="" class="text-success"><code>    &lt;button mn-to="yellow"&gt;NEXT&lt;/button&gt;</code></pre>
             <pre data-prefix="" class="text-success"><code>  &lt;/div&gt;</code></pre>
-            <pre data-prefix="" class="text-warning"><code>  &lt;div mp-state="yellow"&gt;</code></pre>
-            <pre data-prefix="" class="text-warning"><code>    &lt;button mp-to="red"&gt;NEXT&lt;/button&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>  &lt;div mn-state="yellow"&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>    &lt;button mn-to="red"&gt;NEXT&lt;/button&gt;</code></pre>
             <pre data-prefix="" class="text-warning"><code>  &lt;/div&gt;</code></pre>
             <pre data-prefix=""><code>&lt;/div&gt;</code></pre>
           </div>
@@ -207,58 +207,58 @@
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L1-1" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L1-3" class="btn btn-primary btn-sm">Next: Context and data</button>
+        <button mn-to="L1-1" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L1-3" class="btn btn-primary btn-sm">Next: Context and data</button>
       </div>
     </div>
 
 
     <!-- ═══ 1.3 Context and data ═══════════════════════════════════ -->
-    <div mp-state="L1-3">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L1-3">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-primary mb-2">1.3</div>
       <h2 class="text-2xl font-bold mb-4">Context and data</h2>
 
-      <p class="mb-4"><code class="mono">mp-ctx</code> is a JSON object that holds the machine's data. <code class="mono">mp-text</code> displays a value from context. A bare word like <code class="mono">count</code> resolves to the context value <code class="mono">ctx.count</code>.</p>
+      <p class="mb-4"><code class="mono">mn-ctx</code> is a JSON object that holds the machine's data. <code class="mono">mn-text</code> displays a value from context. A bare word like <code class="mono">count</code> resolves to the context value <code class="mono">ctx.count</code>.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="profile" mp-ctx='{"name":"Ada Lovelace","role":"Engineer","level":42}' class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[220px]">
-          <div mp-state="showing">
+        <div mn="profile" mn-ctx='{"name":"Ada Lovelace","role":"Engineer","level":42}' class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[220px]">
+          <div mn-state="showing">
             <div class="text-center space-y-2">
-              <p class="text-2xl font-bold"><mp-text>name</mp-text></p>
-              <p class="text-sm text-base-content/60"><mp-text>role</mp-text></p>
-              <div class="badge badge-primary badge-lg">Level <span class="ml-1"><mp-text>level</mp-text></span></div>
+              <p class="text-2xl font-bold"><mn-text>name</mn-text></p>
+              <p class="text-sm text-base-content/60"><mn-text>role</mn-text></p>
+              <div class="badge badge-primary badge-lg">Level <span class="ml-1"><mn-text>level</mn-text></span></div>
             </div>
           </div>
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
-            <pre data-prefix="" class="text-warning"><code>&lt;div mp="profile" mp-ctx='{"name":"Ada","role":"Engineer","level":42}'&gt;</code></pre>
-            <pre data-prefix=""><code>  &lt;div mp-state="showing"&gt;</code></pre>
-            <pre data-prefix="" class="text-info"><code>    &lt;p&gt;&lt;mp-text&gt;name&lt;/mp-text&gt;&lt;/p&gt;</code></pre>
-            <pre data-prefix="" class="text-info"><code>    &lt;p&gt;&lt;mp-text&gt;role&lt;/mp-text&gt;&lt;/p&gt;</code></pre>
-            <pre data-prefix="" class="text-info"><code>    &lt;span&gt;&lt;mp-text&gt;level&lt;/mp-text&gt;&lt;/span&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>&lt;div mn="profile" mn-ctx='{"name":"Ada","role":"Engineer","level":42}'&gt;</code></pre>
+            <pre data-prefix=""><code>  &lt;div mn-state="showing"&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>    &lt;p&gt;&lt;mn-text&gt;name&lt;/mn-text&gt;&lt;/p&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>    &lt;p&gt;&lt;mn-text&gt;role&lt;/mn-text&gt;&lt;/p&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>    &lt;span&gt;&lt;mn-text&gt;level&lt;/mn-text&gt;&lt;/span&gt;</code></pre>
             <pre data-prefix=""><code>  &lt;/div&gt;</code></pre>
             <pre data-prefix=""><code>&lt;/div&gt;</code></pre>
           </div>
           <ul class="text-sm text-base-content/60 mt-3 space-y-1 list-disc pl-5">
-            <li><code class="mono">mp-ctx</code> uses JSON (double quotes for keys, single quotes around the attribute)</li>
-            <li><code class="mono">&lt;mp-text&gt;name&lt;/mp-text&gt;</code> sets the parent element's text content to the value of <code class="mono">name</code></li>
+            <li><code class="mono">mn-ctx</code> uses JSON (double quotes for keys, single quotes around the attribute)</li>
+            <li><code class="mono">&lt;mn-text&gt;name&lt;/mn-text&gt;</code> sets the parent element's text content to the value of <code class="mono">name</code></li>
             <li>Context is per-machine. Each machine instance has its own data</li>
           </ul>
         </div>
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L1-2" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L1-4" class="btn btn-primary btn-sm">Next: S-expression basics</button>
+        <button mn-to="L1-2" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L1-4" class="btn btn-primary btn-sm">Next: S-expression basics</button>
       </div>
     </div>
 
 
     <!-- ═══ 1.4 S-expression basics ════════════════════════════════ -->
-    <div mp-state="L1-4">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L1-4">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-primary mb-2">1.4</div>
       <h2 class="text-2xl font-bold mb-4">S-expression basics</h2>
 
@@ -291,27 +291,27 @@
 
       <p class="mb-4">Strings use single quotes (HTML attributes use double quotes, so single quotes avoid escaping). Numbers, <code class="mono">true</code>, <code class="mono">false</code>, and <code class="mono">nil</code> are written as-is. Bare words like <code class="mono">name</code> look up context values.</p>
 
-      <div mp="expr-demo" mp-ctx='{"x":7,"name":"Ada"}' class="bg-base-300 rounded-2xl p-6 shadow-inner my-6">
-        <div mp-state="showing" class="space-y-2">
-          <p class="text-sm"><code class="mono">(+ x 3)</code> = <span class="font-bold"><mp-text>(+ x 3)</mp-text></span></p>
-          <p class="text-sm"><code class="mono">(str 'Hello ' name)</code> = <span class="font-bold"><mp-text>(str 'Hello ' name)</mp-text></span></p>
-          <p class="text-sm"><code class="mono">(> x 5)</code> = <span class="font-bold"><mp-text>(> x 5)</mp-text></span></p>
-          <p class="text-sm"><code class="mono">(if (> x 5) 'big' 'small')</code> = <span class="font-bold"><mp-text>(if (> x 5) 'big' 'small')</mp-text></span></p>
+      <div mn="expr-demo" mn-ctx='{"x":7,"name":"Ada"}' class="bg-base-300 rounded-2xl p-6 shadow-inner my-6">
+        <div mn-state="showing" class="space-y-2">
+          <p class="text-sm"><code class="mono">(+ x 3)</code> = <span class="font-bold"><mn-text>(+ x 3)</mn-text></span></p>
+          <p class="text-sm"><code class="mono">(str 'Hello ' name)</code> = <span class="font-bold"><mn-text>(str 'Hello ' name)</mn-text></span></p>
+          <p class="text-sm"><code class="mono">(> x 5)</code> = <span class="font-bold"><mn-text>(> x 5)</mn-text></span></p>
+          <p class="text-sm"><code class="mono">(if (> x 5) 'big' 'small')</code> = <span class="font-bold"><mn-text>(if (> x 5) 'big' 'small')</mn-text></span></p>
         </div>
       </div>
 
-      <p class="text-sm text-base-content/60">These expressions evaluate live against the context <code class="mono">{"x": 7, "name": "Ada"}</code>. Every <code class="mono">mp-text</code>, <code class="mono">mp-show</code>, <code class="mono">mp-on</code>, and <code class="mono">mp-bind</code> element accepts s-expressions.</p>
+      <p class="text-sm text-base-content/60">These expressions evaluate live against the context <code class="mono">{"x": 7, "name": "Ada"}</code>. Every <code class="mono">mn-text</code>, <code class="mono">mn-show</code>, <code class="mono">mn-on</code>, and <code class="mono">mn-bind</code> element accepts s-expressions.</p>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L1-3" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L2-1" class="btn btn-primary btn-sm">Next: Mutation</button>
+        <button mn-to="L1-3" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L2-1" class="btn btn-primary btn-sm">Next: Mutation</button>
       </div>
     </div>
 
 
     <!-- ═══ 2.1 Mutation ═══════════════════════════════════════════ -->
-    <div mp-state="L2-1">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L2-1">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-secondary mb-2">2.1</div>
       <h2 class="text-2xl font-bold mb-4">Mutation</h2>
 
@@ -320,20 +320,20 @@
       <p class="mb-4"><code class="mono">(do expr1 expr2)</code> runs multiple expressions in sequence. Use it when a transition needs to do more than one thing.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="counter" mp-ctx='{"count": 0}' class="bg-base-300 rounded-2xl p-8 shadow-inner text-center min-w-[200px]">
-          <div mp-state="counting">
-            <p class="text-6xl font-bold mb-4"><mp-text>count</mp-text></p>
+        <div mn="counter" mn-ctx='{"count": 0}' class="bg-base-300 rounded-2xl p-8 shadow-inner text-center min-w-[200px]">
+          <div mn-state="counting">
+            <p class="text-6xl font-bold mb-4"><mn-text>count</mn-text></p>
             <div class="flex gap-2 justify-center">
               <button class="btn btn-sm">
-                <mp-on event="click">(dec! count)</mp-on>
+                <mn-on event="click">(dec! count)</mn-on>
                 -1
               </button>
               <button class="btn btn-sm btn-primary">
-                <mp-on event="click">(inc! count)</mp-on>
+                <mn-on event="click">(inc! count)</mn-on>
                 +1
               </button>
               <button class="btn btn-sm btn-ghost">
-                <mp-on event="click">(do (set! count 0) (to counting))</mp-on>
+                <mn-on event="click">(do (set! count 0) (to counting))</mn-on>
                 Reset
               </button>
             </div>
@@ -341,9 +341,9 @@
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
-            <pre data-prefix="" class="text-info"><code>&lt;button&gt;&lt;mp-on event="click"&gt;(inc! count)&lt;/mp-on&gt;+1&lt;/button&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>&lt;button&gt;&lt;mn-on event="click"&gt;(inc! count)&lt;/mn-on&gt;+1&lt;/button&gt;</code></pre>
             <pre data-prefix="" class="text-warning"><code>&lt;button&gt;</code></pre>
-            <pre data-prefix="" class="text-warning"><code>  &lt;mp-on event="click"&gt;(do (set! count 0) (to counting))&lt;/mp-on&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>  &lt;mn-on event="click"&gt;(do (set! count 0) (to counting))&lt;/mn-on&gt;</code></pre>
             <pre data-prefix="" class="text-warning"><code>  Reset</code></pre>
             <pre data-prefix="" class="text-warning"><code>&lt;/button&gt;</code></pre>
           </div>
@@ -357,46 +357,46 @@
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L1-4" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L2-2" class="btn btn-primary btn-sm">Next: Guards</button>
+        <button mn-to="L1-4" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L2-2" class="btn btn-primary btn-sm">Next: Guards</button>
       </div>
     </div>
 
 
     <!-- ═══ 2.2 Guards ═════════════════════════════════════════════ -->
-    <div mp-state="L2-2">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L2-2">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-secondary mb-2">2.2</div>
       <h2 class="text-2xl font-bold mb-4">Guards</h2>
 
       <p class="mb-4"><code class="mono">(when condition expr)</code> blocks the expression from running unless the condition is true. If the condition is false, nothing happens. Use guards to prevent transitions that should not occur.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="guarded" mp-ctx='{"count": 0}' class="bg-base-300 rounded-2xl p-8 shadow-inner text-center min-w-[200px]">
-          <div mp-state="counting">
-            <p class="text-6xl font-bold mb-4"><mp-text>count</mp-text></p>
+        <div mn="guarded" mn-ctx='{"count": 0}' class="bg-base-300 rounded-2xl p-8 shadow-inner text-center min-w-[200px]">
+          <div mn-state="counting">
+            <p class="text-6xl font-bold mb-4"><mn-text>count</mn-text></p>
             <div class="flex gap-2 justify-center">
               <button class="btn btn-sm btn-primary">
-                <mp-on event="click">(inc! count)</mp-on>
+                <mn-on event="click">(inc! count)</mn-on>
                 +1
               </button>
               <button class="btn btn-sm btn-ghost">
-                <mp-on event="click">(when (!= count 0) (to confirm))</mp-on>
+                <mn-on event="click">(when (!= count 0) (to confirm))</mn-on>
                 Reset
               </button>
             </div>
             <p class="text-xs text-base-content/40 mt-2">
-              <mp-show>(= count 0)</mp-show>
+              <mn-show>(= count 0)</mn-show>
               Nothing to reset.
             </p>
           </div>
-          <div mp-state="confirm">
-            <mp-temporal>(animate)</mp-temporal>
+          <div mn-state="confirm">
+            <mn-temporal>(animate)</mn-temporal>
             <p class="text-lg mb-4">Reset to zero?</p>
             <div class="flex gap-2 justify-center">
-              <button mp-to="counting" class="btn btn-sm">No</button>
+              <button mn-to="counting" class="btn btn-sm">No</button>
               <button class="btn btn-sm btn-error">
-                <mp-on event="click">(do (set! count 0) (to counting))</mp-on>
+                <mn-on event="click">(do (set! count 0) (to counting))</mn-on>
                 Yes
               </button>
             </div>
@@ -405,7 +405,7 @@
         <div class="flex-1">
           <div class="mockup-code text-xs">
             <pre data-prefix="" class="text-warning"><code>&lt;button&gt;</code></pre>
-            <pre data-prefix="" class="text-warning"><code>  &lt;mp-on event="click"&gt;(when (!= count 0) (to confirm))&lt;/mp-on&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>  &lt;mn-on event="click"&gt;(when (!= count 0) (to confirm))&lt;/mn-on&gt;</code></pre>
             <pre data-prefix="" class="text-warning"><code>  Reset</code></pre>
             <pre data-prefix="" class="text-warning"><code>&lt;/button&gt;</code></pre>
           </div>
@@ -415,118 +415,118 @@
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L2-1" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L2-3" class="btn btn-primary btn-sm">Next: Inputs and mp-show</button>
+        <button mn-to="L2-1" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L2-3" class="btn btn-primary btn-sm">Next: Inputs and mn-show</button>
       </div>
     </div>
 
 
-    <!-- ═══ 2.3 Inputs and mp-show ═════════════════════════════════ -->
-    <div mp-state="L2-3">
-      <mp-temporal>(animate)</mp-temporal>
+    <!-- ═══ 2.3 Inputs and mn-show ═════════════════════════════════ -->
+    <div mn-state="L2-3">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-secondary mb-2">2.3</div>
-      <h2 class="text-2xl font-bold mb-4">Inputs and mp-show</h2>
+      <h2 class="text-2xl font-bold mb-4">Inputs and mn-show</h2>
 
-      <p class="mb-4"><code class="mono">mp-model</code> creates a two-way binding between an input and a context value. Type in the input and the context updates. The context updates and the input reflects it.</p>
-      <p class="mb-4"><code class="mono">mp-show</code> shows or hides an element based on an expression. When the expression is falsy, the element gets <code class="mono">hidden</code>.</p>
+      <p class="mb-4"><code class="mono">mn-model</code> creates a two-way binding between an input and a context value. Type in the input and the context updates. The context updates and the input reflects it.</p>
+      <p class="mb-4"><code class="mono">mn-show</code> shows or hides an element based on an expression. When the expression is falsy, the element gets <code class="mono">hidden</code>.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="door" mp-ctx='{"code":""}' class="bg-base-300 rounded-2xl p-8 shadow-inner text-center min-w-[220px]">
-          <div mp-state="locked">
+        <div mn="door" mn-ctx='{"code":""}' class="bg-base-300 rounded-2xl p-8 shadow-inner text-center min-w-[220px]">
+          <div mn-state="locked">
             <div class="text-5xl mb-4">🔒</div>
-            <input mp-model="code" type="text" placeholder="Enter code" class="input input-bordered input-sm w-32 text-center mono mb-3" />
+            <input mn-model="code" type="text" placeholder="Enter code" class="input input-bordered input-sm w-32 text-center mono mb-3" />
             <div class="flex gap-2 justify-center">
               <button class="btn btn-sm btn-primary">
-                <mp-on event="click">(when (= code '1234') (to unlocked))</mp-on>
+                <mn-on event="click">(when (= code '1234') (to unlocked))</mn-on>
                 Unlock
               </button>
             </div>
             <p class="text-error text-xs mt-2">
-              <mp-show>(and (&gt;= (count code) 4) (!= code '1234'))</mp-show>
+              <mn-show>(and (&gt;= (count code) 4) (!= code '1234'))</mn-show>
               Wrong code
             </p>
           </div>
-          <div mp-state="unlocked">
-            <mp-temporal>(animate)</mp-temporal>
+          <div mn-state="unlocked">
+            <mn-temporal>(animate)</mn-temporal>
             <div class="text-5xl mb-4">🔓</div>
-            <button mp-to="open" class="btn btn-sm">Open</button>
+            <button mn-to="open" class="btn btn-sm">Open</button>
             <button class="btn btn-sm btn-ghost ml-2">
-              <mp-on event="click">(do (set! code '') (to locked))</mp-on>
+              <mn-on event="click">(do (set! code '') (to locked))</mn-on>
               Lock
             </button>
           </div>
-          <div mp-state="open">
-            <mp-temporal>(animate)</mp-temporal>
+          <div mn-state="open">
+            <mn-temporal>(animate)</mn-temporal>
             <div class="text-5xl mb-4">🚪</div>
-            <button mp-to="unlocked" class="btn btn-sm">Close</button>
+            <button mn-to="unlocked" class="btn btn-sm">Close</button>
           </div>
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
-            <pre data-prefix="" class="text-info"><code>&lt;input mp-model="code" /&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>&lt;input mn-model="code" /&gt;</code></pre>
             <pre data-prefix="" class="text-warning"><code>&lt;button&gt;</code></pre>
-            <pre data-prefix="" class="text-warning"><code>  &lt;mp-on event="click"&gt;(when (= code '1234') (to unlocked))&lt;/mp-on&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>  &lt;mn-on event="click"&gt;(when (= code '1234') (to unlocked))&lt;/mn-on&gt;</code></pre>
             <pre data-prefix="" class="text-warning"><code>  Unlock</code></pre>
             <pre data-prefix="" class="text-warning"><code>&lt;/button&gt;</code></pre>
             <pre data-prefix="" class="text-error"><code>&lt;p&gt;</code></pre>
-            <pre data-prefix="" class="text-error"><code>  &lt;mp-show&gt;(and (&gt;= (count code) 4) (!= code '1234'))&lt;/mp-show&gt;</code></pre>
+            <pre data-prefix="" class="text-error"><code>  &lt;mn-show&gt;(and (&gt;= (count code) 4) (!= code '1234'))&lt;/mn-show&gt;</code></pre>
             <pre data-prefix="" class="text-error"><code>  Wrong code</code></pre>
             <pre data-prefix="" class="text-error"><code>&lt;/p&gt;</code></pre>
           </div>
-          <p class="text-sm text-base-content/60 mt-3">The code is <code class="mono font-bold">1234</code>. The locked state has no <code class="mono">mp-to="open"</code> button. You cannot open a locked door. The structure makes it impossible.</p>
+          <p class="text-sm text-base-content/60 mt-3">The code is <code class="mono font-bold">1234</code>. The locked state has no <code class="mono">mn-to="open"</code> button. You cannot open a locked door. The structure makes it impossible.</p>
         </div>
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L2-2" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L2-4" class="btn btn-primary btn-sm">Next: Attribute binding</button>
+        <button mn-to="L2-2" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L2-4" class="btn btn-primary btn-sm">Next: Attribute binding</button>
       </div>
     </div>
 
 
     <!-- ═══ 2.4 Attribute binding ══════════════════════════════════ -->
-    <div mp-state="L2-4">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L2-4">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-secondary mb-2">2.4</div>
       <h2 class="text-2xl font-bold mb-4">Attribute binding</h2>
 
-      <p class="mb-4"><code class="mono">&lt;mp-bind attr="ATTR"&gt;</code> binds any HTML attribute to an expression. <code class="mono">disabled</code>, <code class="mono">style</code>, <code class="mono">href</code>, <code class="mono">aria-label</code>. The attribute updates when the expression's dependencies change.</p>
-      <p class="mb-4"><code class="mono">&lt;mp-class&gt;</code> adds CSS classes conditionally using <code class="mono">(when condition 'class-name')</code>.</p>
+      <p class="mb-4"><code class="mono">&lt;mn-bind attr="ATTR"&gt;</code> binds any HTML attribute to an expression. <code class="mono">disabled</code>, <code class="mono">style</code>, <code class="mono">href</code>, <code class="mono">aria-label</code>. The attribute updates when the expression's dependencies change.</p>
+      <p class="mb-4"><code class="mono">&lt;mn-class&gt;</code> adds CSS classes conditionally using <code class="mono">(when condition 'class-name')</code>.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="bind-demo" mp-ctx='{"temp":20}' class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[220px]">
-          <div mp-state="showing" class="space-y-3">
+        <div mn="bind-demo" mn-ctx='{"temp":20}' class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[220px]">
+          <div mn-state="showing" class="space-y-3">
             <div class="flex items-center gap-3">
-              <input mp-model="temp" type="range" min="-10" max="45" class="range range-sm range-primary flex-1" />
-              <span class="font-bold mono w-12 text-right"><mp-text>(str temp '°')</mp-text></span>
+              <input mn-model="temp" type="range" min="-10" max="45" class="range range-sm range-primary flex-1" />
+              <span class="font-bold mono w-12 text-right"><mn-text>(str temp '°')</mn-text></span>
             </div>
             <div class="badge badge-lg">
-              <mp-class>(cond (< temp 0) 'badge-info' (> temp 30) 'badge-error' true 'badge-success')</mp-class>
-              <span><mp-text>(cond (< temp 0) 'Freezing' (> temp 30) 'Hot' true 'Comfortable')</mp-text></span>
+              <mn-class>(cond (< temp 0) 'badge-info' (> temp 30) 'badge-error' true 'badge-success')</mn-class>
+              <span><mn-text>(cond (< temp 0) 'Freezing' (> temp 30) 'Hot' true 'Comfortable')</mn-text></span>
             </div>
             <button class="btn btn-sm">
-              <mp-bind attr="disabled">(and (&gt;= temp 0) (&lt;= temp 30))</mp-bind>
-              <mp-text>(if (< temp 0) 'Heater needed' (if (> temp 30) 'AC needed' 'All good'))</mp-text>
+              <mn-bind attr="disabled">(and (&gt;= temp 0) (&lt;= temp 30))</mn-bind>
+              <mn-text>(if (< temp 0) 'Heater needed' (if (> temp 30) 'AC needed' 'All good'))</mn-text>
             </button>
           </div>
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
             <pre data-prefix="" class="text-info"><code>&lt;div&gt;</code></pre>
-            <pre data-prefix="" class="text-info"><code>  &lt;mp-class&gt;(cond</code></pre>
+            <pre data-prefix="" class="text-info"><code>  &lt;mn-class&gt;(cond</code></pre>
             <pre data-prefix="" class="text-info"><code>    (&lt; temp 0) 'badge-info'</code></pre>
             <pre data-prefix="" class="text-info"><code>    (&gt; temp 30) 'badge-error'</code></pre>
-            <pre data-prefix="" class="text-info"><code>    true 'badge-success')&lt;/mp-class&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>    true 'badge-success')&lt;/mn-class&gt;</code></pre>
             <pre data-prefix=""><code>&lt;/div&gt;</code></pre>
             <pre data-prefix=""><code></code></pre>
             <pre data-prefix="" class="text-warning"><code>&lt;button&gt;</code></pre>
-            <pre data-prefix="" class="text-warning"><code>  &lt;mp-bind attr="disabled"&gt;(and</code></pre>
-            <pre data-prefix="" class="text-warning"><code>    (&gt;= temp 0) (&lt;= temp 30))&lt;/mp-bind&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>  &lt;mn-bind attr="disabled"&gt;(and</code></pre>
+            <pre data-prefix="" class="text-warning"><code>    (&gt;= temp 0) (&lt;= temp 30))&lt;/mn-bind&gt;</code></pre>
             <pre data-prefix="" class="text-warning"><code>&lt;/button&gt;</code></pre>
           </div>
           <ul class="text-sm text-base-content/60 mt-3 space-y-1 list-disc pl-5">
-            <li><code class="mono">mp-class</code> with <code class="mono">cond</code> picks the first matching branch</li>
-            <li><code class="mono">&lt;mp-bind attr="disabled"&gt;</code> disables the button when the condition is true</li>
+            <li><code class="mono">mn-class</code> with <code class="mono">cond</code> picks the first matching branch</li>
+            <li><code class="mono">&lt;mn-bind attr="disabled"&gt;</code> disables the button when the condition is true</li>
             <li>Drag the slider to see all three update reactively</li>
           </ul>
         </div>
@@ -537,56 +537,56 @@
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L2-3" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L3-1" class="btn btn-primary btn-sm">Next: Lists</button>
+        <button mn-to="L2-3" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L3-1" class="btn btn-primary btn-sm">Next: Lists</button>
       </div>
     </div>
 
 
-    <!-- ═══ 3.1 Lists with mp-each ═════════════════════════════════ -->
-    <div mp-state="L3-1">
-      <mp-temporal>(animate)</mp-temporal>
+    <!-- ═══ 3.1 Lists with mn-each ═════════════════════════════════ -->
+    <div mn-state="L3-1">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-accent mb-2">3.1</div>
-      <h2 class="text-2xl font-bold mb-4">Lists with mp-each</h2>
+      <h2 class="text-2xl font-bold mb-4">Lists with mn-each</h2>
 
-      <p class="mb-4"><code class="mono">mp-each</code> on a <code class="mono">&lt;template&gt;</code> element repeats the template for every item in an array. Inside the template, item properties are directly accessible as bare words. <code class="mono">$index</code> is the item's position.</p>
-      <p class="mb-4"><code class="mono">mp-key</code> gives each item a stable identity so the framework can add and remove items without re-rendering the whole list.</p>
+      <p class="mb-4"><code class="mono">mn-each</code> on a <code class="mono">&lt;template&gt;</code> element repeats the template for every item in an array. Inside the template, item properties are directly accessible as bare words. <code class="mono">$index</code> is the item's position.</p>
+      <p class="mb-4"><code class="mono">mn-key</code> gives each item a stable identity so the framework can add and remove items without re-rendering the whole list.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="todo" mp-ctx='{"items":[{"name":"Learn mp-each"},{"name":"Build something"}],"newItem":""}' class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[260px]">
-          <div mp-state="editing">
+        <div mn="todo" mn-ctx='{"items":[{"name":"Learn mn-each"},{"name":"Build something"}],"newItem":""}' class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[260px]">
+          <div mn-state="editing">
             <div class="flex gap-2 mb-3">
-              <input mp-model="newItem" type="text" placeholder="New item..." class="input input-bordered input-sm flex-1 mono" />
+              <input mn-model="newItem" type="text" placeholder="New item..." class="input input-bordered input-sm flex-1 mono" />
               <button class="btn btn-sm btn-primary">
-                <mp-on event="click">(when (not (empty? newItem)) (do (push! items (obj :name newItem)) (set! newItem '')))</mp-on>
+                <mn-on event="click">(when (not (empty? newItem)) (do (push! items (obj :name newItem)) (set! newItem '')))</mn-on>
                 Add
               </button>
             </div>
             <ul class="space-y-1">
-              <template mp-each="items" mp-key="name">
+              <template mn-each="items" mn-key="name">
                 <li class="flex items-center gap-2 bg-base-200 rounded px-3 py-1">
-                  <span class="text-xs text-base-content/40 mono"><mp-text>(str (+ $index 1) '.')</mp-text></span>
-                  <span class="flex-1 text-sm"><mp-text>name</mp-text></span>
+                  <span class="text-xs text-base-content/40 mono"><mn-text>(str (+ $index 1) '.')</mn-text></span>
+                  <span class="flex-1 text-sm"><mn-text>name</mn-text></span>
                   <button class="btn btn-xs btn-ghost text-error">
-                    <mp-on event="click">(remove-where! items :name name)</mp-on>
+                    <mn-on event="click">(remove-where! items :name name)</mn-on>
                     x
                   </button>
                 </li>
               </template>
             </ul>
             <p class="text-xs text-base-content/40 mt-2 italic">
-              <mp-show>(= (count items) 0)</mp-show>
+              <mn-show>(= (count items) 0)</mn-show>
               No items yet.
             </p>
-            <p class="text-xs text-base-content/50 mt-2"><span><mp-text>(count items)</mp-text></span> items</p>
+            <p class="text-xs text-base-content/50 mt-2"><span><mn-text>(count items)</mn-text></span> items</p>
           </div>
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
-            <pre data-prefix="" class="text-warning"><code>&lt;template mp-each="items" mp-key="name"&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>&lt;template mn-each="items" mn-key="name"&gt;</code></pre>
             <pre data-prefix=""><code>  &lt;li&gt;</code></pre>
-            <pre data-prefix="" class="text-info"><code>    &lt;span&gt;&lt;mp-text&gt;name&lt;/mp-text&gt;&lt;/span&gt;</code></pre>
-            <pre data-prefix="" class="text-error"><code>    &lt;button&gt;&lt;mp-on event="click"&gt;(remove-where! items :name name)&lt;/mp-on&gt;x&lt;/button&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>    &lt;span&gt;&lt;mn-text&gt;name&lt;/mn-text&gt;&lt;/span&gt;</code></pre>
+            <pre data-prefix="" class="text-error"><code>    &lt;button&gt;&lt;mn-on event="click"&gt;(remove-where! items :name name)&lt;/mn-on&gt;x&lt;/button&gt;</code></pre>
             <pre data-prefix=""><code>  &lt;/li&gt;</code></pre>
             <pre data-prefix="" class="text-warning"><code>&lt;/template&gt;</code></pre>
           </div>
@@ -600,43 +600,43 @@
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L2-4" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L3-2" class="btn btn-primary btn-sm">Next: Collection functions</button>
+        <button mn-to="L2-4" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L3-2" class="btn btn-primary btn-sm">Next: Collection functions</button>
       </div>
     </div>
 
 
     <!-- ═══ 3.2 Collection functions ═══════════════════════════════ -->
-    <div mp-state="L3-2">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L3-2">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-accent mb-2">3.2</div>
       <h2 class="text-2xl font-bold mb-4">Collection functions</h2>
 
-      <p class="mb-4">The standard library has functions for filtering, sorting, mapping, and reducing arrays. These are used in <code class="mono">mp-each</code>, <code class="mono">mp-text</code>, and any other expression. They do not mutate the array.</p>
+      <p class="mb-4">The standard library has functions for filtering, sorting, mapping, and reducing arrays. These are used in <code class="mono">mn-each</code>, <code class="mono">mn-text</code>, and any other expression. They do not mutate the array.</p>
 
-      <div mp="collections" mp-ctx='{"items":[{"name":"Laptop","price":999},{"name":"Mouse","price":25},{"name":"Keyboard","price":75},{"name":"Monitor","price":400},{"name":"Cable","price":8}],"minPrice":50}' class="bg-base-300 rounded-2xl p-6 shadow-inner my-6">
-        <div mp-state="showing">
+      <div mn="collections" mn-ctx='{"items":[{"name":"Laptop","price":999},{"name":"Mouse","price":25},{"name":"Keyboard","price":75},{"name":"Monitor","price":400},{"name":"Cable","price":8}],"minPrice":50}' class="bg-base-300 rounded-2xl p-6 shadow-inner my-6">
+        <div mn-state="showing">
           <div class="flex items-center gap-3 mb-3">
             <label class="text-sm">Min price: £</label>
-            <input mp-model="minPrice" type="number" class="input input-bordered input-xs w-20 mono" />
-            <span class="text-xs text-base-content/50"><span><mp-text>(count (filter #(>= (get % :price) minPrice) items))</mp-text></span> results</span>
+            <input mn-model="minPrice" type="number" class="input input-bordered input-xs w-20 mono" />
+            <span class="text-xs text-base-content/50"><span><mn-text>(count (filter #(>= (get % :price) minPrice) items))</mn-text></span> results</span>
           </div>
           <ul class="space-y-1">
-            <template mp-key="name"><mp-each>(filter #(>= (get % :price) minPrice) items)</mp-each>
+            <template mn-key="name"><mn-each>(filter #(>= (get % :price) minPrice) items)</mn-each>
               <li class="flex items-center gap-2 bg-base-200 rounded px-3 py-1">
-                <span class="flex-1 text-sm font-medium"><mp-text>name</mp-text></span>
-                <span class="text-xs mono text-base-content/50"><mp-text>(str '£' price)</mp-text></span>
+                <span class="flex-1 text-sm font-medium"><mn-text>name</mn-text></span>
+                <span class="text-xs mono text-base-content/50"><mn-text>(str '£' price)</mn-text></span>
               </li>
             </template>
           </ul>
           <p class="text-xs text-base-content/50 mt-3">
-            Total: £<span><mp-text>(reduce (fn [sum i] (+ sum (get i :price))) 0 (filter #(>= (get % :price) minPrice) items))</mp-text></span>
+            Total: £<span><mn-text>(reduce (fn [sum i] (+ sum (get i :price))) 0 (filter #(>= (get % :price) minPrice) items))</mn-text></span>
           </p>
         </div>
       </div>
 
       <div class="mockup-code text-xs">
-        <pre data-prefix="" class="text-warning"><code>&lt;mp-each&gt;(filter #(&gt;= (get % :price) minPrice) items)&lt;/mp-each&gt;</code></pre>
+        <pre data-prefix="" class="text-warning"><code>&lt;mn-each&gt;(filter #(&gt;= (get % :price) minPrice) items)&lt;/mn-each&gt;</code></pre>
         <pre data-prefix=""><code></code></pre>
         <pre data-prefix="" class="text-info"><code>(reduce (fn [sum i] (+ sum (get i :price))) 0 items)</code></pre>
       </div>
@@ -650,180 +650,180 @@
       </ul>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L3-1" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L3-3" class="btn btn-primary btn-sm">Next: Temporal behavior</button>
+        <button mn-to="L3-1" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L3-3" class="btn btn-primary btn-sm">Next: Temporal behavior</button>
       </div>
     </div>
 
 
     <!-- ═══ 3.3 Temporal behavior ══════════════════════════════════ -->
-    <div mp-state="L3-3">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L3-3">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-accent mb-2">3.3</div>
       <h2 class="text-2xl font-bold mb-4">Temporal behavior</h2>
 
-      <p class="mb-4"><code class="mono">&lt;mp-temporal&gt;</code> on a state runs time-based expressions when the state is entered. <code class="mono">(after ms expr)</code> fires once after a delay. <code class="mono">(every ms expr)</code> fires repeatedly on an interval. Both are automatically cleaned up when the state is exited. No manual teardown.</p>
+      <p class="mb-4"><code class="mono">&lt;mn-temporal&gt;</code> on a state runs time-based expressions when the state is entered. <code class="mono">(after ms expr)</code> fires once after a delay. <code class="mono">(every ms expr)</code> fires repeatedly on an interval. Both are automatically cleaned up when the state is exited. No manual teardown.</p>
       <p class="mb-4"><code class="mono">(animate)</code> applies CSS enter/leave transitions when switching states.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="countdown" mp-ctx='{"remaining": 5}' class="bg-base-300 rounded-2xl p-8 shadow-inner text-center min-w-[200px]">
-          <div mp-state="ready">
+        <div mn="countdown" mn-ctx='{"remaining": 5}' class="bg-base-300 rounded-2xl p-8 shadow-inner text-center min-w-[200px]">
+          <div mn-state="ready">
             <p class="text-5xl font-bold mb-4 text-base-content/40">5</p>
             <button class="btn btn-sm btn-primary">
-              <mp-on event="click">(do (set! remaining 5) (to running))</mp-on>
+              <mn-on event="click">(do (set! remaining 5) (to running))</mn-on>
               Start
             </button>
           </div>
-          <div mp-state="running">
-            <mp-temporal>(do (every 1000 (dec! remaining)) (after 5000 (to done)))</mp-temporal>
-            <p class="text-5xl font-bold mb-4 text-warning"><mp-text>remaining</mp-text></p>
+          <div mn-state="running">
+            <mn-temporal>(do (every 1000 (dec! remaining)) (after 5000 (to done)))</mn-temporal>
+            <p class="text-5xl font-bold mb-4 text-warning"><mn-text>remaining</mn-text></p>
             <span class="loading loading-ring loading-md"></span>
           </div>
-          <div mp-state="done">
-            <mp-temporal>(animate)</mp-temporal>
+          <div mn-state="done">
+            <mn-temporal>(animate)</mn-temporal>
             <p class="text-5xl font-bold mb-4 text-success">0</p>
             <button class="btn btn-sm btn-success">
-              <mp-on event="click">(do (set! remaining 5) (to ready))</mp-on>
+              <mn-on event="click">(do (set! remaining 5) (to ready))</mn-on>
               Reset
             </button>
           </div>
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
-            <pre data-prefix="" class="text-warning"><code>&lt;div mp-state="running"&gt;</code></pre>
-            <pre data-prefix="" class="text-warning"><code>  &lt;mp-temporal&gt;(do</code></pre>
+            <pre data-prefix="" class="text-warning"><code>&lt;div mn-state="running"&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>  &lt;mn-temporal&gt;(do</code></pre>
             <pre data-prefix="" class="text-info"><code>    (every 1000 (dec! remaining))</code></pre>
-            <pre data-prefix="" class="text-error"><code>    (after 5000 (to done)))&lt;/mp-temporal&gt;</code></pre>
+            <pre data-prefix="" class="text-error"><code>    (after 5000 (to done)))&lt;/mn-temporal&gt;</code></pre>
           </div>
           <ul class="text-sm text-base-content/60 mt-3 space-y-1 list-disc pl-5">
             <li>Enter the running state: timer starts. Leave it: timer stops</li>
             <li>No <code class="mono">clearInterval</code>, no <code class="mono">useEffect</code> cleanup, no lifecycle management</li>
-            <li><code class="mono">(animate)</code> applies <code class="mono">mp-enter-from</code> / <code class="mono">mp-leave-to</code> CSS classes</li>
+            <li><code class="mono">(animate)</code> applies <code class="mono">mn-enter-from</code> / <code class="mono">mn-leave-to</code> CSS classes</li>
           </ul>
         </div>
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L3-2" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L4-1" class="btn btn-primary btn-sm">Next: Components</button>
+        <button mn-to="L3-2" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L4-1" class="btn btn-primary btn-sm">Next: Components</button>
       </div>
     </div>
 
 
     <!-- ═══ 4.1 Components ═════════════════════════════════════════ -->
-    <div mp-state="L4-1">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L4-1">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-info mb-2">4.1</div>
       <h2 class="text-2xl font-bold mb-4">Components</h2>
 
-      <p class="mb-4"><code class="mono">&lt;template mp-define="name"&gt;</code> defines a reusable machine template. Every <code class="mono">&lt;div mp="name"&gt;</code> creates an independent instance with its own state and context. Change one instance and the others do not move.</p>
+      <p class="mb-4"><code class="mono">&lt;template mn-define="name"&gt;</code> defines a reusable machine template. Every <code class="mono">&lt;div mn="name"&gt;</code> creates an independent instance with its own state and context. Change one instance and the others do not move.</p>
 
-      <template mp-define="flip-card">
-        <div mp-state="front" class="card bg-primary text-primary-content shadow-md w-full">
-          <mp-temporal>(animate)</mp-temporal>
+      <template mn-define="flip-card">
+        <div mn-state="front" class="card bg-primary text-primary-content shadow-md w-full">
+          <mn-temporal>(animate)</mn-temporal>
           <div class="card-body p-4 items-center">
-            <p class="font-bold"><mp-text>label</mp-text></p>
-            <button mp-to="back" class="btn btn-sm btn-ghost">Flip</button>
+            <p class="font-bold"><mn-text>label</mn-text></p>
+            <button mn-to="back" class="btn btn-sm btn-ghost">Flip</button>
           </div>
         </div>
-        <div mp-state="back" class="card bg-secondary text-secondary-content shadow-md w-full">
-          <mp-temporal>(animate)</mp-temporal>
+        <div mn-state="back" class="card bg-secondary text-secondary-content shadow-md w-full">
+          <mn-temporal>(animate)</mn-temporal>
           <div class="card-body p-4 items-center">
-            <p class="font-bold text-2xl"><mp-text>secret</mp-text></p>
-            <button mp-to="front" class="btn btn-sm btn-ghost">Flip back</button>
+            <p class="font-bold text-2xl"><mn-text>secret</mn-text></p>
+            <button mn-to="front" class="btn btn-sm btn-ghost">Flip back</button>
           </div>
         </div>
       </template>
 
       <div class="grid grid-cols-3 gap-4 my-6">
-        <div mp="flip-card" mp-ctx='{"label":"Card A","secret":"🎉"}'></div>
-        <div mp="flip-card" mp-ctx='{"label":"Card B","secret":"🚀"}'></div>
-        <div mp="flip-card" mp-ctx='{"label":"Card C","secret":"🌈"}'></div>
+        <div mn="flip-card" mn-ctx='{"label":"Card A","secret":"🎉"}'></div>
+        <div mn="flip-card" mn-ctx='{"label":"Card B","secret":"🚀"}'></div>
+        <div mn="flip-card" mn-ctx='{"label":"Card C","secret":"🌈"}'></div>
       </div>
 
       <div class="mockup-code text-xs">
-        <pre data-prefix="" class="text-warning"><code>&lt;template mp-define="flip-card"&gt;</code></pre>
-        <pre data-prefix=""><code>  &lt;div mp-state="front"&gt;...&lt;button mp-to="back"&gt;Flip&lt;/button&gt;&lt;/div&gt;</code></pre>
-        <pre data-prefix=""><code>  &lt;div mp-state="back"&gt;...&lt;button mp-to="front"&gt;Back&lt;/button&gt;&lt;/div&gt;</code></pre>
+        <pre data-prefix="" class="text-warning"><code>&lt;template mn-define="flip-card"&gt;</code></pre>
+        <pre data-prefix=""><code>  &lt;div mn-state="front"&gt;...&lt;button mn-to="back"&gt;Flip&lt;/button&gt;&lt;/div&gt;</code></pre>
+        <pre data-prefix=""><code>  &lt;div mn-state="back"&gt;...&lt;button mn-to="front"&gt;Back&lt;/button&gt;&lt;/div&gt;</code></pre>
         <pre data-prefix="" class="text-warning"><code>&lt;/template&gt;</code></pre>
-        <pre data-prefix="" class="text-info"><code>&lt;div mp="flip-card" mp-ctx='{"label":"A","secret":"🎉"}'&gt;&lt;/div&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>&lt;div mn="flip-card" mn-ctx='{"label":"A","secret":"🎉"}'&gt;&lt;/div&gt;</code></pre>
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L3-3" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L4-2" class="btn btn-primary btn-sm">Next: Slots</button>
+        <button mn-to="L3-3" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L4-2" class="btn btn-primary btn-sm">Next: Slots</button>
       </div>
     </div>
 
 
     <!-- ═══ 4.2 Slots ══════════════════════════════════════════════ -->
-    <div mp-state="L4-2">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L4-2">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-info mb-2">4.2</div>
       <h2 class="text-2xl font-bold mb-4">Slots</h2>
 
-      <p class="mb-4"><code class="mono">&lt;mp-slot&gt;</code> is a placeholder inside a component template. Callers inject content. Named slots target specific positions. If no content is provided, the slot's default children render.</p>
+      <p class="mb-4"><code class="mono">&lt;mn-slot&gt;</code> is a placeholder inside a component template. Callers inject content. Named slots target specific positions. If no content is provided, the slot's default children render.</p>
 
-      <template mp-define="learn-dialog">
-        <div mp-state="open" class="card bg-base-200 border border-base-300 shadow-md">
-          <mp-temporal>(animate)</mp-temporal>
+      <template mn-define="learn-dialog">
+        <div mn-state="open" class="card bg-base-200 border border-base-300 shadow-md">
+          <mn-temporal>(animate)</mn-temporal>
           <div class="card-body p-4">
-            <h3 class="font-bold"><mp-slot name="title">Untitled</mp-slot></h3>
-            <div class="mt-2"><mp-slot>No content provided.</mp-slot></div>
-            <button mp-to="closed" class="btn btn-xs btn-ghost mt-2">Close</button>
+            <h3 class="font-bold"><mn-slot name="title">Untitled</mn-slot></h3>
+            <div class="mt-2"><mn-slot>No content provided.</mn-slot></div>
+            <button mn-to="closed" class="btn btn-xs btn-ghost mt-2">Close</button>
           </div>
         </div>
-        <div mp-state="closed">
-          <button mp-to="open" class="btn btn-sm btn-outline">Open</button>
+        <div mn-state="closed">
+          <button mn-to="open" class="btn btn-sm btn-outline">Open</button>
         </div>
       </template>
 
       <div class="grid md:grid-cols-2 gap-4 my-6">
-        <div mp="learn-dialog">
+        <div mn="learn-dialog">
           <span slot="title">Warning</span>
           <p>This action is irreversible.</p>
         </div>
-        <div mp="learn-dialog">
+        <div mn="learn-dialog">
           <span slot="title">Info</span>
           <p>Your changes have been saved.</p>
         </div>
       </div>
 
       <div class="mockup-code text-xs">
-        <pre data-prefix="" class="text-warning"><code>&lt;template mp-define="dialog"&gt;</code></pre>
-        <pre data-prefix=""><code>  &lt;h3&gt;&lt;mp-slot name="title"&gt;Untitled&lt;/mp-slot&gt;&lt;/h3&gt;</code></pre>
-        <pre data-prefix=""><code>  &lt;div&gt;&lt;mp-slot&gt;No content.&lt;/mp-slot&gt;&lt;/div&gt;</code></pre>
+        <pre data-prefix="" class="text-warning"><code>&lt;template mn-define="dialog"&gt;</code></pre>
+        <pre data-prefix=""><code>  &lt;h3&gt;&lt;mn-slot name="title"&gt;Untitled&lt;/mn-slot&gt;&lt;/h3&gt;</code></pre>
+        <pre data-prefix=""><code>  &lt;div&gt;&lt;mn-slot&gt;No content.&lt;/mn-slot&gt;&lt;/div&gt;</code></pre>
         <pre data-prefix="" class="text-warning"><code>&lt;/template&gt;</code></pre>
-        <pre data-prefix="" class="text-info"><code>&lt;div mp="dialog"&gt;&lt;span slot="title"&gt;Warning&lt;/span&gt;...&lt;/div&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>&lt;div mn="dialog"&gt;&lt;span slot="title"&gt;Warning&lt;/span&gt;...&lt;/div&gt;</code></pre>
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L4-1" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L4-3" class="btn btn-primary btn-sm">Next: Emit and receive</button>
+        <button mn-to="L4-1" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L4-3" class="btn btn-primary btn-sm">Next: Emit and receive</button>
       </div>
     </div>
 
 
     <!-- ═══ 4.3 Emit and receive ═══════════════════════════════════ -->
-    <div mp-state="L4-3">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L4-3">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-info mb-2">4.3</div>
       <h2 class="text-2xl font-bold mb-4">Emit and receive</h2>
 
-      <p class="mb-4"><code class="mono">(emit name)</code> dispatches a named event from one machine. Any other machine with <code class="mono">&lt;mp-receive event="name"&gt;</code> children runs the body. Machines communicate without referencing each other by name.</p>
+      <p class="mb-4"><code class="mono">(emit name)</code> dispatches a named event from one machine. Any other machine with <code class="mono">&lt;mn-receive event="name"&gt;</code> children runs the body. Machines communicate without referencing each other by name.</p>
 
       <div class="grid md:grid-cols-2 gap-4 my-6">
         <div class="card bg-base-100 border border-base-300">
           <div class="card-body p-4">
             <h3 class="font-bold mb-2">Control panel</h3>
-            <div mp="controls2">
-              <div mp-state="idle" class="flex gap-2">
+            <div mn="controls2">
+              <div mn-state="idle" class="flex gap-2">
                 <button class="btn btn-sm btn-error">
-                  <mp-on event="click">(emit alarm)</mp-on>
+                  <mn-on event="click">(emit alarm)</mn-on>
                   Alarm
                 </button>
                 <button class="btn btn-sm btn-success">
-                  <mp-on event="click">(emit all-clear)</mp-on>
+                  <mn-on event="click">(emit all-clear)</mn-on>
                   All clear
                 </button>
               </div>
@@ -833,15 +833,15 @@
         <div class="card bg-base-100 border border-base-300">
           <div class="card-body p-4">
             <h3 class="font-bold mb-2">Status board</h3>
-            <div mp="status-board2">
-              <mp-receive event="alarm">(to alert)</mp-receive>
-              <mp-receive event="all-clear">(to ok)</mp-receive>
-              <div mp-state="ok">
-                <mp-temporal>(animate)</mp-temporal>
+            <div mn="status-board2">
+              <mn-receive event="alarm">(to alert)</mn-receive>
+              <mn-receive event="all-clear">(to ok)</mn-receive>
+              <div mn-state="ok">
+                <mn-temporal>(animate)</mn-temporal>
                 <div class="badge badge-success badge-lg">All clear</div>
               </div>
-              <div mp-state="alert">
-                <mp-temporal>(animate)</mp-temporal>
+              <div mn-state="alert">
+                <mn-temporal>(animate)</mn-temporal>
                 <div class="badge badge-error badge-lg animate-pulse">ALERT</div>
               </div>
             </div>
@@ -850,25 +850,25 @@
       </div>
 
       <div class="mockup-code text-xs">
-        <pre data-prefix="" class="text-warning"><code>&lt;button&gt;&lt;mp-on event="click"&gt;(emit alarm)&lt;/mp-on&gt;Alarm&lt;/button&gt;</code></pre>
+        <pre data-prefix="" class="text-warning"><code>&lt;button&gt;&lt;mn-on event="click"&gt;(emit alarm)&lt;/mn-on&gt;Alarm&lt;/button&gt;</code></pre>
         <pre data-prefix=""><code></code></pre>
-        <pre data-prefix="" class="text-info"><code>&lt;div mp="status"&gt;</code></pre>
-        <pre data-prefix="" class="text-info"><code>  &lt;mp-receive event="alarm"&gt;(to alert)&lt;/mp-receive&gt;</code></pre>
-        <pre data-prefix="" class="text-info"><code>  &lt;mp-receive event="all-clear"&gt;(to ok)&lt;/mp-receive&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>&lt;div mn="status"&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>  &lt;mn-receive event="alarm"&gt;(to alert)&lt;/mn-receive&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>  &lt;mn-receive event="all-clear"&gt;(to ok)&lt;/mn-receive&gt;</code></pre>
         <pre data-prefix="" class="text-info"><code>&lt;/div&gt;</code></pre>
       </div>
       <p class="text-sm text-base-content/60 mt-3">A machine does not receive its own events. Only other machines on the page react.</p>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L4-2" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L4-4" class="btn btn-primary btn-sm">Next: Emit payloads</button>
+        <button mn-to="L4-2" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L4-4" class="btn btn-primary btn-sm">Next: Emit payloads</button>
       </div>
     </div>
 
 
     <!-- ═══ 4.4 Emit payloads ══════════════════════════════════════ -->
-    <div mp-state="L4-4">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L4-4">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-info mb-2">4.4</div>
       <h2 class="text-2xl font-bold mb-4">Emit payloads</h2>
 
@@ -878,14 +878,14 @@
         <div class="card bg-base-100 border border-base-300">
           <div class="card-body p-4">
             <h3 class="font-bold mb-2">Products</h3>
-            <div mp="products2" mp-ctx='{"items":[{"name":"Keyboard","price":75},{"name":"Mouse","price":25},{"name":"Monitor","price":400}]}'>
-              <div mp-state="browsing">
-                <template mp-each="items" mp-key="name">
+            <div mn="products2" mn-ctx='{"items":[{"name":"Keyboard","price":75},{"name":"Mouse","price":25},{"name":"Monitor","price":400}]}'>
+              <div mn-state="browsing">
+                <template mn-each="items" mn-key="name">
                   <div class="flex items-center gap-2 bg-base-200 rounded px-3 py-1 mb-1">
-                    <span class="flex-1 text-sm"><mp-text>name</mp-text></span>
-                    <span class="text-xs text-base-content/50"><mp-text>(str '£' price)</mp-text></span>
+                    <span class="flex-1 text-sm"><mn-text>name</mn-text></span>
+                    <span class="text-xs text-base-content/50"><mn-text>(str '£' price)</mn-text></span>
                     <button class="btn btn-xs btn-primary">
-                      <mp-on event="click">(emit product-picked (obj :name name :price price))</mp-on>
+                      <mn-on event="click">(emit product-picked (obj :name name :price price))</mn-on>
                       Pick
                     </button>
                   </div>
@@ -897,15 +897,15 @@
         <div class="card bg-base-100 border border-base-300">
           <div class="card-body p-4">
             <h3 class="font-bold mb-2">Selected</h3>
-            <div mp="picked2" mp-ctx='{"item":"none","cost":0}'>
-              <mp-receive event="product-picked">(do (set! item (get $detail :name)) (set! cost (get $detail :price)) (to chosen))</mp-receive>
-              <div mp-state="waiting">
+            <div mn="picked2" mn-ctx='{"item":"none","cost":0}'>
+              <mn-receive event="product-picked">(do (set! item (get $detail :name)) (set! cost (get $detail :price)) (to chosen))</mn-receive>
+              <div mn-state="waiting">
                 <p class="text-sm text-base-content/40 italic">Pick a product.</p>
               </div>
-              <div mp-state="chosen">
-                <mp-temporal>(animate)</mp-temporal>
-                <p class="text-sm font-bold"><mp-text>item</mp-text></p>
-                <p class="text-sm text-success"><mp-text>(str '£' cost)</mp-text></p>
+              <div mn-state="chosen">
+                <mn-temporal>(animate)</mn-temporal>
+                <p class="text-sm font-bold"><mn-text>item</mn-text></p>
+                <p class="text-sm text-success"><mn-text>(str '£' cost)</mn-text></p>
               </div>
             </div>
           </div>
@@ -914,14 +914,14 @@
 
       <div class="mockup-code text-xs">
         <pre data-prefix="" class="text-warning"><code>&lt;button&gt;</code></pre>
-        <pre data-prefix="" class="text-warning"><code>  &lt;mp-on event="click"&gt;(emit product-picked (obj :name name :price price))&lt;/mp-on&gt;</code></pre>
+        <pre data-prefix="" class="text-warning"><code>  &lt;mn-on event="click"&gt;(emit product-picked (obj :name name :price price))&lt;/mn-on&gt;</code></pre>
         <pre data-prefix="" class="text-warning"><code>  Pick</code></pre>
         <pre data-prefix="" class="text-warning"><code>&lt;/button&gt;</code></pre>
         <pre data-prefix=""><code></code></pre>
-        <pre data-prefix="" class="text-info"><code>&lt;div mp="picked"&gt;</code></pre>
-        <pre data-prefix="" class="text-info"><code>  &lt;mp-receive event="product-picked"&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>&lt;div mn="picked"&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>  &lt;mn-receive event="product-picked"&gt;</code></pre>
         <pre data-prefix="" class="text-info"><code>    (do (set! item (get $detail :name))</code></pre>
-        <pre data-prefix="" class="text-info"><code>        (set! cost (get $detail :price)))&lt;/mp-receive&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>        (set! cost (get $detail :price)))&lt;/mn-receive&gt;</code></pre>
         <pre data-prefix="" class="text-info"><code>&lt;/div&gt;</code></pre>
       </div>
 
@@ -932,77 +932,77 @@
       </ul>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L4-3" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L4-5" class="btn btn-primary btn-sm">Next: Nested machines</button>
+        <button mn-to="L4-3" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L4-5" class="btn btn-primary btn-sm">Next: Nested machines</button>
       </div>
     </div>
 
 
     <!-- ═══ 4.5 Nested machines ════════════════════════════════════ -->
-    <div mp-state="L4-5">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L4-5">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-info mb-2">4.5</div>
       <h2 class="text-2xl font-bold mb-4">Nested machines</h2>
 
       <p class="mb-4">Machines nest inside other machines' states. Each child has its own independent state. The parent does not re-render when a child transitions. Children are created when their parent state is entered and destroyed when it is exited.</p>
 
-      <template mp-define="email-item2">
-        <div mp-state="unread" class="flex items-center gap-3 bg-base-200 border border-base-300 rounded-lg px-4 py-2">
-          <mp-temporal>(animate)</mp-temporal>
+      <template mn-define="email-item2">
+        <div mn-state="unread" class="flex items-center gap-3 bg-base-200 border border-base-300 rounded-lg px-4 py-2">
+          <mn-temporal>(animate)</mn-temporal>
           <div class="badge badge-primary badge-xs"></div>
-          <span class="font-bold text-sm flex-1"><mp-text>subject</mp-text></span>
-          <button mp-to="read" class="btn btn-xs btn-ghost">Read</button>
+          <span class="font-bold text-sm flex-1"><mn-text>subject</mn-text></span>
+          <button mn-to="read" class="btn btn-xs btn-ghost">Read</button>
         </div>
-        <div mp-state="read" class="flex items-center gap-3 bg-base-200 border border-base-300/50 rounded-lg px-4 py-2 opacity-60">
-          <mp-temporal>(animate)</mp-temporal>
+        <div mn-state="read" class="flex items-center gap-3 bg-base-200 border border-base-300/50 rounded-lg px-4 py-2 opacity-60">
+          <mn-temporal>(animate)</mn-temporal>
           <div class="badge badge-ghost badge-xs"></div>
-          <span class="text-sm flex-1"><mp-text>subject</mp-text></span>
-          <button mp-to="unread" class="btn btn-xs btn-ghost">Unread</button>
+          <span class="text-sm flex-1"><mn-text>subject</mn-text></span>
+          <button mn-to="unread" class="btn btn-xs btn-ghost">Unread</button>
         </div>
       </template>
 
       <div class="bg-base-300 rounded-2xl p-6 shadow-inner space-y-2 my-6">
         <h3 class="font-bold mb-3">Inbox</h3>
-        <div mp="email-item2" mp-ctx='{"subject":"Welcome to machine_perfect"}'></div>
-        <div mp="email-item2" mp-ctx='{"subject":"Your first state machine"}'></div>
-        <div mp="email-item2" mp-ctx='{"subject":"Advanced patterns"}'></div>
+        <div mn="email-item2" mn-ctx='{"subject":"Welcome to machine_native"}'></div>
+        <div mn="email-item2" mn-ctx='{"subject":"Your first state machine"}'></div>
+        <div mn="email-item2" mn-ctx='{"subject":"Advanced patterns"}'></div>
       </div>
 
-      <p class="text-sm text-base-content/60">Toggle one email. The others stay put. Each <code class="mono">mp="email-item2"</code> is an independent machine instance.</p>
+      <p class="text-sm text-base-content/60">Toggle one email. The others stay put. Each <code class="mono">mn="email-item2"</code> is an independent machine instance.</p>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L4-4" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L5-1" class="btn btn-primary btn-sm">Next: Global stores</button>
+        <button mn-to="L4-4" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L5-1" class="btn btn-primary btn-sm">Next: Global stores</button>
       </div>
     </div>
 
 
     <!-- ═══ 5.1 Global stores ══════════════════════════════════════ -->
-    <div mp-state="L5-1">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L5-1">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-warning mb-2">5.1</div>
       <h2 class="text-2xl font-bold mb-4">Global stores</h2>
 
-      <p class="mb-4"><code class="mono">&lt;mp-store name="x" value='...'&gt;</code> declares shared state accessible to every machine as <code class="mono">$store.x</code>. Any machine can read and write it. Changes are visible to all machines on the next render.</p>
+      <p class="mb-4"><code class="mono">&lt;mn-store name="x" value='...'&gt;</code> declares shared state accessible to every machine as <code class="mono">$store.x</code>. Any machine can read and write it. Changes are visible to all machines on the next render.</p>
 
-      <mp-store name="learn-prefs" value='{"color":"blue"}'></mp-store>
+      <mn-store name="learn-prefs" value='{"color":"blue"}'></mn-store>
 
       <div class="grid md:grid-cols-2 gap-4 my-6">
         <div class="card bg-base-100 border border-base-300">
           <div class="card-body p-4">
             <h3 class="font-bold mb-2">Writer</h3>
-            <div mp="store-writer">
-              <div mp-state="idle" class="flex gap-2">
+            <div mn="store-writer">
+              <div mn-state="idle" class="flex gap-2">
                 <button class="btn btn-sm btn-info">
-                  <mp-on event="click">(do (set! $store.learn-prefs.color 'blue') (emit color-changed))</mp-on>
+                  <mn-on event="click">(do (set! $store.learn-prefs.color 'blue') (emit color-changed))</mn-on>
                   Blue
                 </button>
                 <button class="btn btn-sm btn-error">
-                  <mp-on event="click">(do (set! $store.learn-prefs.color 'red') (emit color-changed))</mp-on>
+                  <mn-on event="click">(do (set! $store.learn-prefs.color 'red') (emit color-changed))</mn-on>
                   Red
                 </button>
                 <button class="btn btn-sm btn-success">
-                  <mp-on event="click">(do (set! $store.learn-prefs.color 'green') (emit color-changed))</mp-on>
+                  <mn-on event="click">(do (set! $store.learn-prefs.color 'green') (emit color-changed))</mn-on>
                   Green
                 </button>
               </div>
@@ -1012,12 +1012,12 @@
         <div class="card bg-base-100 border border-base-300">
           <div class="card-body p-4">
             <h3 class="font-bold mb-2">Reader</h3>
-            <div mp="store-reader">
-              <mp-receive event="color-changed">(to idle)</mp-receive>
-              <div mp-state="idle">
-                <p class="text-sm">Color: <span class="font-bold mono"><mp-text>$store.learn-prefs.color</mp-text></span></p>
+            <div mn="store-reader">
+              <mn-receive event="color-changed">(to idle)</mn-receive>
+              <div mn-state="idle">
+                <p class="text-sm">Color: <span class="font-bold mono"><mn-text>$store.learn-prefs.color</mn-text></span></p>
                 <div class="w-12 h-12 rounded-lg mt-2">
-                  <mp-bind attr="style">(str 'background:' $store.learn-prefs.color)</mp-bind>
+                  <mn-bind attr="style">(str 'background:' $store.learn-prefs.color)</mn-bind>
                 </div>
               </div>
             </div>
@@ -1026,126 +1026,126 @@
       </div>
 
       <div class="mockup-code text-xs">
-        <pre data-prefix="" class="text-warning"><code>&lt;mp-store name="prefs" value='{"color":"blue"}'&gt;&lt;/mp-store&gt;</code></pre>
+        <pre data-prefix="" class="text-warning"><code>&lt;mn-store name="prefs" value='{"color":"blue"}'&gt;&lt;/mn-store&gt;</code></pre>
         <pre data-prefix="" class="text-error"><code>&lt;button&gt;</code></pre>
-        <pre data-prefix="" class="text-error"><code>  &lt;mp-on event="click"&gt;(do (set! $store.prefs.color 'red') (emit color-changed))&lt;/mp-on&gt;</code></pre>
+        <pre data-prefix="" class="text-error"><code>  &lt;mn-on event="click"&gt;(do (set! $store.prefs.color 'red') (emit color-changed))&lt;/mn-on&gt;</code></pre>
         <pre data-prefix="" class="text-error"><code>  Red&lt;/button&gt;</code></pre>
-        <pre data-prefix="" class="text-info"><code>&lt;div mp="reader"&gt;</code></pre>
-        <pre data-prefix="" class="text-info"><code>  &lt;mp-receive event="color-changed"&gt;(to idle)&lt;/mp-receive&gt;</code></pre>
-        <pre data-prefix="" class="text-info"><code>  ...&lt;span&gt;&lt;mp-text&gt;$store.prefs.color&lt;/mp-text&gt;&lt;/span&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>&lt;div mn="reader"&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>  &lt;mn-receive event="color-changed"&gt;(to idle)&lt;/mn-receive&gt;</code></pre>
+        <pre data-prefix="" class="text-info"><code>  ...&lt;span&gt;&lt;mn-text&gt;$store.prefs.color&lt;/mn-text&gt;&lt;/span&gt;</code></pre>
         <pre data-prefix="" class="text-info"><code>&lt;/div&gt;</code></pre>
       </div>
       <p class="text-sm text-base-content/60 mt-3">Store writes need an <code class="mono">(emit)</code> to notify other machines. The receiving machine transitions to the same state, which triggers a re-render with the updated store value.</p>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L4-5" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L5-2" class="btn btn-primary btn-sm">Next: Computed bindings</button>
+        <button mn-to="L4-5" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L5-2" class="btn btn-primary btn-sm">Next: Computed bindings</button>
       </div>
     </div>
 
 
     <!-- ═══ 5.2 Computed bindings ══════════════════════════════════ -->
-    <div mp-state="L5-2">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L5-2">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-warning mb-2">5.2</div>
-      <h2 class="text-2xl font-bold mb-4">Computed bindings with mp-let</h2>
+      <h2 class="text-2xl font-bold mb-4">Computed bindings with mn-let</h2>
 
-      <p class="mb-4"><code class="mono">mp-let</code> defines named computed values at the machine level. They recompute automatically when their dependencies change. Use them to avoid repeating the same validation or derived expression in multiple places.</p>
+      <p class="mb-4"><code class="mono">mn-let</code> defines named computed values at the machine level. They recompute automatically when their dependencies change. Use them to avoid repeating the same validation or derived expression in multiple places.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="signup2" mp-ctx='{"email":"","password":"","agree":false}'
+        <div mn="signup2" mn-ctx='{"email":"","password":"","agree":false}'
              class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[260px]">
-          <mp-let name="valid">(and (>= (count email) 5) (>= (count password) 8) agree)</mp-let>
-          <div mp-state="form">
+          <mn-let name="valid">(and (>= (count email) 5) (>= (count password) 8) agree)</mn-let>
+          <div mn-state="form">
             <div class="space-y-3">
-              <input mp-model="email" type="text" placeholder="Email" class="input input-bordered input-sm w-full" />
-              <input mp-model="password" type="password" placeholder="Password (8+ chars)" class="input input-bordered input-sm w-full" />
+              <input mn-model="email" type="text" placeholder="Email" class="input input-bordered input-sm w-full" />
+              <input mn-model="password" type="password" placeholder="Password (8+ chars)" class="input input-bordered input-sm w-full" />
               <label class="label cursor-pointer justify-start gap-2">
-                <input mp-model="agree" type="checkbox" class="checkbox checkbox-sm" />
+                <input mn-model="agree" type="checkbox" class="checkbox checkbox-sm" />
                 <span class="text-xs">I agree to the terms</span>
               </label>
               <p class="text-xs text-warning">
-                <mp-show>(not valid)</mp-show>
+                <mn-show>(not valid)</mn-show>
                 Fill all fields to continue.
               </p>
               <p class="text-xs text-success">
-                <mp-show>valid</mp-show>
+                <mn-show>valid</mn-show>
                 Ready.
               </p>
               <button class="btn btn-sm btn-primary w-full">
-                <mp-on event="click">(when valid (to done))</mp-on>
-                <mp-bind attr="disabled">(not valid)</mp-bind>
+                <mn-on event="click">(when valid (to done))</mn-on>
+                <mn-bind attr="disabled">(not valid)</mn-bind>
                 Sign up
               </button>
             </div>
           </div>
-          <div mp-state="done">
-            <mp-temporal>(animate)</mp-temporal>
+          <div mn-state="done">
+            <mn-temporal>(animate)</mn-temporal>
             <p class="text-lg text-center text-success font-bold py-4">Done.</p>
             <button class="btn btn-sm btn-ghost w-full">
-              <mp-on event="click">(do (set! email '') (set! password '') (set! agree false) (to form))</mp-on>
+              <mn-on event="click">(do (set! email '') (set! password '') (set! agree false) (to form))</mn-on>
               Reset
             </button>
           </div>
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
-            <pre data-prefix="" class="text-warning"><code>&lt;div mp="signup"&gt;</code></pre>
-            <pre data-prefix="" class="text-warning"><code>  &lt;mp-let name="valid"&gt;(and (&gt;= (count email) 5)</code></pre>
-            <pre data-prefix="" class="text-warning"><code>    (&gt;= (count password) 8) agree)&lt;/mp-let&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>&lt;div mn="signup"&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>  &lt;mn-let name="valid"&gt;(and (&gt;= (count email) 5)</code></pre>
+            <pre data-prefix="" class="text-warning"><code>    (&gt;= (count password) 8) agree)&lt;/mn-let&gt;</code></pre>
             <pre data-prefix=""><code></code></pre>
-            <pre data-prefix="" class="text-info"><code>  &lt;p&gt;&lt;mp-show&gt;(not valid)&lt;/mp-show&gt;Fill all fields&lt;/p&gt;</code></pre>
-            <pre data-prefix="" class="text-success"><code>&lt;button&gt;&lt;mp-bind attr="disabled"&gt;(not valid)&lt;/mp-bind&gt;...&lt;/button&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>  &lt;p&gt;&lt;mn-show&gt;(not valid)&lt;/mn-show&gt;Fill all fields&lt;/p&gt;</code></pre>
+            <pre data-prefix="" class="text-success"><code>&lt;button&gt;&lt;mn-bind attr="disabled"&gt;(not valid)&lt;/mn-bind&gt;...&lt;/button&gt;</code></pre>
           </div>
           <ul class="text-sm text-base-content/60 mt-3 space-y-1 list-disc pl-5">
             <li><code class="mono">valid</code> is defined once, used in three places</li>
-            <li>mp-let values are not persisted (they are derived, not source data)</li>
+            <li>mn-let values are not persisted (they are derived, not source data)</li>
           </ul>
         </div>
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L5-1" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L5-3" class="btn btn-primary btn-sm">Next: Lifecycle hooks</button>
+        <button mn-to="L5-1" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L5-3" class="btn btn-primary btn-sm">Next: Lifecycle hooks</button>
       </div>
     </div>
 
 
     <!-- ═══ 5.3 Lifecycle hooks ════════════════════════════════════ -->
-    <div mp-state="L5-3">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L5-3">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-warning mb-2">5.3</div>
       <h2 class="text-2xl font-bold mb-4">Lifecycle hooks and refs</h2>
 
-      <p class="mb-4"><code class="mono">&lt;mp-init&gt;</code> runs when a state is entered, after its content is created. <code class="mono">mp-exit</code> runs before a state's content is destroyed. <code class="mono">mp-ref="name"</code> registers an element as <code class="mono">$refs.name</code>.</p>
+      <p class="mb-4"><code class="mono">&lt;mn-init&gt;</code> runs when a state is entered, after its content is created. <code class="mono">mn-exit</code> runs before a state's content is destroyed. <code class="mono">mn-ref="name"</code> registers an element as <code class="mono">$refs.name</code>.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="hooks-demo" mp-ctx='{"query":"","log":""}' class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[260px]">
-          <div mp-state="idle">
+        <div mn="hooks-demo" mn-ctx='{"query":"","log":""}' class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[260px]">
+          <div mn-state="idle">
             <p class="text-sm text-base-content/40 mb-2">Click to open search.</p>
-            <button mp-to="searching" class="btn btn-sm btn-primary">Search</button>
+            <button mn-to="searching" class="btn btn-sm btn-primary">Search</button>
             <p class="text-xs mt-3 text-base-content/50 mono">
-              <mp-text>log</mp-text>
-              <mp-show>(not (empty? log))</mp-show>
+              <mn-text>log</mn-text>
+              <mn-show>(not (empty? log))</mn-show>
             </p>
           </div>
-          <div mp-state="searching">
-            <mp-exit>(set! log (str log 'exit. '))</mp-exit>
-            <mp-temporal>(animate)</mp-temporal>
-            <mp-init>(do (set! log (str log 'init. ')) (focus! $refs.q))</mp-init>
-            <input mp-model="query" mp-ref="q" type="text" placeholder="Search..." class="input input-bordered input-sm w-full mb-2" />
+          <div mn-state="searching">
+            <mn-exit>(set! log (str log 'exit. '))</mn-exit>
+            <mn-temporal>(animate)</mn-temporal>
+            <mn-init>(do (set! log (str log 'init. ')) (focus! $refs.q))</mn-init>
+            <input mn-model="query" mn-ref="q" type="text" placeholder="Search..." class="input input-bordered input-sm w-full mb-2" />
             <button class="btn btn-sm btn-ghost">
-              <mp-on event="click">(do (set! query '') (to idle))</mp-on>
+              <mn-on event="click">(do (set! query '') (to idle))</mn-on>
               Close
             </button>
           </div>
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
-            <pre data-prefix="" class="text-warning"><code>&lt;div mp-state="searching"&gt;</code></pre>
-            <pre data-prefix="" class="text-info"><code>  &lt;mp-exit&gt;(set! log (str log 'exit. '))&lt;/mp-exit&gt;</code></pre>
-            <pre data-prefix="" class="text-info"><code>  &lt;mp-init&gt;(do (set! log ...) (focus! $refs.q))&lt;/mp-init&gt;</code></pre>
-            <pre data-prefix="" class="text-success"><code>  &lt;input mp-ref="q" /&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>&lt;div mn-state="searching"&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>  &lt;mn-exit&gt;(set! log (str log 'exit. '))&lt;/mn-exit&gt;</code></pre>
+            <pre data-prefix="" class="text-info"><code>  &lt;mn-init&gt;(do (set! log ...) (focus! $refs.q))&lt;/mn-init&gt;</code></pre>
+            <pre data-prefix="" class="text-success"><code>  &lt;input mn-ref="q" /&gt;</code></pre>
           </div>
           <ul class="text-sm text-base-content/60 mt-3 space-y-1 list-disc pl-5">
             <li><code class="mono">(focus! $refs.q)</code> focuses the input when the state is entered</li>
@@ -1155,64 +1155,64 @@
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L5-2" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L5-4" class="btn btn-primary btn-sm">Next: Persistence</button>
+        <button mn-to="L5-2" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L5-4" class="btn btn-primary btn-sm">Next: Persistence</button>
       </div>
     </div>
 
 
     <!-- ═══ 5.4 Persistence ════════════════════════════════════════ -->
-    <div mp-state="L5-4">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L5-4">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-warning mb-2">5.4</div>
       <h2 class="text-2xl font-bold mb-4">Persistence</h2>
 
-      <p class="mb-4"><code class="mono">mp-persist="key"</code> saves context to localStorage on every change and restores it on page load. Saved values override <code class="mono">mp-ctx</code> defaults. One attribute, no setup.</p>
+      <p class="mb-4"><code class="mono">mn-persist="key"</code> saves context to localStorage on every change and restores it on page load. Saved values override <code class="mono">mn-ctx</code> defaults. One attribute, no setup.</p>
 
       <div class="flex flex-col md:flex-row gap-8 items-center my-6">
-        <div mp="notepad2" mp-ctx='{"text":""}' mp-persist="learn-notepad2" class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[260px]">
-          <div mp-state="editing">
-            <textarea mp-model="text" rows="3" placeholder="Type anything, then refresh the page..." class="textarea textarea-bordered w-full text-sm mb-2"></textarea>
-            <p class="text-xs text-base-content/40"><span><mp-text>(count text)</mp-text></span> characters. Saved to localStorage.</p>
+        <div mn="notepad2" mn-ctx='{"text":""}' mn-persist="learn-notepad2" class="bg-base-300 rounded-2xl p-6 shadow-inner min-w-[260px]">
+          <div mn-state="editing">
+            <textarea mn-model="text" rows="3" placeholder="Type anything, then refresh the page..." class="textarea textarea-bordered w-full text-sm mb-2"></textarea>
+            <p class="text-xs text-base-content/40"><span><mn-text>(count text)</mn-text></span> characters. Saved to localStorage.</p>
           </div>
         </div>
         <div class="flex-1">
           <div class="mockup-code text-xs">
-            <pre data-prefix="" class="text-warning"><code>&lt;div mp="notepad" mp-persist="learn-notepad"</code></pre>
-            <pre data-prefix="" class="text-warning"><code>     mp-ctx='{"text":""}'&gt;</code></pre>
+            <pre data-prefix="" class="text-warning"><code>&lt;div mn="notepad" mn-persist="learn-notepad"</code></pre>
+            <pre data-prefix="" class="text-warning"><code>     mn-ctx='{"text":""}'&gt;</code></pre>
           </div>
           <ul class="text-sm text-base-content/60 mt-3 space-y-1 list-disc pl-5">
-            <li>Context saved as JSON under <code class="mono">mp-learn-notepad</code></li>
-            <li>On reload, saved values override <code class="mono">mp-ctx</code></li>
-            <li><code class="mono">mp-let</code> computed values are excluded from persistence</li>
+            <li>Context saved as JSON under <code class="mono">mn-learn-notepad</code></li>
+            <li>On reload, saved values override <code class="mono">mn-ctx</code></li>
+            <li><code class="mono">mn-let</code> computed values are excluded from persistence</li>
           </ul>
         </div>
       </div>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L5-3" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L6-1" class="btn btn-primary btn-sm">Next: Capability routing</button>
+        <button mn-to="L5-3" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L6-1" class="btn btn-primary btn-sm">Next: Capability routing</button>
       </div>
     </div>
 
 
     <!-- ═══ 6.1 Capability routing ═════════════════════════════════ -->
-    <div mp-state="L6-1">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L6-1">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-error mb-2">6.1</div>
-      <h2 class="text-2xl font-bold mb-4">Capability routing with mp-where</h2>
+      <h2 class="text-2xl font-bold mb-4">Capability routing with mn-where</h2>
 
-      <p class="mb-4">Everything so far runs in the browser. But some states need capabilities the browser does not have: database persistence, email notifications, external APIs. <code class="mono">mp-where</code> on a state declares what capabilities it requires.</p>
+      <p class="mb-4">Everything so far runs in the browser. But some states need capabilities the browser does not have: database persistence, email notifications, external APIs. <code class="mono">mn-where</code> on a state declares what capabilities it requires.</p>
 
-      <p class="mb-4">When the machine transitions to a state with <code class="mono">mp-where</code>, the runtime checks whether the current host can satisfy those requirements. If not, it looks up the capability registry and routes the machine to a host that can. The machine's outerHTML (including current state and context) travels to the capable host. The host advances the machine and returns the result.</p>
+      <p class="mb-4">When the machine transitions to a state with <code class="mono">mn-where</code>, the runtime checks whether the current host can satisfy those requirements. If not, it looks up the capability registry and routes the machine to a host that can. The machine's outerHTML (including current state and context) travels to the capable host. The host advances the machine and returns the result.</p>
 
       <div class="mockup-code text-xs my-6">
-        <pre data-prefix=""><code>&lt;div mp-state="draft"&gt;</code></pre>
+        <pre data-prefix=""><code>&lt;div mn-state="draft"&gt;</code></pre>
         <pre data-prefix=""><code>  &lt;!-- Form UI, browser handles this --&gt;</code></pre>
         <pre data-prefix=""><code>&lt;/div&gt;</code></pre>
         <pre data-prefix=""><code></code></pre>
-        <pre data-prefix="" class="text-warning"><code>&lt;div mp-state="submitted"</code></pre>
-        <pre data-prefix="" class="text-warning"><code>     mp-where="(requires 'log' 'notify' 'persist')"&gt;</code></pre>
+        <pre data-prefix="" class="text-warning"><code>&lt;div mn-state="submitted"</code></pre>
+        <pre data-prefix="" class="text-warning"><code>     mn-where="(requires 'log' 'notify' 'persist')"&gt;</code></pre>
         <pre data-prefix=""><code>  &lt;!-- Server handles this --&gt;</code></pre>
         <pre data-prefix=""><code>&lt;/div&gt;</code></pre>
       </div>
@@ -1222,51 +1222,51 @@
       <p class="text-sm text-base-content/60">The machine declares WHAT it needs. The host declares WHAT it provides. The framework mediates. No hardcoded URLs. No service discovery. The machine routes itself.</p>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L5-4" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L6-2" class="btn btn-primary btn-sm">Next: URL routing</button>
+        <button mn-to="L5-4" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L6-2" class="btn btn-primary btn-sm">Next: URL routing</button>
       </div>
     </div>
 
 
     <!-- ═══ 6.2 URL routing ════════════════════════════════════════ -->
-    <div mp-state="L6-2">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L6-2">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-error mb-2">6.2</div>
-      <h2 class="text-2xl font-bold mb-4">URL routing with mp-url</h2>
+      <h2 class="text-2xl font-bold mb-4">URL routing with mn-url</h2>
 
-      <p class="mb-4"><code class="mono">mp-url</code> on a state maps it to a browser URL. When the machine enters that state, the URL updates. When the user hits back/forward, the machine transitions to the matching state. Deep links work on page load.</p>
+      <p class="mb-4"><code class="mono">mn-url</code> on a state maps it to a browser URL. When the machine enters that state, the URL updates. When the user hits back/forward, the machine transitions to the matching state. Deep links work on page load.</p>
 
       <div class="mockup-code text-xs my-6">
-        <pre data-prefix=""><code>&lt;div mp-state="orders" mp-url="/orders"&gt;</code></pre>
-        <pre data-prefix=""><code>&lt;div mp-state="create" mp-url="/orders/new"&gt;</code></pre>
-        <pre data-prefix="" class="text-warning"><code>&lt;div mp-state="detail" mp-url="(path '/orders/:id' orderId)"&gt;</code></pre>
+        <pre data-prefix=""><code>&lt;div mn-state="orders" mn-url="/orders"&gt;</code></pre>
+        <pre data-prefix=""><code>&lt;div mn-state="create" mn-url="/orders/new"&gt;</code></pre>
+        <pre data-prefix="" class="text-warning"><code>&lt;div mn-state="detail" mn-url="(path '/orders/:id' orderId)"&gt;</code></pre>
       </div>
 
       <ul class="text-sm text-base-content/60 space-y-1 list-disc pl-5">
-        <li>Static paths: plain string. <code class="mono">mp-url="/orders"</code></li>
+        <li>Static paths: plain string. <code class="mono">mn-url="/orders"</code></li>
         <li>Parameterised paths: <code class="mono">(path '/orders/:id' orderId)</code> binds the <code class="mono">:id</code> URL segment to the context key <code class="mono">orderId</code></li>
-        <li>States without <code class="mono">mp-url</code> do not affect the URL</li>
-        <li><code class="mono">mp-url</code> travels in the markup. The server can parse it to derive SPA routes from the machine definition</li>
+        <li>States without <code class="mono">mn-url</code> do not affect the URL</li>
+        <li><code class="mono">mn-url</code> travels in the markup. The server can parse it to derive SPA routes from the machine definition</li>
       </ul>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L6-1" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L6-3" class="btn btn-primary btn-sm">Next: Server pipelines</button>
+        <button mn-to="L6-1" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L6-3" class="btn btn-primary btn-sm">Next: Server pipelines</button>
       </div>
     </div>
 
 
     <!-- ═══ 6.3 Server pipelines ═══════════════════════════════════ -->
-    <div mp-state="L6-3">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L6-3">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-error mb-2">6.3</div>
       <h2 class="text-2xl font-bold mb-4">Server pipelines</h2>
 
       <p class="mb-4">The server compiles HTML to SCXML and runs it through <code class="mono">executePipeline</code>. Effect adapters (log, notify, persist) are functions injected by the host. The machine definition is the single source of truth.</p>
 
       <div class="mockup-code text-xs my-6">
-        <pre data-prefix="" class="text-info"><code>var machine = require('mp/machine');</code></pre>
-        <pre data-prefix="" class="text-info"><code>var scxml = require('mp/scxml');</code></pre>
+        <pre data-prefix="" class="text-info"><code>var machine = require('mn/machine');</code></pre>
+        <pre data-prefix="" class="text-info"><code>var scxml = require('mn/scxml');</code></pre>
         <pre data-prefix=""><code></code></pre>
         <pre data-prefix=""><code>var def = scxml.compile(scxmlString);</code></pre>
         <pre data-prefix="" class="text-warning"><code>var result = machine.executePipeline(def, {</code></pre>
@@ -1283,15 +1283,15 @@
       <p class="mb-4">The purchase order app is 93 lines of server code. All it defines is what the host CAN DO (four effect adapters). The framework handles the rest.</p>
 
       <div class="flex justify-between mt-6">
-        <button mp-to="L6-2" class="btn btn-ghost btn-sm">Back</button>
-        <button mp-to="L6-4" class="btn btn-primary btn-sm">Next: SCXML</button>
+        <button mn-to="L6-2" class="btn btn-ghost btn-sm">Back</button>
+        <button mn-to="L6-4" class="btn btn-primary btn-sm">Next: SCXML</button>
       </div>
     </div>
 
 
     <!-- ═══ 6.4 SCXML ══════════════════════════════════════════════ -->
-    <div mp-state="L6-4">
-      <mp-temporal>(animate)</mp-temporal>
+    <div mn-state="L6-4">
+      <mn-temporal>(animate)</mn-temporal>
       <div class="badge badge-error mb-2">6.4</div>
       <h2 class="text-2xl font-bold mb-4">SCXML: the server surface</h2>
 
@@ -1302,12 +1302,12 @@
           <div class="card-body p-4 gap-2">
             <h3 class="font-bold text-sm">HTML</h3>
             <div class="mockup-code text-xs bg-base-200">
-              <pre data-prefix=""><code>&lt;div mp="door"&gt;</code></pre>
-              <pre data-prefix=""><code>  &lt;div mp-state="locked"&gt;</code></pre>
-              <pre data-prefix=""><code>    &lt;button mp-to="unlocked"&gt;</code></pre>
+              <pre data-prefix=""><code>&lt;div mn="door"&gt;</code></pre>
+              <pre data-prefix=""><code>  &lt;div mn-state="locked"&gt;</code></pre>
+              <pre data-prefix=""><code>    &lt;button mn-to="unlocked"&gt;</code></pre>
               <pre data-prefix=""><code>  &lt;/div&gt;</code></pre>
-              <pre data-prefix=""><code>  &lt;div mp-state="unlocked"&gt;</code></pre>
-              <pre data-prefix=""><code>    &lt;button mp-to="locked"&gt;</code></pre>
+              <pre data-prefix=""><code>  &lt;div mn-state="unlocked"&gt;</code></pre>
+              <pre data-prefix=""><code>    &lt;button mn-to="locked"&gt;</code></pre>
               <pre data-prefix=""><code>  &lt;/div&gt;</code></pre>
               <pre data-prefix=""><code>&lt;/div&gt;</code></pre>
             </div>
@@ -1336,19 +1336,19 @@
         <img src="../logo.svg" alt="" class="w-10 h-10 rounded-lg mx-auto opacity-60" />
         <h2 class="text-2xl font-bold">That's everything.</h2>
         <div class="flex flex-wrap justify-center gap-3">
-          <a href="sticky-notes.html" class="link text-mp-gold">Sticky Notes</a>
-          <a href="batch-reactor/" class="link text-mp-gold">Batch Reactor</a>
-          <a href="spa/" class="link text-mp-gold">Snow Check SPA</a>
-          <a href="purchase-order/" class="link text-mp-gold">Purchase Orders</a>
+          <a href="sticky-notes.html" class="link text-mn-gold">Sticky Notes</a>
+          <a href="batch-reactor/" class="link text-mn-gold">Batch Reactor</a>
+          <a href="spa/" class="link text-mn-gold">Snow Check SPA</a>
+          <a href="purchase-order/" class="link text-mn-gold">Purchase Orders</a>
         </div>
-        <p class="text-xs text-base-content/40 mt-2">This entire guide is a machine_perfect app. Zero JavaScript.</p>
+        <p class="text-xs text-base-content/40 mt-2">This entire guide is a machine_native app. Zero JavaScript.</p>
       </div>
     </div>
 
 
     </div><!-- /max-w-4xl -->
   </main>
-</div><!-- /mp="learn" -->
+</div><!-- /mn="learn" -->
 
 </body>
 </html>

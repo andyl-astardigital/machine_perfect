@@ -1,7 +1,7 @@
 /**
  * host.js — API tests.
  *
- * Run: node mp/tests/host.test.js
+ * Run: node mn/tests/host.test.js
  * Starts the server on a random port, exercises every endpoint,
  * verifies responses. Cleans up after itself.
  */

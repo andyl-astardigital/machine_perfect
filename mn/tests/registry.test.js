@@ -4,7 +4,7 @@
  * The registry is a machine. It has states, transitions, context.
  * Nodes register by sending events. Lookups query the context.
  *
- * Run: node mp/tests/registry.test.js
+ * Run: node mn/tests/registry.test.js
  */
 
 var fs = require('fs');

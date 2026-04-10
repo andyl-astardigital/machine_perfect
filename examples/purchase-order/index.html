@@ -4,27 +4,27 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" type="image/svg+xml" href="../../logo.svg" />
-  <title>Purchase Orders — machine_perfect full-stack</title>
+  <title>Purchase Orders — machine_native full-stack</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{mp:{purple:'#6d28d9',dark:'#4c1d95',gold:'#fbbf24',lavender:'#e9d5ff'}}}}}</script>
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" />
-  <script src="../../mp/engine.js"></script>
-  <script src="../../mp/browser.js"></script>
+  <script src="../../mn/engine.js"></script>
+  <script src="../../mn/browser.js"></script>
   <style>
-    .mp-enter-active,.mp-leave-active{transition:all .25s ease}
-    .mp-enter-from{opacity:0;transform:translateY(10px) scale(.98)}
-    .mp-leave-to{opacity:0;transform:translateY(-6px) scale(.98)}
+    .mn-enter-active,.mn-leave-active{transition:all .25s ease}
+    .mn-enter-from{opacity:0;transform:translateY(10px) scale(.98)}
+    .mn-leave-to{opacity:0;transform:translateY(-6px) scale(.98)}
     .scxml-box{white-space:pre-wrap;font-size:11px;line-height:1.4;max-height:16rem;overflow:auto}
   </style>
-  <link rel="mp-import" href="/examples/purchase-order/components/order-card.mp.html" />
-  <link rel="mp-import" href="/examples/purchase-order/components/toast.mp.html" />
+  <link rel="mn-import" href="/examples/purchase-order/components/order-card.mn.html" />
+  <link rel="mn-import" href="/examples/purchase-order/components/toast.mn.html" />
 </head>
 
 <!--
   ════════════════════════════════════════════════════════════════════════════
-  PURCHASE ORDER — machine_perfect full-stack
+  PURCHASE ORDER — machine_native full-stack
 
-  mp-where is ONLY on states. to() checks it on every transition.
+  mn-where is ONLY on states. to() checks it on every transition.
   No HTMX. No fetch. No escape hatches for normal flow.
   One mechanism. One code path. Every journey.
 
@@ -36,49 +36,49 @@
 
 <body class="bg-base-300 text-base-content min-h-screen">
 
-  <mp-store name="app" value='{"debug":false,"viewOrderId":null,"deleteOrderId":null}'></mp-store>
+  <mn-store name="app" value='{"debug":false,"viewOrderId":null,"deleteOrderId":null}'></mn-store>
 
   <!-- ═══ APP MACHINE ═══════════════════════════════════════════════════
-       States = views. mp-where on states routes to capable hosts.
-       mp-receive handles navigation events from server-rendered views.
+       States = views. mn-where on states routes to capable hosts.
+       mn-receive handles navigation events from server-rendered views.
        ═════════════════════════════════════════════════════════════════ -->
-  <div mp="app" mp-initial="orders">
-    <mp-ctx>{"_action":null,"_actionId":null}</mp-ctx>
-    <mp-receive event="navigate-orders">(do (set! _action nil) (set! _actionId nil) (to orders))</mp-receive>
-    <mp-receive event="navigate-detail">(do (set! _actionId (get $detail :id)) (to detail))</mp-receive>
-    <mp-receive event="delete-order">(do (set! _action 'delete') (set! _actionId (get $detail :id)) (emit order-deleted) (to orders))</mp-receive>
-    <mp-receive event="order-approved">(do (set! _action nil) (to orders))</mp-receive>
-    <mp-receive event="order-rejected">(do (set! _action nil) (to orders))</mp-receive>
+  <div mn="app" mn-initial="orders">
+    <mn-ctx>{"_action":null,"_actionId":null}</mn-ctx>
+    <mn-receive event="navigate-orders">(do (set! _action nil) (set! _actionId nil) (to orders))</mn-receive>
+    <mn-receive event="navigate-detail">(do (set! _actionId (get $detail :id)) (to detail))</mn-receive>
+    <mn-receive event="delete-order">(do (set! _action 'delete') (set! _actionId (get $detail :id)) (emit order-deleted) (to orders))</mn-receive>
+    <mn-receive event="order-approved">(do (set! _action nil) (to orders))</mn-receive>
+    <mn-receive event="order-rejected">(do (set! _action nil) (to orders))</mn-receive>
 
     <!-- Navbar -->
     <div class="navbar bg-base-100 shadow-md px-4 gap-2 sticky top-0 z-40">
       <button class="btn btn-ghost text-lg font-bold gap-2 normal-case">
-        <mp-on event="click">(do (set! _action nil) (set! _actionId nil) (to orders))</mp-on>
+        <mn-on event="click">(do (set! _action nil) (set! _actionId nil) (to orders))</mn-on>
         <img src="../../logo.svg" alt="" class="w-7 h-7 rounded" /> Purchase Orders
       </button>
       <div class="flex-1"></div>
       <button id="btn-nav-orders" class="btn btn-ghost btn-sm">
-        <mp-on event="click">(do (set! _action nil) (set! _actionId nil) (to orders))</mp-on>
+        <mn-on event="click">(do (set! _action nil) (set! _actionId nil) (to orders))</mn-on>
         Orders
       </button>
-      <button mp-to="create" class="btn btn-ghost btn-sm">+ New</button>
-      <span class="badge bg-mp-dark text-mp-lavender border-mp-purple text-xs">full-stack</span>
+      <button mn-to="create" class="btn btn-ghost btn-sm">+ New</button>
+      <span class="badge bg-mn-dark text-mn-lavender border-mn-purple text-xs">full-stack</span>
     </div>
 
-    <!-- Server-rendered states. mp-where routes to capable host.
-         mp-url maps state to browser URL. Loading spinner set globally via init(). -->
-    <div mp-state="orders" mp-url="/orders">
-      <mp-temporal>(animate)</mp-temporal>
-      <mp-where>(requires 'ui-render')</mp-where>
+    <!-- Server-rendered states. mn-where routes to capable host.
+         mn-url maps state to browser URL. Loading spinner set globally via init(). -->
+    <div mn-state="orders" mn-url="/orders">
+      <mn-temporal>(animate)</mn-temporal>
+      <mn-where>(requires 'ui-render')</mn-where>
     </div>
-    <div mp-state="create" mp-url="/orders/new">
-      <mp-temporal>(animate)</mp-temporal>
-      <mp-where>(requires 'ui-render')</mp-where>
+    <div mn-state="create" mn-url="/orders/new">
+      <mn-temporal>(animate)</mn-temporal>
+      <mn-where>(requires 'ui-render')</mn-where>
     </div>
-    <div mp-state="detail">
-      <mp-temporal>(animate)</mp-temporal>
-      <mp-where>(requires 'ui-render')</mp-where>
-      <mp-url>(path '/orders/:id' _actionId)</mp-url>
+    <div mn-state="detail">
+      <mn-temporal>(animate)</mn-temporal>
+      <mn-where>(requires 'ui-render')</mn-where>
+      <mn-url>(path '/orders/:id' _actionId)</mn-url>
     </div>
   </div>
 
@@ -87,10 +87,10 @@
        Auto-dismisses via (after 3000 idle).
        ═════════════════════════════════════════════════════════════════ -->
   <div class="toast toast-end toast-bottom z-50">
-    <div mp="po-toast" mp-ctx='{"message":"","type":"info"}'>
-      <mp-receive event="order-approved">(do (set! message 'Order fulfilled!') (set! type 'success') (to show))</mp-receive>
-      <mp-receive event="order-rejected">(do (set! message 'Order rejected') (set! type 'error') (to show))</mp-receive>
-      <mp-receive event="order-deleted">(do (set! message 'Deleted') (set! type 'warning') (to show))</mp-receive>
+    <div mn="po-toast" mn-ctx='{"message":"","type":"info"}'>
+      <mn-receive event="order-approved">(do (set! message 'Order fulfilled!') (set! type 'success') (to show))</mn-receive>
+      <mn-receive event="order-rejected">(do (set! message 'Order rejected') (set! type 'error') (to show))</mn-receive>
+      <mn-receive event="order-deleted">(do (set! message 'Deleted') (set! type 'warning') (to show))</mn-receive>
     </div>
   </div>
 
@@ -98,15 +98,15 @@
   <div class="max-w-5xl mx-auto px-6 pb-6">
     <div class="card bg-base-100/50 shadow">
       <div class="card-body gap-2 text-xs text-base-content/50 p-4">
-        <p><strong class="text-mp-gold">How it works:</strong> <code>mp-where</code> on states declares capability requirements. <code>to()</code> checks every transition — clicks, receives, timers, initial entry. If the browser can't satisfy the capabilities, the runtime routes the machine to a capable node via the registry. One mechanism. One code path. Every journey.</p>
+        <p><strong class="text-mn-gold">How it works:</strong> <code>mn-where</code> on states declares capability requirements. <code>to()</code> checks every transition — clicks, receives, timers, initial entry. If the browser can't satisfy the capabilities, the runtime routes the machine to a capable node via the registry. One mechanism. One code path. Every journey.</p>
       </div>
     </div>
   </div>
 
   <!-- Boot the runtime with registry and app-wide loading spinner -->
-  <script>MachinePerfect.init({
+  <script>MachineNative.init({
     registry: 'http://localhost:3100',
-    loading: '<main class="max-w-5xl mx-auto p-6"><div class="flex items-center justify-center py-16"><span class="loading loading-spinner loading-lg text-mp-purple"></span></div></main>'
+    loading: '<main class="max-w-5xl mx-auto p-6"><div class="flex items-center justify-center py-16"><span class="loading loading-spinner loading-lg text-mn-purple"></span></div></main>'
   });</script>
 
 </body>

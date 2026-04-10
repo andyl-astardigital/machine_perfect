@@ -1,5 +1,5 @@
 /**
- * machine_perfect — adapter interfaces.
+ * machine_native — adapter interfaces.
  *
  * Formal contracts for storage and effect adapters. Any implementation
  * that satisfies these interfaces can be injected into the server.
@@ -122,10 +122,10 @@
 //   log(level, ...args)         Diagnostic output.
 //
 //   capabilities                Array of capability strings this host
-//                               provides. Required for mp-where routing —
+//                               provides. Required for mn-where routing —
 //                               machine.js reads host.capabilities || []
 //                               so an adapter without this silently reports
-//                               no capabilities and mp-where always routes
+//                               no capabilities and mn-where always routes
 //                               remotely instead of executing locally.
 //                               Example: ['log', 'notify', 'persist']
 //
@@ -150,7 +150,7 @@ function validateHost(host) {
   }
   if (!Array.isArray(host.capabilities)) missing.push('capabilities (must be an array)');
   if (missing.length > 0) {
-    throw new Error('[mp] host adapter missing fields: ' + missing.join(', '));
+    throw new Error('[mn] host adapter missing fields: ' + missing.join(', '));
   }
 }
 
@@ -162,13 +162,13 @@ function validateStorage(adapter) {
     if (typeof adapter[required[i]] !== 'function') missing.push(required[i]);
   }
   if (missing.length > 0) {
-    throw new Error('[mp] storage adapter missing methods: ' + missing.join(', '));
+    throw new Error('[mn] storage adapter missing methods: ' + missing.join(', '));
   }
 }
 
 function validateEffect(name, adapter) {
   if (typeof adapter !== 'function') {
-    throw new Error('[mp] effect adapter "' + name + '" must be a function');
+    throw new Error('[mn] effect adapter "' + name + '" must be a function');
   }
 }
 

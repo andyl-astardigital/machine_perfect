@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       id="registry"
+       initial="active"
+       mn-ctx='{"nodes":[],"id":null,"address":null,"capabilities":null,"formats":null}'>
+
+  <state id="active">
+    <transition event="register">
+      <mn-guard>(and (some? address) (some? capabilities) (some? formats) (not (some? (find (fn [n] (= (get n :id) id)) nodes))))</mn-guard>
+      <mn-action>(push! nodes (obj :id id :address address :capabilities capabilities :formats formats :registered_at (now)))</mn-action>
+    </transition>
+
+    <transition event="deregister">
+      <mn-guard>(and (some? id) (some? (find (fn [n] (= (get n :id) id)) nodes)))</mn-guard>
+      <mn-action>(remove-where! nodes :id id)</mn-action>
+    </transition>
+  </state>
+
+</scxml>

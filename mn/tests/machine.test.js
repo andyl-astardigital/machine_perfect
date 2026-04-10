@@ -1,7 +1,7 @@
 /**
  * machine.js — deep unit tests.
  *
- * Run: node mp/tests/machine.test.js
+ * Run: node mn/tests/machine.test.js
  * Every public function tested. Every error path tested.
  * Every edge case that could bite you in production.
  */
@@ -628,7 +628,7 @@ describe('validate — guards and actions are parseable');
 // parser contract. Stricter parse validation is a future improvement.
 
 var goodGuardDef = machine.createDefinition({
-  id: 'good-guard',
+  id: 'good-guard', context: { x: 0 },
   states: { a: { on: { go: [{ target: 'b', guard: "(> x 0)", action: "(set! x 1)" }] } }, b: { final: true } }
 });
 var goodGuardIssues = machine.validate(goodGuardDef);
@@ -665,7 +665,7 @@ var finalTransDef = machine.createDefinition({
 var finalTransIssues = machine.validate(finalTransDef);
 assert(finalTransIssues.some(function (i) { return i.type === 'final-has-transitions' && i.state === 'done'; }), 'flags final state with transitions');
 
-describe('validate — mp-after target does not exist');
+describe('validate — mn-after target does not exist');
 var badAfterDef = machine.createDefinition({
   id: 'bad-after',
   states: {
@@ -674,10 +674,10 @@ var badAfterDef = machine.createDefinition({
   }
 });
 var badAfterIssues = machine.validate(badAfterDef);
-assert(badAfterIssues.some(function (i) { return i.type === 'invalid-target' && i.state === 'a'; }), 'flags invalid mp-after target');
+assert(badAfterIssues.some(function (i) { return i.type === 'invalid-target' && i.state === 'a'; }), 'flags invalid mn-after target');
 
 
-describe('validate — mp-after ms must be positive');
+describe('validate — mn-after ms must be positive');
 var badMsDef = machine.createDefinition({
   id: 'bad-ms',
   states: {
@@ -910,10 +910,10 @@ function clearTimers(inst) {
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  mp-where — distributed transition routing                              ║
+// ║  mn-where — distributed transition routing                              ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-describe('mp-where — transition with where returns route signal');
+describe('mn-where — transition with where returns route signal');
 
 var whereDef = machine.createDefinition({
   id: 'where-test',
@@ -946,7 +946,7 @@ eq(whereResult.route.guard, '(> amount 0)', 'route carries the guard');
 eq(whereResult.route.action, '(set! title (str title " — submitted"))', 'route carries the action');
 
 
-describe('mp-where — guard still evaluates locally before routing');
+describe('mn-where — guard still evaluates locally before routing');
 
 var whereGuardDef = machine.createDefinition({
   id: 'where-guard',
@@ -969,7 +969,7 @@ eq(whereGuardResult.route, null, 'no route — guard blocked it before routing')
 eq(whereGuardResult.reason, 'no matching transition', 'blocked by guard');
 
 
-describe('mp-where — transition without where executes locally as normal');
+describe('mn-where — transition without where executes locally as normal');
 
 var noWhereDef = machine.createDefinition({
   id: 'no-where',
@@ -989,7 +989,7 @@ eq(noWhereInst.context.x, 1, 'action ran');
 eq(noWhereResult.route, null, 'no route signal');
 
 
-describe('mp-where — requires multiple capabilities');
+describe('mn-where — requires multiple capabilities');
 
 var multiCapDef = machine.createDefinition({
   id: 'multi-cap',
@@ -1007,7 +1007,7 @@ eq(multiCapResult.transitioned, false, 'did not transition locally');
 deepEq(multiCapResult.route.requires, ['persist', 'notify'], 'requires both capabilities');
 
 
-describe('mp-where — host with matching capabilities executes locally');
+describe('mn-where — host with matching capabilities executes locally');
 
 var localCapDef = machine.createDefinition({
   id: 'local-cap',
@@ -1039,7 +1039,7 @@ eq(localCapInst.context.x, 1, 'action ran locally');
 eq(localCapResult.route, null, 'no route signal — executed locally');
 
 
-describe('mp-where — host missing one capability still routes');
+describe('mn-where — host missing one capability still routes');
 
 var partialCapDef = machine.createDefinition({
   id: 'partial-cap',
@@ -1157,7 +1157,7 @@ eq(r1.transitioned, true, 'first sendEvent transitions normally');
 eq(!!reentrantInst._processing, false, 'processing flag cleared after sendEvent');
 
 
-describe('mp-where — initial state with where returns route on createInstance');
+describe('mn-where — initial state with where returns route on createInstance');
 var whereInitDef = machine.createDefinition({
   id: 'where-init',
   initial: 'loading',
@@ -2126,6 +2126,85 @@ describe('executePipelineAsync — exists and returns a promise');
   });
 
   eq(syncBindResult.instance.context.id, 'sync-id-42', 'sync adapter return value bound via await');
+
+
+  describe('executePipelineAsync — adapter timeout');
+
+  var timeoutDef = machine.createDefinition({
+    id: 'async-timeout', initial: 'pending', context: { error: null },
+    states: {
+      pending: { on: {
+        run: [{ action: "(invoke! :type 'slow' :on-error 'timed-out' :input 'go')" }],
+        'timed-out': [{ target: 'error', action: "(set! error 'timeout')" }]
+      } },
+      error: { final: true }
+    }
+  });
+
+  var timeoutResult = await machine.executePipelineAsync(timeoutDef, {
+    maxSteps: 10,
+    effectTimeout: 50,
+    eventSelector: function (events) {
+      return events.indexOf('run') !== -1 ? 'run' : events[0];
+    },
+    effects: {
+      slow: function () {
+        return new Promise(function (resolve) {
+          setTimeout(function () { resolve('too late'); }, 200);
+        });
+      }
+    }
+  });
+
+  eq(timeoutResult.instance.state, 'error', 'adapter timeout routed to error state');
+  eq(timeoutResult.instance.context.error, 'timeout', 'timeout error action ran');
+
+
+  describe('validate — warns on undefined context keys in guards');
+
+  var undefinedKeyDef = machine.createDefinition({
+    id: 'undef-key', initial: 'a', context: { title: '' },
+    states: {
+      a: { on: { go: [{ target: 'b', guard: '(and (> amount 0) (not (empty? title)))' }] } },
+      b: { final: true }
+    }
+  });
+
+  var undefinedKeyIssues = machine.validate(undefinedKeyDef);
+  var amountIssue = null;
+  for (var uki = 0; uki < undefinedKeyIssues.length; uki++) {
+    if (undefinedKeyIssues[uki].type === 'undefined-reference' && undefinedKeyIssues[uki].symbol === 'amount') {
+      amountIssue = undefinedKeyIssues[uki];
+      break;
+    }
+  }
+  assert(amountIssue !== null, 'validate warns about undefined context key "amount"');
+  eq(amountIssue.state, 'a', 'issue references the correct state');
+
+  // title IS in context — should not be flagged
+  var titleIssue = null;
+  for (var tki = 0; tki < undefinedKeyIssues.length; tki++) {
+    if (undefinedKeyIssues[tki].symbol === 'title') { titleIssue = undefinedKeyIssues[tki]; break; }
+  }
+  eq(titleIssue, null, 'defined context key "title" not flagged');
+
+
+  describe('validate — does not false-positive on $ variables or stdlib');
+
+  var safeKeyDef = machine.createDefinition({
+    id: 'safe-keys', initial: 'a', context: { items: [] },
+    states: {
+      a: { on: { go: [{ target: 'b', guard: '(and (> (count items) 0) (some? $state))' }] } },
+      b: { final: true }
+    }
+  });
+
+  var safeKeyIssues = machine.validate(safeKeyDef);
+  var falsePositives = [];
+  for (var ski = 0; ski < safeKeyIssues.length; ski++) {
+    if (safeKeyIssues[ski].type === 'undefined-reference') falsePositives.push(safeKeyIssues[ski]);
+  }
+  deepEq(falsePositives, [], 'no false positives on $state or stdlib functions');
 
 
   // ── Summary ──

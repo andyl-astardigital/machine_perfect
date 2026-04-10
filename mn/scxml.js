@@ -1,8 +1,8 @@
 /**
- * machine_perfect — SCXML compiler.
+ * machine_native — SCXML compiler.
  *
  * Parses SCXML + MP extensions into the canonical machine definition
- * format that mp/machine.js executes. One function: XML in,
+ * format that mn/machine.js executes. One function: XML in,
  * definition out. Zero dependencies.
  *
  *   var def = scxml.compile(xmlString, { id: 'purchase-order' });
@@ -16,13 +16,13 @@
  *   <final id="...">
  *   <transition event="..." target="..." cond="...">
  *
- * MP extensions (mp- attributes, same prefix as HTML):
- *   <mp-guard>expr</mp-guard>    — transition guard (child element)
- *   <mp-action>expr</mp-action>  — transition action (child element)
- *   <mp-init>expr</mp-init>        — state entry hook
- *   <mp-exit>expr</mp-exit>        — state exit hook
- *   <mp-where>expr</mp-where>      — capability-based routing
- *   <mp-temporal>expr</mp-temporal> — temporal behaviour: (animate), (after), (every)
+ * MN extensions (mn- attributes, same prefix as HTML):
+ *   <mn-guard>expr</mn-guard>    — transition guard (child element)
+ *   <mn-action>expr</mn-action>  — transition action (child element)
+ *   <mn-init>expr</mn-init>        — state entry hook
+ *   <mn-exit>expr</mn-exit>        — state exit hook
+ *   <mn-where>expr</mn-where>      — capability-based routing
+ *   <mn-temporal>expr</mn-temporal> — temporal behaviour: (animate), (after), (every)
  *
  * @version 0.5.0
  * @license MIT
@@ -60,11 +60,11 @@
         skipWhitespace();
         if (str.substring(pos, pos + 4) === '<!--') {
           pos = str.indexOf('-->', pos);
-          if (pos === -1) throw new Error('[mp-scxml] unterminated comment');
+          if (pos === -1) throw new Error('[mn-scxml] unterminated comment');
           pos += 3;
         } else if (str.substring(pos, pos + 2) === '<?') {
           pos = str.indexOf('?>', pos);
-          if (pos === -1) throw new Error('[mp-scxml] unterminated processing instruction');
+          if (pos === -1) throw new Error('[mn-scxml] unterminated processing instruction');
           pos += 2;
         } else {
           break;
@@ -137,7 +137,7 @@
           // Comment inside element
           if (str.substring(pos, pos + 4) === '<!--') {
             pos = str.indexOf('-->', pos);
-            if (pos === -1) throw new Error('[mp-scxml] unterminated comment inside element');
+            if (pos === -1) throw new Error('[mn-scxml] unterminated comment inside element');
             pos += 3;
             continue;
           }
@@ -145,7 +145,7 @@
           if (str.substring(pos, pos + 9) === '<![CDATA[') {
             var cdataStart = pos + 9;
             var cdataEnd = str.indexOf(']]>', cdataStart);
-            if (cdataEnd === -1) throw new Error('[mp-scxml] unterminated CDATA section');
+            if (cdataEnd === -1) throw new Error('[mn-scxml] unterminated CDATA section');
             var cdataText = str.substring(cdataStart, cdataEnd);
             children.push({ tag: '#text', text: cdataText, attrs: {}, children: [] });
             pos = cdataEnd + 3;
@@ -166,7 +166,7 @@
     }
 
     var root = parseNode();
-    if (!root) throw new Error('[mp-scxml] no root element found');
+    if (!root) throw new Error('[mn-scxml] no root element found');
     return root;
   }
 
@@ -176,7 +176,7 @@
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
   // Walks the parsed XML tree and produces a canonical machine definition
-  // object that mp/machine.js can execute.
+  // object that mn/machine.js can execute.
 
   function compile(xmlString, options) {
     options = options || {};
@@ -185,7 +185,7 @@
     // Accept <scxml> with or without namespace prefix
     var scxmlTag = root.tag;
     if (scxmlTag !== 'scxml' && scxmlTag.indexOf(':scxml') === -1) {
-      throw new Error('[mp-scxml] root element must be <scxml>, got <' + scxmlTag + '>');
+      throw new Error('[mn-scxml] root element must be <scxml>, got <' + scxmlTag + '>');
     }
 
     var id = options.id || root.attrs.name || root.attrs.id || 'unnamed';
@@ -193,10 +193,10 @@
     var context = {};
     var states = {};
 
-    // mp-ctx attribute carries the full context as JSON (round-trips cleanly)
-    if (root.attrs['mp-ctx']) {
-      try { context = JSON.parse(root.attrs['mp-ctx']); }
-      catch (e) { console.warn('[mp-scxml] failed to parse mp-ctx: ' + e.message); }
+    // mn-ctx attribute carries the full context as JSON (round-trips cleanly)
+    if (root.attrs['mn-ctx']) {
+      try { context = JSON.parse(root.attrs['mn-ctx']); }
+      catch (e) { console.warn('[mn-scxml] failed to parse mn-ctx: ' + e.message); }
     }
 
     // ── Parse children ──
@@ -205,7 +205,7 @@
 
       if (child.tag === 'datamodel') {
         var dataCtx = parseDatamodel(child);
-        // Datamodel values fill in any gaps not covered by mp-ctx
+        // Datamodel values fill in any gaps not covered by mn-ctx
         for (var dk in dataCtx) { if (!(dk in context)) context[dk] = dataCtx[dk]; }
       } else if (child.tag === 'state') {
         var stateSpec = parseState(child, false);
@@ -277,31 +277,31 @@
 
   function parseState(node, isFinal) {
     var stateId = node.attrs.id;
-    if (!stateId) throw new Error('[mp-scxml] <state> or <final> missing id attribute');
+    if (!stateId) throw new Error('[mn-scxml] <state> or <final> missing id attribute');
 
     var def = {};
     if (isFinal) def.final = true;
 
     // MP extensions on the state element
-    if (node.attrs['mp-init']) def.init = node.attrs['mp-init'];
-    if (node.attrs['mp-exit']) def.exit = node.attrs['mp-exit'];
-    if (node.attrs['mp-url']) def.url = node.attrs['mp-url'];
+    if (node.attrs['mn-init']) def.init = node.attrs['mn-init'];
+    if (node.attrs['mn-exit']) def.exit = node.attrs['mn-exit'];
+    if (node.attrs['mn-url']) def.url = node.attrs['mn-url'];
 
-    // mp-temporal: browser-evaluated temporal expression (animate, after, every)
+    // mn-temporal: browser-evaluated temporal expression (animate, after, every)
     // Stored on the definition so it round-trips through compile → snapshot → HTML.
-    if (node.attrs['mp-temporal']) def.temporal = node.attrs['mp-temporal'];
+    if (node.attrs['mn-temporal']) def.temporal = node.attrs['mn-temporal'];
 
     // Temporal behaviour
-    if (node.attrs['mp-after']) {
+    if (node.attrs['mn-after']) {
       def.after = {
-        ms: parseInt(node.attrs['mp-after'], 10),
-        target: node.attrs['mp-after-target'] || null
+        ms: parseInt(node.attrs['mn-after'], 10),
+        target: node.attrs['mn-after-target'] || null
       };
     }
-    if (node.attrs['mp-every']) {
+    if (node.attrs['mn-every']) {
       def.every = {
-        ms: parseInt(node.attrs['mp-every'], 10),
-        action: node.attrs['mp-every-action'] || null
+        ms: parseInt(node.attrs['mn-every'], 10),
+        action: node.attrs['mn-every-action'] || null
       };
     }
 
@@ -323,18 +323,18 @@
         var childFinal = parseState(child, true);
         childStates[childFinal.id] = childFinal.def;
       } else if (child.tag === 'onentry') {
-        if (def.init) console.warn('[mp-scxml] state "' + stateId + '" has both mp-init attribute and <onentry> child — <onentry> takes precedence');
+        if (def.init) console.warn('[mn-scxml] state "' + stateId + '" has both mn-init attribute and <onentry> child — <onentry> takes precedence');
         def.init = extractActions(child);
       } else if (child.tag === 'onexit') {
-        if (def.exit) console.warn('[mp-scxml] state "' + stateId + '" has both mp-exit attribute and <onexit> child — <onexit> takes precedence');
+        if (def.exit) console.warn('[mn-scxml] state "' + stateId + '" has both mn-exit attribute and <onexit> child — <onexit> takes precedence');
         def.exit = extractActions(child);
-      } else if (child.tag === 'mp-where') {
+      } else if (child.tag === 'mn-where') {
         var whereText = '';
         for (var wi = 0; wi < child.children.length; wi++) {
           if (child.children[wi].tag === '#text') whereText += child.children[wi].text;
         }
         def.where = whereText.trim();
-      } else if (child.tag === 'mp-temporal') {
+      } else if (child.tag === 'mn-temporal') {
         var temporalText = '';
         for (var ti2 = 0; ti2 < child.children.length; ti2++) {
           if (child.children[ti2].tag === '#text') temporalText += child.children[ti2].text;
@@ -358,9 +358,9 @@
   // Parses a <transition> element from SCXML XML.
   //   target="stateName"         — bare state name, simple transition
   //   cond="expr"                — SCXML standard condition (guard)
-  //   <mp-guard>expr</mp-guard>  — structural child guard
-  //   <mp-action>expr</mp-action>— structural child action
-  //   <mp-emit>name</mp-emit>    — structural child emit
+  //   <mn-guard>expr</mn-guard>  — structural child guard
+  //   <mn-action>expr</mn-action>— structural child action
+  //   <mn-emit>name</mn-emit>    — structural child emit
 
   function parseTransition(node) {
     var event = node.attrs.event || null;
@@ -371,24 +371,24 @@
     def.target = target || null;
     if (node.attrs.cond) def.guard = node.attrs.cond;
 
-    // Structural child elements: <mp-guard>, <mp-action>, <mp-emit>
+    // Structural child elements: <mn-guard>, <mn-action>, <mn-emit>
     for (var ci = 0; ci < node.children.length; ci++) {
       var child = node.children[ci];
-      if (child.tag === 'mp-guard') {
+      if (child.tag === 'mn-guard') {
         var guardText = '';
         for (var gi = 0; gi < child.children.length; gi++) {
           if (child.children[gi].tag === '#text') guardText += child.children[gi].text;
         }
         if (guardText.trim()) def.guard = guardText.trim();
       }
-      if (child.tag === 'mp-action') {
+      if (child.tag === 'mn-action') {
         var actionText = '';
         for (var ai = 0; ai < child.children.length; ai++) {
           if (child.children[ai].tag === '#text') actionText += child.children[ai].text;
         }
         if (actionText.trim()) def.action = actionText.trim();
       }
-      if (child.tag === 'mp-emit') {
+      if (child.tag === 'mn-emit') {
         var emitText = '';
         for (var ei = 0; ei < child.children.length; ei++) {
           if (child.children[ei].tag === '#text') emitText += child.children[ei].text;
@@ -398,8 +398,8 @@
     }
 
     // Where: capability-based routing (on transitions)
-    if (node.attrs['mp-where']) {
-      def.where = node.attrs['mp-where'];
+    if (node.attrs['mn-where']) {
+      def.where = node.attrs['mn-where'];
     }
 
     return { event: event, def: def };
@@ -414,7 +414,7 @@
   function extractActions(node) {
     for (var i = 0; i < node.children.length; i++) {
       var child = node.children[i];
-      if (child.tag === 'script' || child.tag === 'action' || child.tag === 'mp-action') {
+      if (child.tag === 'script' || child.tag === 'action' || child.tag === 'mn-action') {
         // Action text content
         for (var j = 0; j < child.children.length; j++) {
           if (child.children[j].tag === '#text') return child.children[j].text;

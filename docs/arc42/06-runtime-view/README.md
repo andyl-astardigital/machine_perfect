@@ -3,27 +3,27 @@
 ## Scenario 0: Boot sequence
 
 The boot sequence has two async dependencies: component imports and the
-route table. Both must complete before machines with mp-where can function.
+route table. Both must complete before machines with mn-where can function.
 The developer writes ONE line of config. Everything else is automatic.
 
 ```
 Browser loads page
     │
     ▼
-<script src="mp/engine.js">     ← engine module loads (sync)
-<script src="mp/browser.js">     ← runtime module loads (sync)
+<script src="mn/engine.js">     ← engine module loads (sync)
+<script src="mn/browser.js">     ← runtime module loads (sync)
     │
     │ Module body executes:
     │   schedules _boot() via setTimeout(0)
     │   (deferred so the rest of the page HTML is parsed first)
     │
     ▼
-<link rel="mp-import" href="..."> ← parsed into DOM (sync, not fetched yet)
-<mp-store name="app" value="{}">  ← parsed into DOM
-<div mp="app" mp-initial="orders"> ← parsed into DOM
+<link rel="mn-import" href="..."> ← parsed into DOM (sync, not fetched yet)
+<mn-store name="app" value="{}">  ← parsed into DOM
+<div mn="app" mn-initial="orders"> ← parsed into DOM
     │
     ▼
-<script>MachinePerfect.init({ registry: 'http://localhost:3100' });</script>
+<script>MachineNative.init({ registry: 'http://localhost:3100' });</script>
     │
     │ Sets _registry = url
     │ Starts _fetchRouteTable() → async fetch begins
@@ -33,33 +33,33 @@ Browser loads page
 Event loop runs _boot() (from the earlier setTimeout)
     │
     ├─ Step 1: _loadImports()
-    │   Fetches all <link rel="mp-import"> files in parallel
-    │   Parses returned HTML for <template mp-define> elements
+    │   Fetches all <link rel="mn-import"> files in parallel
+    │   Parses returned HTML for <template mn-define> elements
     │   Registers templates: _templates['po-toast'] = templateEl
     │   Returns promise that resolves when ALL imports complete
     │
     ├─ Step 2: init()  (runs after imports resolve)
-    │   _processStores()  — reads <mp-store> elements, populates _store
-    │   Scans document for [mp] elements
+    │   _processStores()  — reads <mn-store> elements, populates _store
+    │   Scans document for [mn] elements
     │   For each: _createInstance(el)
-    │     _initMachine()  — reads mp-ctx, mp-persist, finds states, saves templates
+    │     _initMachine()  — reads mn-ctx, mn-persist, finds states, saves templates
     │     Creates inst object with to(), update(), emit()
     │     _wireInstance()  — scans bindings, attaches events, inits nested machines
-    │     Fires mp-init on machine element (setTimeout 0)
-    │     Fires mp-init on initial state element (setTimeout 0)
-    │     If initial state has mp-where → chains on _routeTableReady promise
+    │     Fires mn-init on machine element (setTimeout 0)
+    │     Fires mn-init on initial state element (setTimeout 0)
+    │     If initial state has mn-where → chains on _routeTableReady promise
     │
     ├─ Step 3: _observe()
     │   Starts MutationObserver on document.body
-    │   Any future [mp] elements added to DOM will auto-init
+    │   Any future [mn] elements added to DOM will auto-init
     │
     ▼
 _routeTableReady resolves (route table fetched from registry)
     │
     ▼
-Initial state mp-where trigger fires
+Initial state mn-where trigger fires
     │ inst.to('orders')
-    │ to() checks stateMap['orders'] mp-where → (requires 'ui-render')
+    │ to() checks stateMap['orders'] mn-where → (requires 'ui-render')
     │ browser lacks 'ui-render' → ROUTE
     │ finds po-server in route table
     │ sends machine, receives HTML, stamps into orders state
@@ -75,7 +75,7 @@ _loadImports() ──────────────────┐
                                   ├──→ init() → machines created
 DOM parsed ──────────────────────┘
                                         │
-_fetchRouteTable() ──────────────────── ├──→ mp-where triggers
+_fetchRouteTable() ──────────────────── ├──→ mn-where triggers
                                         │
                                   ┌─────┘
                                   ▼
@@ -87,39 +87,39 @@ _fetchRouteTable() ──────────────────── 
 1. `init(config)` sets registry and starts route fetch but does NOT create machines.
    `_boot()` creates machines after imports load.
 
-2. `mp-where` on initial states chains on `_routeTableReady` — the promise from
-   `_fetchRouteTable()`. If no registry is configured, mp-where fires immediately
+2. `mn-where` on initial states chains on `_routeTableReady`, the promise from
+   `_fetchRouteTable()`. If no registry is configured, mn-where fires immediately
    (and fails gracefully if no capable node exists).
 
-3. Component templates (`mp-import`) MUST be loaded before `init()` runs.
+3. Component templates (`mn-import`) MUST be loaded before `init()` runs.
    Otherwise machines referencing those templates fail with "no template for X."
 
-4. The inline `<script>` with `init(config)` MUST appear after the `<link mp-import>`
+4. The inline `<script>` with `init(config)` MUST appear after the `<link mn-import>`
    elements in the HTML. This ensures the module has already scheduled `_boot()` which
    will load imports before creating machines.
 
-5. `_boot()` runs via `setTimeout(0)` — it fires after ALL synchronous script execution
+5. `_boot()` runs via `setTimeout(0)`. It fires after ALL synchronous script execution
    completes but before any user interaction. This guarantees the config is set before
    boot starts.
 
 
-## Scenario 1: Local transition — user clicks a button
+## Scenario 1: Local transition (user clicks a button)
 
 ```
 User clicks [Add Item]
     │
     ▼
 Document click listener (delegated)
-    │ finds closest [mp-to]
-    │ finds closest [mp] → machine instance
+    │ finds closest [mn-to]
+    │ finds closest [mn] → machine instance
     │
     ▼
-<button mp-to="add-item">Add Item</button>
+<button mn-to="add-item">Add Item</button>
     │
-    │ <mp-transition event="add-item" to=".">
-    │   <mp-guard>(not (empty? newItem))</mp-guard>
-    │   <mp-action>(push! items (obj :name newItem))</mp-action>
-    │ </mp-transition>
+    │ <mn-transition event="add-item" to=".">
+    │   <mn-guard>(not (empty? newItem))</mn-guard>
+    │   <mn-action>(push! items (obj :name newItem))</mn-action>
+    │ </mn-transition>
     │
     ├─ Evaluate guard: engine.eval("(not (empty? newItem))", ctx)
     │   pure evaluation — cannot mutate
@@ -132,45 +132,45 @@ Document click listener (delegated)
     ▼
 inst.to(".")
     │ self-transition — no state change
-    │ no mp-where on state → local execution
+    │ no mn-where on state → local execution
     │ rebuild binding cache
     │ evaluate only bindings whose deps include "items"
     │ update DOM
     │
     ▼
-Phase 5: sync mp-ctx attribute
-    │ machineEl.setAttribute('mp-ctx', JSON.stringify(ctx))
+Phase 5: sync mn-ctx attribute
+    │ machineEl.setAttribute('mn-ctx', JSON.stringify(ctx))
     │ markup reflects live state
     │
     ▼
 User sees new item in list
 ```
 
-## Scenario 2: State-level mp-where — page load
+## Scenario 2: State-level mn-where on page load
 
 ```
 Browser boots
     │
     ▼
-MachinePerfect.init({ registry: 'http://localhost:3100' })
+MachineNative.init({ registry: 'http://localhost:3100' })
     │ fetches route table from registry
     │ stores node list locally
     │
     ▼
 MutationObserver / DOMContentLoaded → _boot()
-    │ loads mp-import components
-    │ scans for [mp] elements
+    │ loads mn-import components
+    │ scans for [mn] elements
     │ creates machine instances
     │
     ▼
-App machine: mp-initial="orders"
+App machine: mn-initial="orders"
     │ enters initial state 'orders'
     │ calls to('orders')
     │
     ▼
 to('orders')
-    │ checks stateMap['orders'] for <mp-where> element
-    │ finds: <mp-where>(requires 'ui-render')</mp-where>
+    │ checks stateMap['orders'] for <mn-where> element
+    │ finds: <mn-where>(requires 'ui-render')</mn-where>
     │ evaluates → ['ui-render']
     │ browser capabilities: ['dom', 'user-input', 'localstorage', 'css-transition']
     │ browser lacks 'ui-render' → ROUTE
@@ -185,7 +185,7 @@ to('orders')
     │   Headers: Content-Type: text/html
     │            X-MP-Target: orders
     │            X-MP-Machine: app
-    │   Body: machine outerHTML (with synced mp-ctx)
+    │   Body: machine outerHTML (with synced mn-ctx)
     │
     ▼
 Server receives POST /api/machine
@@ -198,40 +198,40 @@ Server receives POST /api/machine
 Browser receives HTML response
     │ stamps into orders state: stateEl.innerHTML = html
     │ scans for bindings, attaches events, inits nested machines
-    │ MutationObserver boots any [mp] elements in response
+    │ MutationObserver boots any [mn] elements in response
     │
     ▼
 User sees order list (or empty state)
 ```
 
-## Scenario 3: Navigation via mp-receive
+## Scenario 3: Navigation via mn-receive
 
 ```
 User clicks [View] on an order card (server-rendered)
     │
     ▼
 Order card machine:
-    │ <button mp-to="view">View</button>
+    │ <button mn-to="view">View</button>
     │
-    │ <mp-transition event="view">
-    │   <mp-emit event="navigate-detail">(obj :id id)</mp-emit>
-    │ </mp-transition>
+    │ <mn-transition event="view">
+    │   <mn-emit event="navigate-detail">(obj :id id)</mn-emit>
+    │ </mn-transition>
     │
-    │ dispatches CustomEvent('mp-navigate-detail') with payload {id: ...}
+    │ dispatches CustomEvent('mn-navigate-detail') with payload {id: ...}
     │
     ▼
-App machine's mp-receive catches event
+App machine's mn-receive catches event
     │ (on 'navigate-detail' (do (set! _actionId (get $detail :id)) (to detail)))
     │ sets _actionId in app context
     │ calls inst.to('detail')
     │
     ▼
 to('detail')
-    │ checks stateMap['detail'] for <mp-where>
-    │ finds: <mp-where>(requires 'ui-render')</mp-where>
+    │ checks stateMap['detail'] for <mn-where>
+    │ finds: <mn-where>(requires 'ui-render')</mn-where>
     │ browser lacks 'ui-render' → ROUTE
     │
-    ├─ Phase 5 syncs mp-ctx (now includes _actionId)
+    ├─ Phase 5 syncs mn-ctx (now includes _actionId)
     ├─ POST to capable node with X-MP-Target: detail
     │
     ▼
@@ -245,26 +245,26 @@ Server receives request
     ▼
 Browser stamps detail view
     │ nested order-detail machine boots via MutationObserver
-    │ mp-each renders items, effects, history
-    │ <mp-on event="click.outside"> on delete confirmation
+    │ mn-each renders items, effects, history
+    │ <mn-on event="click.outside"> on delete confirmation
     │
     ▼
 User sees order detail
 ```
 
-## Scenario 4: Pipeline execution via state-level mp-where
+## Scenario 4: Pipeline execution via state-level mn-where
 
 ```
 User fills purchase order form, clicks [Send to Pipeline]
     │
     ▼
 Click handler on purchase-order machine (nested inside app)
-    │ <button mp-to="submit">Send to Pipeline</button>
+    │ <button mn-to="submit">Send to Pipeline</button>
     │
-    │ <mp-transition event="submit" to="submitted">
-    │   <mp-guard>(and (> (count items) 0) (> amount 0))</mp-guard>
-    │   <mp-action>(set! submitted_at (now))</mp-action>
-    │ </mp-transition>
+    │ <mn-transition event="submit" to="submitted">
+    │   <mn-guard>(and (> (count items) 0) (> amount 0))</mn-guard>
+    │   <mn-action>(set! submitted_at (now))</mn-action>
+    │ </mn-transition>
     │
     │ guard evaluates → true
     │ action executes: (set! submitted_at (now))
@@ -272,8 +272,8 @@ Click handler on purchase-order machine (nested inside app)
     │
     ▼
 to('submitted')
-    │ checks stateMap['submitted'] for <mp-where>
-    │ finds: <mp-where>(requires 'log' 'notify' 'persist' 'fulfil')</mp-where>
+    │ checks stateMap['submitted'] for <mn-where>
+    │ finds: <mn-where>(requires 'log' 'notify' 'persist' 'fulfil')</mn-where>
     │ browser lacks all → ROUTE
     │
     ├─ _sendMachineToNode(purchaseOrderEl, node, 'submitted')
@@ -313,7 +313,7 @@ Browser receives pipeline result
 User clicks [View All Orders]
     │ emits 'navigate-orders'
     │ app machine receives, calls (to orders)
-    │ → Scenario 2 flow: orders state mp-where routes to server
+    │ → Scenario 2 flow: orders state mn-where routes to server
     │ → server returns updated order list (with new order)
 ```
 
@@ -323,16 +323,16 @@ User clicks [View All Orders]
 User clicks [Delete Order] on detail view
     │
     ▼
-delete-confirm machine: mp-to="open" → shows confirmation
+delete-confirm machine: mn-to="open" → shows confirmation
 User clicks [Yes, delete]
-    │ <button mp-to="confirm-delete">Yes, delete</button>
+    │ <button mn-to="confirm-delete">Yes, delete</button>
     │
-    │ <mp-transition event="confirm-delete" to="closed">
-    │   <mp-action>(emit delete-order (obj :id id))</mp-action>
-    │ </mp-transition>
+    │ <mn-transition event="confirm-delete" to="closed">
+    │   <mn-action>(emit delete-order (obj :id id))</mn-action>
+    │ </mn-transition>
     │
     ▼
-App machine <mp-receive>:
+App machine <mn-receive>:
     │ (on 'delete-order' (do
     │     (set! _action 'delete')
     │     (set! _actionId (get $detail :id))
@@ -340,8 +340,8 @@ App machine <mp-receive>:
     │
     ▼
 to('orders')
-    │ <mp-where>(requires 'ui-render')</mp-where> → ROUTE
-    │ Phase 5 syncs mp-ctx: {_action: 'delete', _actionId: 'po-xxx'}
+    │ <mn-where>(requires 'ui-render')</mn-where> → ROUTE
+    │ Phase 5 syncs mn-ctx: {_action: 'delete', _actionId: 'po-xxx'}
     │ POST to server with synced context
     │
     ▼
@@ -364,7 +364,7 @@ User sees order removed
 
 ```
 Orders state entered
-    │ <mp-temporal>(every 30000 (to orders))</mp-temporal>
+    │ <mn-temporal>(every 30000 (to orders))</mn-temporal>
     │ interval starts: every 30 seconds
     │
     ▼
@@ -373,7 +373,7 @@ Orders state entered
     │
     ▼
 to('orders') — targets current state
-    │ checks <mp-where>(requires 'ui-render')</mp-where> → ROUTE
+    │ checks <mn-where>(requires 'ui-render')</mn-where> → ROUTE
     │ sends to capable node
     │ server returns fresh order list
     │ stamps updated content
@@ -386,12 +386,12 @@ User sees refreshed data (no page reload)
 
 | Step | Every transition |
 |------|-----------------|
-| Guard evaluation | `engine.eval(guardExpr, ctx)` — pure, cannot mutate |
-| Action execution | `engine.exec(actionExpr, ctx)` — mutates, records dirty keys |
-| Context sync | Phase 5: `setAttribute('mp-ctx', JSON.stringify(ctx))` |
-| Capability check | `to()` reads target state's `<mp-where>`, evaluates, checks host capabilities |
-| Remote routing | `_findCapableNode` + `_sendMachineToNode` — same for all sources |
+| Guard evaluation | `engine.eval(guardExpr, ctx)`, pure, cannot mutate |
+| Action execution | `engine.exec(actionExpr, ctx)`, mutates, records dirty keys |
+| Context sync | Phase 5: `setAttribute('mn-ctx', JSON.stringify(ctx))` |
+| Capability check | `to()` reads target state's `<mn-where>`, evaluates, checks host capabilities |
+| Remote routing | `_findCapableNode` + `_sendMachineToNode`, same for all sources |
 | Content stamping | `stateEl.innerHTML = html` + `_initNested` + `_scanBindAttrs` |
-| Purity enforcement | `sevalPure` rejects mutations in guards — browser and server |
+| Purity enforcement | `sevalPure` rejects mutations in guards, browser and server |
 
-The engine does the same work everywhere. The host does platform-specific work. All routing goes through `to()`, one mechanism for every transition source.
+The engine does the same work everywhere. The host does platform-specific work. All routing goes through `to()`. One mechanism for every transition source.

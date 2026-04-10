@@ -18,7 +18,7 @@ var http = require('http');
 var fs = require('fs');
 var path = require('path');
 var ejs = require('ejs');
-var transforms = require('../../mp/transforms');
+var transforms = require('../../mn/transforms');
 var services = require('./services');
 
 var PORT = process.env.PORT || 4000;
@@ -59,7 +59,7 @@ function registerWithRegistry() {
 
 var types = {
   '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/svg+xml',
-  '.css': 'text/css', '.xslt': 'application/xml', '.mp.html': 'text/html'
+  '.css': 'text/css', '.xslt': 'application/xml', '.mn.html': 'text/html'
 };
 
 
@@ -162,7 +162,7 @@ var server = http.createServer(function (req, res) {
 
   // ── POST /api/machine ────────────────────────────────────────────────
   //
-  // Dispatches by X-MP-Machine header:
+  // Dispatches by X-MN-Machine header:
   //   app             → UI render: render view HTML for target state
   //   purchase-order  → Pipeline: advance machine through services
   //   (other)         → Pipeline (default)
@@ -171,8 +171,8 @@ var server = http.createServer(function (req, res) {
     var body = '';
     req.on('data', function (chunk) { body += chunk; });
     req.on('end', function () {
-      var machineName = req.headers['x-mp-machine'];
-      var targetState = req.headers['x-mp-target'];
+      var machineName = req.headers['x-mn-machine'];
+      var targetState = req.headers['x-mn-target'];
 
       // ── UI render: app machine requests a view ──
       if (machineName === 'app' && targetState) {
@@ -276,7 +276,7 @@ var server = http.createServer(function (req, res) {
 });
 
 server.listen(PORT, function () {
-  console.log('\n  machine_perfect — Purchase Order');
+  console.log('\n  machine_native — Purchase Order');
   console.log('  http://localhost:' + PORT);
   console.log('');
   console.log('  SCXML is the canonical format.');

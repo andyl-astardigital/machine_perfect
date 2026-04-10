@@ -6,9 +6,9 @@
  * pattern. This file only defines WHAT this host can do.
  */
 
-var scxml = require('../../mp/scxml');
-var machine = require('../../mp/machine');
-var transforms = require('../../mp/transforms');
+var scxml = require('../../mn/scxml');
+var machine = require('../../mn/machine');
+var transforms = require('../../mn/transforms');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -115,6 +115,7 @@ async function executeAsync(scxmlMarkup) {
   var result = await machine.executePipelineAsync(def, {
     effects: adapters,
     maxSteps: 10,
+    effectTimeout: 10000,
     format: scxmlMarkup,
     formatUpdater: transforms.updateScxmlState
   });

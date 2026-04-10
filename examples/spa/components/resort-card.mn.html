@@ -1,0 +1,39 @@
+<!-- resort-card — Reusable visual component for displaying a ski resort.
+
+     Context: { name, code, alt, top, region, country, temp, snow, wind, weather, img }
+     Slot: actions (★ Save, +⇄ Compare, Remove — depends on context)
+
+     Used in: browse grid, compare grid, saved grid — SAME component, THREE uses.
+-->
+<template mn-define="resort-card">
+  <div mn-state="display" class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden resort-card">
+    <div class="relative">
+      <div class="h-28 bg-gradient-to-br from-blue-900 to-indigo-900 flex items-end p-3 bg-cover bg-center">
+        <mn-bind attr="style">(if (and img (> (count img) 0)) (str 'background-image:linear-gradient(to top,rgba(0,0,0,.6),transparent),url(' img ')') '')</mn-bind>
+        <div class="flex items-center gap-2">
+          <img class="w-5 h-3 rounded-sm object-cover shadow" />
+          <mn-bind attr="src">(str 'https://flagcdn.com/w40/' code '.png')</mn-bind>
+          <h3 class="font-bold text-sm text-white truncate drop-shadow"><mn-text>name</mn-text></h3>
+        </div>
+      </div>
+      <div class="absolute top-2 right-2">
+        <div class="badge badge-sm font-mono shadow">
+          <mn-class>(cond (nil? snow) 'badge-warning' (> snow 0) 'badge-info' true 'badge-ghost')</mn-class>
+          <span><mn-text>(cond (nil? snow) '...' (< snow 0) '...' (> snow 0) (str snow 'cm') true 'No snow')</mn-text></span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body p-3 gap-1">
+      <div class="flex justify-between text-xs">
+        <span class="text-base-content/60"><mn-text>(str alt 'm – ' top 'm')</mn-text></span>
+        <span class="font-mono">
+          <mn-class>(if (nil? temp) 'text-base-content/30' (if (< temp 0) 'text-info' 'text-warning'))</mn-class>
+          <mn-text>(if (nil? temp) '...' (str temp '°C'))</mn-text>
+        </span>
+      </div>
+      <p class="text-xs text-base-content/40"><mn-text>(str region ' · ' (or weather country))</mn-text></p>
+      <mn-slot name="actions"></mn-slot>
+    </div>
+  </div>
+</template>
+<style>.resort-card{transition:transform .2s,box-shadow .2s}.resort-card:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,0,0,.3)}</style>

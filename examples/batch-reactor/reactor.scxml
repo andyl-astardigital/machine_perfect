@@ -9,49 +9,49 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        id="batch-reactor"
        initial="idle"
-       mp-ctx='{"batchId":null,"phase":"","temperature":0,"pressure":0,"fillLevel":0,"errorCode":null,"startedAt":null,"runDuration":null,"holdStart":null}'>
+       mn-ctx='{"batchId":null,"phase":"","temperature":0,"pressure":0,"fillLevel":0,"errorCode":null,"startedAt":null,"runDuration":null,"holdStart":null}'>
 
   <state id="idle">
     <transition event="START" target="running">
-      <mp-guard>(some? batchId)</mp-guard>
-      <mp-action>(set! errorCode nil)</mp-action>
+      <mn-guard>(some? batchId)</mn-guard>
+      <mn-action>(set! errorCode nil)</mn-action>
     </transition>
   </state>
 
   <state id="running" initial="filling"
-         mp-init="(set! startedAt (now))"
-         mp-exit="(set! runDuration (- (now) startedAt))">
+         mn-init="(set! startedAt (now))"
+         mn-exit="(set! runDuration (- (now) startedAt))">
 
     <!-- Inherited transitions: available from ANY child state -->
     <transition event="ABORT" target="aborting">
-      <mp-action>(set! errorCode 'operator-abort')</mp-action>
+      <mn-action>(set! errorCode 'operator-abort')</mn-action>
     </transition>
     <transition event="E_STOP" target="stopped">
-      <mp-action>(set! errorCode 'emergency-stop')</mp-action>
+      <mn-action>(set! errorCode 'emergency-stop')</mn-action>
     </transition>
 
-    <state id="filling" mp-init="(set! phase 'fill')">
+    <state id="filling" mn-init="(set! phase 'fill')">
       <transition event="LEVEL_OK" target="heating">
-        <mp-action>(set! fillLevel 100)</mp-action>
+        <mn-action>(set! fillLevel 100)</mn-action>
       </transition>
     </state>
 
-    <state id="heating" mp-init="(set! phase 'heat')">
+    <state id="heating" mn-init="(set! phase 'heat')">
       <transition event="TEMP_OK" target="holding">
-        <mp-guard>(> temperature 80)</mp-guard>
-        <mp-action>(set! phase 'hold')</mp-action>
+        <mn-guard>(> temperature 80)</mn-guard>
+        <mn-action>(set! phase 'hold')</mn-action>
       </transition>
     </state>
 
-    <state id="holding" mp-init="(set! holdStart (now))">
+    <state id="holding" mn-init="(set! holdStart (now))">
       <transition event="HOLD_COMPLETE" target="draining">
-        <mp-action>(set! phase 'drain')</mp-action>
+        <mn-action>(set! phase 'drain')</mn-action>
       </transition>
     </state>
 
     <state id="draining">
       <transition event="EMPTY" target="complete">
-        <mp-action>(set! phase 'complete')</mp-action>
+        <mn-action>(set! phase 'complete')</mn-action>
       </transition>
     </state>
 
@@ -59,9 +59,9 @@
   </state>
 
   <state id="aborting"
-         mp-init="(set! phase 'aborting')">
+         mn-init="(set! phase 'aborting')">
     <transition event="SAFE" target="idle">
-      <mp-action>(do (set! batchId nil) (set! phase '') (set! errorCode nil) (set! temperature 0) (set! fillLevel 0) (set! pressure 0))</mp-action>
+      <mn-action>(do (set! batchId nil) (set! phase '') (set! errorCode nil) (set! temperature 0) (set! fillLevel 0) (set! pressure 0))</mn-action>
     </transition>
   </state>
 

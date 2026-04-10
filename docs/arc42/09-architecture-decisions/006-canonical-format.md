@@ -4,10 +4,10 @@
 Accepted
 
 ## Context
-The framework has two markup substrates: HTML (frontend) and SCXML (backend). Both describe the same thing — state machines with guards, actions, context, and transitions. The engine needs to execute them uniformly.
+Different nodes use different markup formats: HTML on the browser node, SCXML on server nodes. Both describe state machines with guards, actions, context, and transitions. The engine needs to execute them uniformly.
 
 ## Decision
-Define a canonical machine definition format — a plain JS object — that both HTML and SCXML compile into. S-expressions are preserved as strings in this format, not pre-compiled or pre-evaluated.
+Define a canonical machine definition format (a plain JS object) that both HTML and SCXML compile into. S-expressions are preserved as strings in this format, not pre-compiled or pre-evaluated.
 
 ## Format
 
@@ -37,13 +37,13 @@ Define a canonical machine definition format — a plain JS object — that both
 ```
 
 ## Rationale
-- **S-expressions stay as strings** — they are not compiled to AST at definition time. The evaluator parses and caches them lazily at first evaluation. This preserves inspectability: you can read a guard and understand it.
-- **Plain JS object** — serialisable to JSON for storage, transferable between services, inspectable in a debugger.
-- **Uniform execution** — the engine's `sendEvent` function works on this format regardless of whether it came from HTML or SCXML. One code path for transition logic.
-- **No intermediate representation tax** — the format is the simplest possible description. No visitor pattern, no node types, no abstract syntax complexity.
+- S-expressions stay as strings. They are not compiled to AST at definition time. The evaluator parses and caches them lazily at first evaluation. You can read a guard and understand it.
+- Plain JS object: serialisable to JSON for storage, transferable between services, inspectable in a debugger.
+- Uniform execution: the engine's `sendEvent` function works on this format regardless of whether it came from HTML or SCXML. One code path for transition logic.
+- No intermediate representation tax. The format is the simplest possible description. No visitor pattern, no node types, no abstract syntax complexity.
 
 ## Consequences
 - Both runtimes need a compiler: HTML → canonical (browser), SCXML → canonical (backend).
 - The browser currently compiles and executes in one pass (`_createInstance`). Refactoring to a two-pass model is technical debt D2.
-- The canonical format is an internal detail, not a user-facing API. Users write HTML or SCXML, never JSON.
+- The canonical format is an internal detail. Users write HTML or SCXML, never JSON.
 - Machine tooling (graph, lint, REPL) operates on the canonical format, making it host-agnostic.

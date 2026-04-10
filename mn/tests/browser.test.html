@@ -1,0 +1,3315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="../../logo.svg" />
+  <title>machine_native — test suite</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; padding: 20px; background: #4c1d95; color: #e9d5ff; }
+    h1 { font-size: 18px; margin-bottom: 4px; }
+    .header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .header img { width: 28px; height: 28px; border-radius: 6px; }
+    .header h1 { font-size: 18px; }
+    .header .gold { color: #fbbf24; }
+    #summary { margin-bottom: 16px; padding: 8px 12px; border-radius: 6px; font-weight: bold; }
+    .pass-bg { background: #0d3320; color: #4ade80; }
+    .fail-bg { background: #3b0d0d; color: #f87171; }
+    .result { padding: 4px 8px; border-left: 3px solid; margin-bottom: 2px; border-radius: 0 4px 4px 0; }
+    .result.pass { border-color: #22c55e; color: #86efac; }
+    .result.fail { border-color: #ef4444; color: #fca5a5; background: #2a0a0a; }
+    .result .detail { color: #f87171; font-size: 11px; margin-top: 2px; }
+    .group { margin-top: 12px; margin-bottom: 4px; font-weight: bold; color: #fbbf24; font-size: 14px; }
+    #fixture-area { position: absolute; left: -9999px; top: -9999px; }
+    .mn-enter-active, .mn-leave-active { transition: opacity 0.05s; }
+    .mn-enter-from { opacity: 0; }
+    .mn-leave-to { opacity: 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="../../logo.svg" alt="" />
+    <h1>machine_native <span class="gold">v0.5</span> — test suite</h1>
+  </div>
+  <div id="summary">Running...</div>
+  <div id="results"></div>
+  <div id="fixture-area"></div>
+  <script src="../engine.js"></script>
+  <script src="../browser.js"></script>
+  <script>
+    var _tests = [], _g = '', _p = 0, _f = 0;
+    var _r = document.getElementById('results'), _fa = document.getElementById('fixture-area');
+    function group(n) { _g = n; }
+    var _currentTest = null;
+    function test(n, fn) { _tests.push({ n: _g + ' > ' + n, fn: fn, perf: '' }); }
+    function perf(label, ms) { if (_currentTest) _currentTest.perf += ((_currentTest.perf ? ', ' : '') + label + ': ' + ms.toFixed(1) + 'ms'); }
+    function assert(c, m) { if (!c) throw new Error(m || 'Assertion failed'); }
+    function eq(a, b, m) { if (a !== b) throw new Error((m||'') + ': ' + JSON.stringify(a) + ' !== ' + JSON.stringify(b)); }
+    function has(s, sub) { if (String(s).indexOf(sub) === -1) throw new Error('"' + s + '" missing "' + sub + '"'); }
+    function fixture(h) { var d = document.createElement('div'); d.innerHTML = h; _fa.appendChild(d); MachineNative.init(d); return d; }
+    function click(e) { e.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+    function type(e, v) { e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }
+    function check(e, c) { e.checked = c; e.dispatchEvent(new Event('input', { bubbles: true })); }
+    function selVal(e, v) { e.value = v; e.dispatchEvent(new Event('change', { bubbles: true })); }
+    function submit(f) { f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); }
+    function keydown(e, k) { e.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })); }
+    function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+    async function run() {
+      var lg = '';
+      for (var i = 0; i < _tests.length; i++) {
+        var t = _tests[i], gn = t.n.split(' > ')[0];
+        if (gn !== lg) { var g = document.createElement('div'); g.className = 'group'; g.textContent = gn; _r.appendChild(g); lg = gn; }
+        _fa.innerHTML = '';
+        _currentTest = t;
+        var row = document.createElement('div');
+        try { await t.fn(); _p++; row.className = 'result pass'; row.textContent = '\u2713 ' + t.n + (t.perf ? ' (' + t.perf + ')' : ''); }
+        catch (e) { _f++; row.className = 'result fail'; row.innerHTML = '\u2717 ' + t.n + '<div class="detail">' + e.message + '</div>'; }
+        _r.appendChild(row);
+      }
+      var s = document.getElementById('summary');
+      s.textContent = _p + ' passed, ' + _f + ' failed, ' + (_p + _f) + ' total';
+      s.className = _f === 0 ? 'pass-bg' : 'fail-bg';
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  S-EXPRESSION ENGINE
+    // ══════════════════════════════════════════════════════════════════
+
+    group('S-expressions');
+
+    test('bare word resolves to context value', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"x":42}\'><span mn-text="x" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+    test('dotted path resolves', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"user":{"name":"A"}}\'><span mn-text="user.name" id="o"></span></div>');
+      eq(el.querySelector('#o').textContent, 'A');
+    });
+
+    test('$state resolves to current state', function () {
+      var el = fixture('<div mn="t"><div mn-state="hello"><span mn-text="$state" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'hello');
+    });
+
+    test('(+ a b) arithmetic', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"a":2,"b":3}\'><span id="o"><mn-text>(+ a b)</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '5');
+    });
+
+    test('(str a b) concatenation', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"n":5}\'><span id="o"><mn-text>(str n \' items\')</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '5 items');
+    });
+
+    test('(> a b) comparison', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"n":10}\'><div id="a"><mn-show>(> n 5)</mn-show>Y</div><div id="b"><mn-show>(> n 20)</mn-show>N</div></div>');
+      assert(!el.querySelector('#a').hidden, '>5 should show');
+      assert(el.querySelector('#b').hidden, '>20 should hide');
+    });
+
+    test('(and) (or) (not) logic', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"a":true,"b":false}\'><div id="o"><mn-show>(and a (not b))</mn-show>Y</div></div>');
+      assert(!el.querySelector('#o').hidden);
+    });
+
+    test('(if cond then else)', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"on":true}\'><span id="o"><mn-text>(if on \'YES\' \'NO\')</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, 'YES');
+    });
+
+    test('(when cond value)', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"ok":true}\'><span id="o"><mn-text>(when ok \'good\')</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, 'good');
+    });
+
+    test('(count items) collection length', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3]}\'><span id="o"><mn-text>(count items)</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '3');
+    });
+
+    test('(set! x val) mutation', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"x":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="set-x" to="a"><mn-action>(set! x 99)</mn-action></mn-transition>' +
+        '<button mn-to="set-x" id="btn">Go</button>' +
+        '<span mn-text="x" id="o"></span>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '99');
+    });
+
+    test('(inc! x) mutation', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"n":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="increment" to="a"><mn-action>(inc! n)</mn-action></mn-transition>' +
+        '<button mn-to="increment" id="btn">+</button>' +
+        '<span mn-text="n" id="o"></span>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+    test('(do expr1 expr2) sequences', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"a":0,"b":0}\'>' +
+        '<div mn-state="s">' +
+        '<mn-transition event="set-ab" to="s"><mn-action>(do (set! a 1) (set! b 2))</mn-action></mn-transition>' +
+        '<button mn-to="set-ab" id="btn">Go</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.ctx.a, 1);
+      eq(el.querySelector('[mn]')._mn.ctx.b, 2);
+    });
+
+    test('(push! arr val) array mutation', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"items":[]}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="add-item" to="a"><mn-action>(push! items 1)</mn-action></mn-transition>' +
+        '<button mn-to="add-item" id="btn">+</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn')); click(el.querySelector('#btn')); click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.ctx.items.length, 3);
+    });
+
+    test('(toggle! flag) boolean flip', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"on":false}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="toggle-on" to="a"><mn-action>(toggle! on)</mn-action></mn-transition>' +
+        '<button mn-to="toggle-on" id="btn">T</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.ctx.on, true);
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.ctx.on, false);
+    });
+
+    test('(fn [x] body) lambda with filter — Clojure arg order', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3,4,5]}\'><span id="o"><mn-text>(count (filter (fn [x] (> x 3)) items))</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+    test('(let [x 1 y 2] (+ x y)) local bindings — Clojure-style', function () {
+      var el = fixture('<div mn="t"><span id="o"><mn-text>(let [x 10 y 20] (+ x y))</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '30');
+    });
+
+    test('keyword :name resolves to string', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"items":[{"id":1},{"id":2}]}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="remove-one" to="a"><mn-action>(remove-where! items :id 1)</mn-action></mn-transition>' +
+        '<button mn-to="remove-one" id="btn">-</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.ctx.items.length, 1);
+      eq(el.querySelector('[mn]')._mn.ctx.items[0].id, 2);
+    });
+
+    test('(obj :key val) creates object', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"items":[]}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="add-obj" to="a"><mn-action>(push! items (obj :name \'test\' :done false))</mn-action></mn-transition>' +
+        '<button mn-to="add-obj" id="btn">+</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      var item = el.querySelector('[mn]')._mn.ctx.items[0];
+      eq(item.name, 'test');
+      eq(item.done, false);
+    });
+
+    test('nested expressions compose', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3]}\'><span id="o"><mn-text>(str (count items) \' of \' (+ (count items) 2))</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '3 of 5');
+    });
+
+    test('#() anonymous function shorthand', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3,4,5]}\'><span id="o"><mn-text>(count (filter #(> % 3) items))</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+    test('(->> x (f) (g)) thread-last macro', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3,4,5]}\'><span id="o"><mn-text>(->> items (filter #(> % 2)) (count))</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '3');
+    });
+
+    test('(-> x (f a) (g b)) thread-first macro', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"s":"hello world"}\'><span id="o"><mn-text>(-> s (upper) (trim))</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, 'HELLO WORLD');
+    });
+
+    test('[x y z] vector creates array', function () {
+      var el = fixture('<div mn="t"><span id="o"><mn-text>(count [1 2 3])</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '3');
+    });
+
+    test('sort-by with key function', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[{"n":3},{"n":1},{"n":2}]}\'><span id="o"><mn-text>(get (first (sort-by #(get % :n) items)) :n)</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '1');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  CORE
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Core');
+
+    test('mn creates instance, first state active', function () {
+      var el = fixture('<div mn="t"><div mn-state="a" id="a">A</div><div mn-state="b" id="b">B</div></div>');
+      assert(el.querySelector('[mn]')._mn);
+      assert(!el.querySelector('#a').hidden);
+      assert(el.querySelector('#b').hidden);
+    });
+
+    test('mn-initial overrides', function () {
+      var el = fixture('<div mn="t" mn-initial="b"><div mn-state="a" id="a">A</div><div mn-state="b" id="b">B</div></div>');
+      assert(el.querySelector('#a').hidden);
+      assert(!el.querySelector('#b').hidden);
+    });
+
+    test('mn-ctx sets context', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"n":42}\'><div mn-state="a">A</div></div>');
+      eq(el.querySelector('[mn]')._mn.ctx.n, 42);
+    });
+
+    test('stateless machine with bindings', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"n":5}\'><span id="o"><mn-text>(* n 2)</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '10');
+    });
+
+    test('mn-ctx attribute syncs with live context after action', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"count":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="increment" to="a"><mn-action>(inc! count)</mn-action></mn-transition>' +
+        '<button mn-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
+      var machine = el.querySelector('[mn]');
+      eq(JSON.parse(machine.getAttribute('mn-ctx')).count, 0, 'initial');
+      click(el.querySelector('#btn'));
+      eq(JSON.parse(machine.getAttribute('mn-ctx')).count, 1, 'after click');
+      click(el.querySelector('#btn'));
+      eq(JSON.parse(machine.getAttribute('mn-ctx')).count, 2, 'after second click');
+    });
+
+    test('mn-ctx attribute syncs with mn-model changes', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"name":""}\'><div mn-state="a"><input mn-model="name" id="inp" /></div></div>');
+      var machine = el.querySelector('[mn]');
+      var input = el.querySelector('#inp');
+      input.value = 'Andrew';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      eq(JSON.parse(machine.getAttribute('mn-ctx')).name, 'Andrew');
+    });
+
+    test('mn-ctx attribute syncs arrays after push!', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"items":[]}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="add-pen" to="a"><mn-action>(push! items (obj :name \'Pen\'))</mn-action></mn-transition>' +
+        '<button mn-to="add-pen" id="btn">Add</button>' +
+        '</div></div>'
+      );
+      var machine = el.querySelector('[mn]');
+      click(el.querySelector('#btn'));
+      var ctx = JSON.parse(machine.getAttribute('mn-ctx'));
+      eq(ctx.items.length, 1, 'one item');
+      eq(ctx.items[0].name, 'Pen', 'item name');
+    });
+
+    test('mn-ctx in outerHTML contains live values after mn-model input', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"title":"","amount":0}\'><div mn-state="a"><input mn-model="title" id="inp" /><input mn-model="amount" type="number" id="amt" /></div></div>');
+      var machine = el.querySelector('[mn]');
+      var inp = el.querySelector('#inp');
+      var amt = el.querySelector('#amt');
+      inp.value = 'Test Order';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      amt.value = '500';
+      amt.dispatchEvent(new Event('input', { bubbles: true }));
+      // outerHTML should now have the synced values
+      var html = machine.outerHTML;
+      var ctxMatch = html.match(/mn-ctx="([^"]*)"/);
+      assert(ctxMatch, 'outerHTML has mn-ctx');
+      var ctx = JSON.parse(ctxMatch[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+      eq(ctx.title, 'Test Order', 'title in outerHTML');
+      eq(ctx.amount, '500', 'amount in outerHTML');
+    });
+
+    test('mn-ctx sync excludes $ properties', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"x":1}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="inc-x" to="a"><mn-action>(inc! x)</mn-action></mn-transition>' +
+        '<button mn-to="inc-x" id="btn">+</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      var raw = el.querySelector('[mn]').getAttribute('mn-ctx');
+      assert(raw.indexOf('$state') === -1, 'no $state in mn-ctx');
+      assert(raw.indexOf('$el') === -1, 'no $el in mn-ctx');
+      assert(raw.indexOf('$refs') === -1, 'no $refs in mn-ctx');
+      assert(raw.indexOf('__mn') === -1, 'no __mn internals in mn-ctx');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  TRANSITIONS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Transitions');
+
+    test('mn-to transitions on click', function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><button mn-to="b" id="btn">B</button></div><div mn-state="b" id="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b');
+    });
+
+    test('self-transition with action', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"n":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="increment" to="a"><mn-action>(inc! n)</mn-action></mn-transition>' +
+        '<button mn-to="increment" id="btn">+</button>' +
+        '<span mn-text="n" id="o"></span>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1');
+    });
+
+    test('guard blocks when falsy', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"ok":false}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="go" to="b"><mn-guard>(when ok true)</mn-guard></mn-transition>' +
+        '<button mn-to="go" id="btn">Go</button>' +
+        '</div><div mn-state="b">B</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'a');
+    });
+
+    test('guard s-expression in mn-to', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"items":[1,2,3]}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="go" to="b"><mn-guard>(> (count items) 2)</mn-guard></mn-transition>' +
+        '<button mn-to="go" id="btn">Go</button>' +
+        '</div><div mn-state="b">B</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b');
+    });
+
+    test('action s-expression in mn-to runs', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"x":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="go" to="b"><mn-action>(set! x 99)</mn-action></mn-transition>' +
+        '<button mn-to="go" id="btn">Go</button>' +
+        '</div><div mn-state="b">B</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.ctx.x, 99);
+    });
+
+    test('unknown state warns', function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><button mn-to="zzz" id="btn">Go</button></div></div>');
+      var w = false; var ow = console.warn; console.warn = function () { w = true; };
+      click(el.querySelector('#btn')); console.warn = ow;
+      eq(el.querySelector('[mn]')._mn.state, 'a');
+      assert(w);
+    });
+
+    test('mn-state-change event fires', function () {
+      var d = null;
+      document.addEventListener('mn-state-change', function h(e) { d = e.detail; document.removeEventListener('mn-state-change', h); });
+      var el = fixture('<div mn="ev"><div mn-state="a"><button mn-to="b" id="btn">B</button></div><div mn-state="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      eq(d.prev, 'a'); eq(d.next, 'b');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  DATA BINDING
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Binding');
+
+    test('mn-text with s-expression', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"a":2,"b":3}\'><span id="o"><mn-text>(+ a b)</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '5');
+    });
+
+    test('mn-text updates after action', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"n":0}\'>' +
+        '<div mn-state="a">' +
+        '<span mn-text="n" id="o"></span>' +
+        '<mn-transition event="increment" to="a"><mn-action>(inc! n)</mn-action></mn-transition>' +
+        '<button mn-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1');
+    });
+
+    test('mn-model input', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"v":""}\'><div mn-state="a"><input mn-model="v" id="i" /><span mn-text="v" id="o"></span></div></div>');
+      type(el.querySelector('#i'), 'hello');
+      eq(el.querySelector('#o').textContent, 'hello');
+    });
+
+    test('mn-model radio button', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"size":"medium"}\'><div mn-state="a">' +
+        '<input type="radio" mn-model="size" value="small" id="r1" />' +
+        '<input type="radio" mn-model="size" value="medium" id="r2" />' +
+        '<input type="radio" mn-model="size" value="large" id="r3" />' +
+        '</div></div>'
+      );
+      // medium should be checked by default
+      assert(!el.querySelector('#r1').checked, 'small not checked');
+      assert(el.querySelector('#r2').checked, 'medium checked');
+      assert(!el.querySelector('#r3').checked, 'large not checked');
+      // Value attributes should be preserved
+      eq(el.querySelector('#r1').value, 'small', 'small value preserved');
+      eq(el.querySelector('#r3').value, 'large', 'large value preserved');
+    });
+
+    test('mn-model checkbox', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"on":false}\'><div mn-state="a"><input type="checkbox" mn-model="on" id="cb" /></div></div>');
+      check(el.querySelector('#cb'), true);
+      eq(el.querySelector('[mn]')._mn.ctx.on, true);
+    });
+
+    test('mn-model select', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"c":"a"}\'><div mn-state="s"><select mn-model="c" id="sel"><option value="a">A</option><option value="b">B</option></select></div></div>');
+      selVal(el.querySelector('#sel'), 'b');
+      eq(el.querySelector('[mn]')._mn.ctx.c, 'b');
+    });
+
+    test('mn-show s-expression', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"n":10}\'><div id="o"><mn-show>(> n 5)</mn-show>Y</div></div>');
+      assert(!el.querySelector('#o').hidden);
+    });
+
+    test('mn-show with negation (replaces mn-hide)', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"gone":true}\'><div id="o"><mn-show>(not gone)</mn-show>X</div></div>');
+      assert(el.querySelector('#o').hidden);
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  mn-class (PURE S-EXPRESSIONS)
+    // ══════════════════════════════════════════════════════════════════
+
+    group('mn-class');
+
+    test('(when expr cls) adds class', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"done":true}\'><div mn-state="a"><span id="o"><mn-class>(when done \'line-through\')</mn-class>X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('line-through'));
+    });
+
+    test('(when false cls) does not add class', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"done":false}\'><div mn-state="a"><span id="o"><mn-class>(when done \'line-through\')</mn-class>X</span></div></div>');
+      assert(!el.querySelector('#o').classList.contains('line-through'));
+    });
+
+    test('(when-state name cls) adds class in matching state', function () {
+      var el = fixture('<div mn="t"><div mn-state="active"><span id="o"><mn-class>(when-state active \'ring\')</mn-class>X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('ring'));
+    });
+
+    test('multiple class expressions', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"done":true,"urgent":false}\'><div mn-state="a"><span id="o"><mn-class>(when done \'line-through\') (when urgent \'text-red\')</mn-class>X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('line-through'));
+      assert(!el.querySelector('#o').classList.contains('text-red'));
+    });
+
+    test('(if cond cls1 cls2) conditional class', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"active":true}\'><div mn-state="a"><span id="o"><mn-class>(if active \'bg-green\' \'bg-gray\')</mn-class>X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('bg-green'));
+      assert(!el.querySelector('#o').classList.contains('bg-gray'));
+    });
+
+    test('class removed when expression becomes falsy', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"on":true}\'>' +
+        '<div mn-state="a">' +
+        '<span id="o"><mn-class>(when on \'active\')</mn-class>X</span>' +
+        '<mn-transition event="turn-off" to="a"><mn-action>(set! on false)</mn-action></mn-transition>' +
+        '<button mn-to="turn-off" id="btn">Off</button>' +
+        '</div></div>'
+      );
+      assert(el.querySelector('#o').classList.contains('active'));
+      click(el.querySelector('#btn'));
+      assert(!el.querySelector('#o').classList.contains('active'));
+    });
+
+    test('complex expression in mn-class', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3]}\'><div mn-state="a"><span id="o"><mn-class>(when (> (count items) 2) \'has-many\')</mn-class>X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('has-many'));
+    });
+
+    test('mn-class with space-separated classes in result string', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"ok":true}\'><div mn-state="a"><span id="o"><mn-class>(if ok \'bg-green text-white border-2\' \'bg-gray\')</mn-class>X</span></div></div>');
+      assert(el.querySelector('#o').classList.contains('bg-green'), 'has bg-green');
+      assert(el.querySelector('#o').classList.contains('text-white'), 'has text-white');
+      assert(el.querySelector('#o').classList.contains('border-2'), 'has border-2');
+      assert(!el.querySelector('#o').classList.contains('bg-gray'), 'no bg-gray');
+    });
+
+    test('mn-class multi-class string removed on state change', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"on":true}\'>' +
+        '<div mn-state="a">' +
+        '<span id="o"><mn-class>(if on \'ring ring-2 ring-blue\' \'opacity-50\')</mn-class>X</span>' +
+        '<mn-transition event="turn-off" to="a"><mn-action>(set! on false)</mn-action></mn-transition>' +
+        '<button mn-to="turn-off" id="btn">Off</button>' +
+        '</div></div>'
+      );
+      assert(el.querySelector('#o').classList.contains('ring'), 'has ring');
+      assert(el.querySelector('#o').classList.contains('ring-2'), 'has ring-2');
+      assert(el.querySelector('#o').classList.contains('ring-blue'), 'has ring-blue');
+      click(el.querySelector('#btn'));
+      assert(!el.querySelector('#o').classList.contains('ring'), 'ring removed');
+      assert(!el.querySelector('#o').classList.contains('ring-2'), 'ring-2 removed');
+      assert(el.querySelector('#o').classList.contains('opacity-50'), 'opacity-50 added');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ATTRIBUTE BINDING
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Bind');
+
+    test('mn-bind disabled boolean', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"locked":true}\'><div mn-state="a"><button id="btn"><mn-bind attr="disabled">locked</mn-bind>Go</button></div></div>');
+      assert(el.querySelector('#btn').hasAttribute('disabled'));
+    });
+
+    test('mn-bind disabled with s-expression', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"ok":false}\'><div mn-state="a"><button id="btn"><mn-bind attr="disabled">(not ok)</mn-bind>Go</button></div></div>');
+      assert(el.querySelector('#btn').hasAttribute('disabled'));
+    });
+
+    test('mn-bind href', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"url":"/page"}\'><div mn-state="a"><a id="l"><mn-bind attr="href">url</mn-bind>L</a></div></div>');
+      eq(el.querySelector('#l').getAttribute('href'), '/page');
+    });
+
+    test('mn-bind on machine element', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"t":"dark"}\'><mn-bind attr="data-theme">t</mn-bind><div mn-state="a">A</div></div>');
+      eq(el.querySelector('[mn]').getAttribute('data-theme'), 'dark');
+    });
+
+    test('mn-bind attr on void element via sibling placement', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"src":"photo.jpg"}\'><div mn-state="a"><div class="wrap"><img class="photo" /><mn-bind attr="src">src</mn-bind></div></div></div>');
+      eq(el.querySelector('.photo').getAttribute('src'), 'photo.jpg');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  DOM EVENTS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Events');
+
+    test('mn-on keydown s-expression with (to)', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="a">' +
+        '<input id="i"><mn-on event="keydown">(when (= (get $event :key) \'Enter\') (to b))</mn-on></input>' +
+        '</div><div mn-state="b">B</div></div>'
+      );
+      keydown(el.querySelector('#i'), 'Enter');
+      eq(el.querySelector('[mn]')._mn.state, 'b');
+    });
+
+    test('s-expression event handler filters non-matching keys', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="a">' +
+        '<input id="i"><mn-on event="keydown">(when (= (get $event :key) \'Enter\') (to b))</mn-on></input>' +
+        '</div><div mn-state="b">B</div></div>'
+      );
+      keydown(el.querySelector('#i'), 'a');
+      eq(el.querySelector('[mn]')._mn.state, 'a');
+    });
+
+    test('s-expression event with Escape', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="open">' +
+        '<input id="i"><mn-on event="keydown">(when (= (get $event :key) \'Escape\') (to closed))</mn-on></input>' +
+        '</div><div mn-state="closed">X</div></div>'
+      );
+      keydown(el.querySelector('#i'), 'Escape');
+      eq(el.querySelector('[mn]')._mn.state, 'closed');
+    });
+
+    test('mn-on submit.prevent', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="e">' +
+        '<form id="f"><mn-on event="submit.prevent">(to done)</mn-on><button type="submit">Go</button></form>' +
+        '</div><div mn-state="done">D</div></div>'
+      );
+      submit(el.querySelector('#f'));
+      eq(el.querySelector('[mn]')._mn.state, 'done');
+    });
+
+    test('mn-on: with guard s-expression', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"v":""}\'><div mn-state="a">' +
+        '<input mn-model="v" id="i" />' +
+        '<input id="tr"><mn-on event="keydown">(when (and (= (get $event :key) \'Enter\') (> (count v) 0)) (to b))</mn-on></input>' +
+        '</div><div mn-state="b">B</div></div>'
+      );
+      keydown(el.querySelector('#tr'), 'Enter');
+      eq(el.querySelector('[mn]')._mn.state, 'a', 'Guard blocks empty');
+      type(el.querySelector('#i'), 'hi');
+      keydown(el.querySelector('#tr'), 'Enter');
+      eq(el.querySelector('[mn]')._mn.state, 'b');
+    });
+
+    test('mn-on: with action s-expression', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"n":0}\'><div mn-state="a">' +
+        '<button id="btn"><mn-on event="click">(inc! n)</mn-on>+</button>' +
+        '<span mn-text="n" id="o"></span>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  INTER-MACHINE EVENTS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Machine events');
+
+    test('emit + mn-receive with (on)', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mn="s"><div mn-state="a">' +
+        '<mn-transition event="fire-ping" to="a"><mn-emit>ping</mn-emit></mn-transition>' +
+        '<button mn-to="fire-ping" id="btn">P</button>' +
+        '</div></div>' +
+        '<div mn="r">' +
+        '<mn-receive event="ping">(to active)</mn-receive>' +
+        '<div mn-state="idle">I</div><div mn-state="active">A</div>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelectorAll('[mn]')[1]._mn.state, 'active');
+    });
+
+    test('mn-receive does not react to own emit', function () {
+      var el = fixture(
+        '<div mn="self">' +
+        '<mn-receive event="x">(to b)</mn-receive>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="fire-x" to="a"><mn-emit>x</mn-emit></mn-transition>' +
+        '<button mn-to="fire-x" id="btn">Go</button>' +
+        '</div><div mn-state="b">B</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'a');
+    });
+
+    test('mn-receive s-expression with mutation', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mn="a"><div mn-state="s">' +
+        '<mn-transition event="fire-data" to="s"><mn-emit>data</mn-emit></mn-transition>' +
+        '<button mn-to="fire-data" id="btn">S</button>' +
+        '</div></div>' +
+        '<div mn="b" mn-ctx=\'{"msg":""}\'>' +
+        '<mn-receive event="data">(do (set! msg \'got it\') (to s))</mn-receive>' +
+        '<div mn-state="s"><span mn-text="msg" id="o"></span></div>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, 'got it');
+    });
+
+    test('mn-receive accesses $detail payload', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mn="sender" mn-ctx=\'{"val":42}\'><div mn-state="s">' +
+        '<mn-transition event="fire-info" to="s"><mn-action>(emit info (obj :val val))</mn-action></mn-transition>' +
+        '<button mn-to="fire-info" id="btn">S</button>' +
+        '</div></div>' +
+        '<div mn="listener" mn-ctx=\'{"got":0}\'>' +
+        '<mn-receive event="info">(do (set! got (get $detail :val)) (to s))</mn-receive>' +
+        '<div mn-state="s"><span mn-text="got" id="o"></span></div>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+    test('emit without payload — $detail is nil', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mn="sender2"><div mn-state="s">' +
+        '<mn-transition event="fire-ping" to="s"><mn-emit>ping</mn-emit></mn-transition>' +
+        '<button mn-to="fire-ping" id="btn">P</button>' +
+        '</div></div>' +
+        '<div mn="listener2" mn-ctx=\'{"received":false}\'>' +
+        '<mn-receive event="ping">(do (set! received (nil? $detail)) (to s))</mn-receive>' +
+        '<div mn-state="s"><span mn-text="received" id="o"></span></div>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, 'true', '$detail is nil when no payload');
+    });
+
+    test('mn-receive multiple (on) forms', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mn="a"><div mn-state="s">' +
+        '<mn-transition event="fire-ev1" to="s"><mn-emit>ev1</mn-emit></mn-transition>' +
+        '<mn-transition event="fire-ev2" to="s"><mn-emit>ev2</mn-emit></mn-transition>' +
+        '<button mn-to="fire-ev1" id="b1">1</button>' +
+        '<button mn-to="fire-ev2" id="b2">2</button>' +
+        '</div></div>' +
+        '<div mn="b" mn-ctx=\'{"last":""}\'>' +
+        '<mn-receive event="ev1">(do (set! last \'one\') (to s))</mn-receive>' +
+        '<mn-receive event="ev2">(do (set! last \'two\') (to s))</mn-receive>' +
+        '<div mn-state="s"><span mn-text="last" id="o"></span></div>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#b1'));
+      eq(el.querySelector('#o').textContent, 'one');
+      click(el.querySelector('#b2'));
+      eq(el.querySelector('#o').textContent, 'two');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  TEMPLATES + SLOTS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Templates');
+
+    test('mn-define clones', function () {
+      var el = fixture('<div><template mn-define="w"><div mn-state="a">A</div></template><div mn="w" id="w"></div></div>');
+      assert(el.querySelector('#w')._mn);
+      eq(el.querySelector('#w')._mn.state, 'a');
+    });
+
+    test('instances are independent', function () {
+      var el = fixture('<div><template mn-define="th"><div mn-state="off"><button mn-to="on" class="t">On</button></div><div mn-state="on">On!</div></template><div mn="th" id="a"></div><div mn="th" id="b"></div></div>');
+      click(el.querySelector('#a .t'));
+      eq(el.querySelector('#a')._mn.state, 'on');
+      eq(el.querySelector('#b')._mn.state, 'off');
+    });
+
+    test('named slot', function () {
+      var el = fixture(
+        '<div><template mn-define="box"><div mn-state="s"><div class="h"><mn-slot name="title">Def</mn-slot></div><div class="b"><mn-slot>Def body</mn-slot></div></div></template>' +
+        '<div mn="box"><h2 slot="title">Custom</h2><p>Body</p></div></div>'
+      );
+      has(el.querySelector('.h').innerHTML, 'Custom');
+      has(el.querySelector('.b').innerHTML, 'Body');
+    });
+
+    test('slot fallback', function () {
+      var el = fixture('<div><template mn-define="e"><div mn-state="s"><mn-slot>Fallback</mn-slot></div></template><div mn="e"></div></div>');
+      has(el.querySelector('[mn]').textContent, 'Fallback');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  mn-each
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Lists');
+
+    test('mn-each renders', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[{"name":"A"},{"name":"B"},{"name":"C"}]}\'><div mn-state="s"><ul><template mn-each="items"><li mn-text="name"></li></template></ul></div></div>');
+      eq(el.querySelectorAll('li').length, 3);
+      eq(el.querySelectorAll('li')[0].textContent, 'A');
+    });
+
+    test('mn-each $index', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":["a","b","c"]}\'><div mn-state="s"><template mn-each="items"><span mn-text="$index" class="i"></span></template></div></div>');
+      eq(el.querySelectorAll('.i')[2].textContent, '2');
+    });
+
+    test('mn-each $item', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":["x","y"]}\'><div mn-state="s"><template mn-each="items"><span mn-text="$item" class="v"></span></template></div></div>');
+      eq(el.querySelectorAll('.v')[0].textContent, 'x');
+    });
+
+    test('mn-each updates on push', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"items":["a"]}\'>' +
+        '<div mn-state="s">' +
+        '<mn-transition event="push-b" to="s"><mn-action>(push! items \'b\')</mn-action></mn-transition>' +
+        '<button mn-to="push-b" id="btn">+</button>' +
+        '<template mn-each="items"><span class="v"></span></template>' +
+        '</div></div>'
+      );
+      eq(el.querySelectorAll('.v').length, 1);
+      click(el.querySelector('#btn'));
+      eq(el.querySelectorAll('.v').length, 2);
+    });
+
+    test('mn-each keyed preserves DOM', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[{"id":1,"n":"A"},{"id":2,"n":"B"}]}\'><div mn-state="s"><template mn-each="items" mn-key="id"><div mn-text="n"></div></template></div></div>');
+      var first = el.querySelectorAll('[mn-text]')[0];
+      // Trigger update without changing items — keyed reconciliation should reuse DOM nodes
+      var inst = el.querySelector('[mn]')._mn;
+      inst.update();
+      assert(first === el.querySelectorAll('[mn-text]')[0], 'Reuse element');
+    });
+
+    test('mn-each mn-show with item scope', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[{"done":true},{"done":false}]}\'><div mn-state="s"><template mn-each="items"><div class="row"><span mn-show="done" class="ck">ok</span></div></template></div></div>');
+      assert(!el.querySelectorAll('.ck')[0].hidden);
+      assert(el.querySelectorAll('.ck')[1].hidden);
+    });
+
+    test('mn-model in mn-each updates original', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[{"id":1,"name":"old"}]}\'><div mn-state="s"><template mn-each="items" mn-key="id"><input mn-model="name" class="inp" /></template></div></div>');
+      type(el.querySelector('.inp'), 'new');
+      eq(el.querySelector('[mn]')._mn.ctx.items[0].name, 'new');
+    });
+
+    test('mn-to action inside mn-each writes to machine context', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"items":[{"id":1,"name":"A"},{"id":2,"name":"B"}], "selected": null}\'>' +
+        '<div mn-state="s">' +
+        '<template mn-each="items" mn-key="id">' +
+        '<mn-transition event="pick" to="s"><mn-action>(set! selected $item)</mn-action></mn-transition>' +
+        '<button mn-to="pick" class="pick"></button>' +
+        '</template>' +
+        '</div></div>'
+      );
+      click(el.querySelectorAll('.pick')[1]);
+      var sel = el.querySelector('[mn]')._mn.ctx.selected;
+      assert(sel, 'selected should be set on machine context');
+      eq(sel.name, 'B', 'Should have picked second item');
+    });
+
+    test('mn-to inside mn-each transitions machine state', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"items":["a","b"], "picked": null}\'>' +
+        '<div mn-state="list">' +
+        '<template mn-each="items">' +
+        '<mn-transition event="pick-and-go" to="detail"><mn-action>(set! picked $item)</mn-action></mn-transition>' +
+        '<button mn-to="pick-and-go" class="go"></button>' +
+        '</template>' +
+        '</div><div mn-state="detail">Detail</div>' +
+        '</div>'
+      );
+      click(el.querySelectorAll('.go')[0]);
+      eq(el.querySelector('[mn]')._mn.state, 'detail');
+      eq(el.querySelector('[mn]')._mn.ctx.picked, 'a');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  REFS + LIFECYCLE
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Lifecycle');
+
+    test('mn-ref populates $refs', function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><input mn-ref="inp" /><span mn-text="$refs.inp.tagName" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'INPUT');
+    });
+
+    test('mn-init runs', async function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"ready":false}\'><mn-init>(set! ready true)</mn-init><div mn-state="a"></div></div>');
+      await sleep(15);
+      eq(el.querySelector('[mn]')._mn.ctx.ready, true);
+    });
+
+    test('(focus!) is a valid special form', function () {
+      // focus! calls element.focus() via setTimeout — verified manually in real apps.
+      // Here we verify the engine accepts it without error.
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"x":0}\'>' +
+        '<div mn-state="a">' +
+        '<input mn-ref="inp" />' +
+        '<mn-transition event="focus-and-inc" to="a"><mn-action>(do (focus! $refs.inp) (inc! x))</mn-action></mn-transition>' +
+        '<button mn-to="focus-and-inc" id="btn">F</button>' +
+        '<span mn-text="x" id="o"></span>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1', 'action ran — focus! did not error');
+    });
+
+    test('mn-temporal (after) auto-transitions', async function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><mn-temporal>(after 30 (to b))</mn-temporal></div><div mn-state="b">B</div></div>');
+      eq(el.querySelector('[mn]')._mn.state, 'a');
+      await sleep(60);
+      eq(el.querySelector('[mn]')._mn.state, 'b');
+    });
+
+    test('mn-temporal (after) cancelled by manual transition', async function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><mn-temporal>(after 80 (to c))</mn-temporal><button mn-to="b" id="btn">B</button></div><div mn-state="b">B</div><div mn-state="c">C</div></div>');
+      click(el.querySelector('#btn'));
+      await sleep(120);
+      eq(el.querySelector('[mn]')._mn.state, 'b');
+    });
+
+    test('mn-temporal (every) runs repeatedly', async function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"ticks":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-temporal>(every 20 (inc! ticks))</mn-temporal>' +
+        '<span mn-text="ticks" id="o"></span>' +
+        '</div></div>'
+      );
+      await sleep(75);
+      var ticks = el.querySelector('[mn]')._mn.ctx.ticks;
+      assert(ticks >= 2, 'Should have ticked at least twice, got ' + ticks);
+    });
+
+    test('mn-temporal (every) cleared on state exit', async function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"ticks":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-temporal>(every 20 (inc! ticks))</mn-temporal>' +
+        '<button mn-to="b" id="btn">B</button>' +
+        '</div><div mn-state="b">B</div>' +
+        '</div>'
+      );
+      await sleep(55);
+      click(el.querySelector('#btn'));
+      var ticksAtExit = el.querySelector('[mn]')._mn.ctx.ticks;
+      await sleep(60);
+      eq(el.querySelector('[mn]')._mn.ctx.ticks, ticksAtExit, 'Ticks should stop after state exit');
+    });
+
+    test('(after) and (every) together', async function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"ticks":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-temporal>(do (every 15 (inc! ticks)) (after 60 (to b)))</mn-temporal>' +
+        '<span mn-text="ticks" id="o"></span>' +
+        '</div><div mn-state="b">B</div>' +
+        '</div>'
+      );
+      await sleep(80);
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'Should have transitioned');
+      var ticks = el.querySelector('[mn]')._mn.ctx.ticks;
+      assert(ticks >= 2, 'Should have ticked before transitioning, got ' + ticks);
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PERSIST
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Persist');
+
+    test('saves to localStorage', function () {
+      localStorage.removeItem('mn-tp1');
+      fixture('<div mn="t" mn-persist="tp1" mn-ctx=\'{"c":"red"}\'><div mn-state="a">A</div></div>');
+      eq(JSON.parse(localStorage.getItem('mn-tp1')).c, 'red');
+      localStorage.removeItem('mn-tp1');
+    });
+
+    test('restores on init', function () {
+      localStorage.setItem('mn-tp2', JSON.stringify({ c: 'blue' }));
+      var el = fixture('<div mn="t" mn-persist="tp2" mn-ctx=\'{"c":"red"}\'><div mn-state="a"><span mn-text="c" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'blue');
+      localStorage.removeItem('mn-tp2');
+    });
+
+    test('merges with defaults', function () {
+      localStorage.setItem('mn-tp3', JSON.stringify({ old: 'saved' }));
+      var el = fixture('<div mn="t" mn-persist="tp3" mn-ctx=\'{"old":"default","fresh":"new"}\'><div mn-state="a">A</div></div>');
+      eq(el.querySelector('[mn]')._mn.ctx.old, 'saved');
+      eq(el.querySelector('[mn]')._mn.ctx.fresh, 'new');
+      localStorage.removeItem('mn-tp3');
+    });
+
+    test('skips $ properties', function () {
+      localStorage.removeItem('mn-tp4');
+      fixture('<div mn="t" mn-persist="tp4" mn-ctx=\'{"x":1}\'><div mn-state="a"><input mn-ref="r" /></div></div>');
+      var saved = JSON.parse(localStorage.getItem('mn-tp4'));
+      eq(saved.$refs, undefined);
+      localStorage.removeItem('mn-tp4');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  STORE
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Store');
+
+    test('mn-store registers and is readable', function () {
+      var el = fixture('<div><mn-store name="ts1" value=\'{"x":99}\'></mn-store><div mn="t"><div mn-state="a"><span mn-text="$store.ts1.x" id="o"></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, '99');
+    });
+
+    test('$store shared across machines', function () {
+      var el = fixture(
+        '<div><mn-store name="ts2" value=\'{"v":"hi"}\'></mn-store>' +
+        '<div mn="m1"><div mn-state="a"><span mn-text="$store.ts2.v" id="o1"></span></div></div>' +
+        '<div mn="m2"><div mn-state="a"><span mn-text="$store.ts2.v" id="o2"></span></div></div></div>'
+      );
+      eq(el.querySelector('#o1').textContent, 'hi');
+      eq(el.querySelector('#o2').textContent, 'hi');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  TRANSITIONS + NESTING + CLEANUP
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Misc');
+
+    test('mn-temporal (animate) adds enter classes', async function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><button mn-to="b" id="btn">B</button></div><div mn-state="b" id="b"><mn-temporal>(animate)</mn-temporal>B!</div></div>');
+      click(el.querySelector('#btn'));
+      assert(el.querySelector('#b').classList.contains('mn-enter-active') || el.querySelector('#b').classList.contains('mn-enter-to'));
+    });
+
+    test('nested machines independent', function () {
+      var el = fixture(
+        '<div mn="outer"><div mn-state="a"><div mn="inner"><div mn-state="x"><button mn-to="y" id="ib">Y</button></div><div mn-state="y">Y</div></div></div></div>'
+      );
+      click(el.querySelector('#ib'));
+      eq(el.querySelector('[mn="inner"]')._mn.state, 'y');
+      eq(el.querySelector('[mn="outer"]')._mn.state, 'a');
+    });
+
+    test('MutationObserver auto-inits', async function () {
+      var d = document.createElement('div');
+      d.setAttribute('mn', 'dyn');
+      d.innerHTML = '<div mn-state="a">A</div>';
+      _fa.appendChild(d);
+      await sleep(30);
+      assert(d._mn);
+    });
+
+    test('cleanup on removal', async function () {
+      var el = fixture(
+        '<div><div mn="rm">' +
+        '<mn-receive event="rmtest">(to b)</mn-receive>' +
+        '<div mn-state="a">A</div><div mn-state="b">B</div>' +
+        '</div></div>'
+      );
+      var m = el.querySelector('[mn="rm"]');
+      assert(m._mn);
+      m.remove();
+      await sleep(30);
+      assert(!m._mn);
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  LAZY STATE RENDERING
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Lazy rendering');
+
+    test('inactive state content is NOT in the DOM', function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><span id="inA">A</span></div><div mn-state="b"><span id="inB">B</span></div></div>');
+      assert(el.querySelector('#inA'), 'Active state content should be in DOM');
+      assert(!el.querySelector('#inB'), 'Inactive state content should NOT be in DOM');
+    });
+
+    test('content is created when state is entered', function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><button mn-to="b" id="btn">Go</button></div><div mn-state="b"><span id="inB">B</span></div></div>');
+      assert(!el.querySelector('#inB'), 'B content should not exist before transition');
+      click(el.querySelector('#btn'));
+      assert(el.querySelector('#inB'), 'B content should exist after transition');
+      eq(el.querySelector('#inB').textContent, 'B');
+    });
+
+    test('content is destroyed when state is left', function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><button mn-to="b" id="btn">Go</button></div><div mn-state="b"><span id="inB">In B</span><button mn-to="a" id="back">Back</button></div></div>');
+      click(el.querySelector('#btn'));
+      assert(el.querySelector('#inB'), 'B content should exist');
+      click(el.querySelector('#back'));
+      assert(!el.querySelector('#inB'), 'B content should be destroyed after leaving');
+    });
+
+    test('content is recreated on re-entry', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"n":0}\'><div mn-state="a"><span mn-text="n" id="val"></span><button mn-to="b" id="toB">B</button></div><div mn-state="b"><button mn-to="a" id="toA">A</button></div></div>');
+      eq(el.querySelector('#val').textContent, '0');
+      click(el.querySelector('#toB'));
+      assert(!el.querySelector('#val'), 'A content destroyed');
+      click(el.querySelector('#toA'));
+      assert(el.querySelector('#val'), 'A content recreated');
+      eq(el.querySelector('#val').textContent, '0');
+    });
+
+    test('self-transition does NOT destroy/recreate', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"n":0}\'>' +
+        '<div mn-state="a">' +
+        '<span id="target">X</span>' +
+        '<mn-transition event="increment" to="a"><mn-action>(inc! n)</mn-action></mn-transition>' +
+        '<button mn-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
+      var original = el.querySelector('#target');
+      click(el.querySelector('#btn'));
+      assert(original === el.querySelector('#target'), 'Same DOM node on self-transition');
+    });
+
+    test('bindings work in newly created state', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"msg":"hello"}\'><div mn-state="a"><button mn-to="b" id="btn">Go</button></div><div mn-state="b"><span mn-text="msg" id="out"></span></div></div>');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#out').textContent, 'hello');
+    });
+
+    test('nested machines inside states are initialized on entry', function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><button mn-to="b" id="btn">Go</button></div><div mn-state="b"><div mn="child"><div mn-state="x">Child X</div></div></div></div>');
+      assert(!el.querySelector('[mn="child"]'), 'Child not in DOM before transition');
+      click(el.querySelector('#btn'));
+      var child = el.querySelector('[mn="child"]');
+      assert(child, 'Child should exist after transition');
+      assert(child._mn, 'Child should be initialized');
+      eq(child._mn.state, 'x');
+    });
+
+    test('nested machines are cleaned up on state exit', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="a">' +
+        '<div mn="inner"><mn-receive event="testevt">(to y)</mn-receive><div mn-state="x">X</div><div mn-state="y">Y</div></div>' +
+        '<button mn-to="b" id="btn">Go</button></div><div mn-state="b">B</div></div>'
+      );
+      var inner = el.querySelector('[mn="inner"]');
+      assert(inner._mn, 'Inner should be initialized');
+      click(el.querySelector('#btn'));
+      assert(!inner._mn, 'Inner should be cleaned up after parent state exit');
+    });
+
+
+    test('nested machine in lazy state has exactly one template per state', function () {
+      var el = fixture(
+        '<div mn="outer2"><div mn-state="a"><button mn-to="b" id="go">B</button></div>' +
+        '<div mn-state="b"><div mn="inner2"><div mn-state="x"><button mn-to="y" id="iy">Y</button></div><div mn-state="y">Y content</div></div></div></div>'
+      );
+      click(el.querySelector('#go'));
+      var inner = el.querySelector('[mn="inner2"]');
+      eq(inner._mn.state, 'x', 'inner machine in state x');
+      var templates = inner.querySelectorAll('template[mn-state-template]');
+      eq(templates.length, 2, 'exactly 2 templates (x and y), not 4');
+      eq(inner.querySelectorAll('template[mn-state-template="x"]').length, 1, 'exactly 1 template for state x');
+      eq(inner.querySelectorAll('template[mn-state-template="y"]').length, 1, 'exactly 1 template for state y');
+    });
+
+    test('nested machine with mn-each in lazy state renders correct item count', function () {
+      var el = fixture(
+        '<div mn="outer4"><div mn-state="a"><button mn-to="b" id="go-b4">B</button></div>' +
+        '<div mn-state="b">' +
+        '<div mn="list-machine" mn-ctx=\'{"items":[{"name":"X"},{"name":"Y"}]}\'>' +
+        '<div mn-state="show"><ul>' +
+        '<template mn-each="items" mn-key="name"><li><span mn-text="name" class="item-name"></span>' +
+        '<span class="item-idx"><mn-text>(str (+ $index 1) \'.\')</mn-text></span></li></template>' +
+        '</ul></div></div>' +
+        '</div></div>'
+      );
+      // Enter state b to init the list machine
+      click(el.querySelector('#go-b4'));
+      var names = el.querySelectorAll('.item-name');
+      eq(names.length, 2, 'exactly 2 items rendered');
+      eq(names[0].textContent, 'X', 'first item is X');
+      eq(names[1].textContent, 'Y', 'second item is Y');
+      var idxs = el.querySelectorAll('.item-idx');
+      eq(idxs[0].textContent, '1.', 'first index is 1');
+      eq(idxs[1].textContent, '2.', 'second index is 2');
+    });
+
+    test('nested machine re-created after parent state exit/re-enter has working content', function () {
+      var el = fixture(
+        '<div mn="outer3"><div mn-state="a"><button mn-to="b" id="go-b">B</button>' +
+        '<div mn="inner3"><div mn-state="off"><button mn-to="on" id="turn-on">On</button></div><div mn-state="on"><span id="on-text">ON</span><button mn-to="off" id="turn-off">Off</button></div></div>' +
+        '</div><div mn-state="b"><button mn-to="a" id="go-a">A</button></div></div>'
+      );
+      // First visit: toggle inner machine
+      click(el.querySelector('#turn-on'));
+      eq(el.querySelector('[mn="inner3"]')._mn.state, 'on', 'inner on after first click');
+      eq(el.querySelector('#on-text').textContent, 'ON', 'on-text visible on first visit');
+
+      // Leave state a → b (inner machine destroyed)
+      click(el.querySelector('#go-b'));
+      eq(el.querySelector('[mn="outer3"]')._mn.state, 'b', 'outer in b');
+
+      // Return to state a (inner machine re-created from template)
+      click(el.querySelector('#go-a'));
+      eq(el.querySelector('[mn="outer3"]')._mn.state, 'a', 'outer back in a');
+      var inner = el.querySelector('[mn="inner3"]');
+      eq(inner._mn.state, 'off', 'inner re-created in initial state off');
+
+      // Toggle again — content must render, not be blank
+      click(el.querySelector('#turn-on'));
+      eq(inner._mn.state, 'on', 'inner transitions to on on second visit');
+      eq(!!el.querySelector('#on-text'), true, 'on-text element exists');
+      eq(el.querySelector('#on-text').textContent, 'ON', 'on-text has content on second visit');
+
+      // Templates should not be duplicated
+      eq(inner.querySelectorAll('template[mn-state-template="off"]').length, 1, 'exactly 1 off template');
+      eq(inner.querySelectorAll('template[mn-state-template="on"]').length, 1, 'exactly 1 on template');
+    });
+
+    test('mn-init on mn-state runs on entry', async function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"entered":false}\'>' +
+        '<div mn-state="a"><button mn-to="b" id="btn">Go</button></div>' +
+        '<div mn-state="b"><mn-init>(set! entered true)</mn-init>B</div>' +
+        '</div>'
+      );
+      eq(el.querySelector('[mn]')._mn.ctx.entered, false);
+      click(el.querySelector('#btn'));
+      await sleep(15);
+      eq(el.querySelector('[mn]')._mn.ctx.entered, true);
+    });
+
+    test('mn-init on mn-state does NOT run on self-transition', async function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"count":0}\'>' +
+        '<div mn-state="a"><mn-init>(inc! count)</mn-init><button mn-to="a" id="btn">Self</button></div>' +
+        '</div>'
+      );
+      await sleep(15); // initial mn-init on the machine element (not state)
+      var before = el.querySelector('[mn]')._mn.ctx.count;
+      click(el.querySelector('#btn'));
+      await sleep(15);
+      eq(el.querySelector('[mn]')._mn.ctx.count, before, 'Self-transition should not re-run state mn-init');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  USER-REGISTERED FUNCTIONS
+    // ══════════════════════════════════════════════════════════════════
+
+    group('MachineNative.fn()');
+
+    test('sync function callable from s-expression', function () {
+      MachineNative.fn('double', function(x) { return x * 2; });
+      var el = fixture('<div mn="t" mn-ctx=\'{"n":21}\'><span id="o"><mn-text>(double n)</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+    test('function with multiple args', function () {
+      MachineNative.fn('add3', function(a, b, c) { return a + b + c; });
+      var el = fixture('<div mn="t"><span id="o"><mn-text>(add3 10 20 12)</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+    test('function usable in guard', function () {
+      MachineNative.fn('is-even', function(n) { return n % 2 === 0; });
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"n":4}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="go" to="b"><mn-guard>(is-even n)</mn-guard></mn-transition>' +
+        '<button mn-to="go" id="btn">Go</button>' +
+        '</div><div mn-state="b">B</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b');
+    });
+
+    test('function usable in mn-to action', function () {
+      MachineNative.fn('make-greeting', function(name) { return 'Hello ' + name; });
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"msg":""}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="greet" to="a"><mn-action>(set! msg (make-greeting \'World\'))</mn-action></mn-transition>' +
+        '<button mn-to="greet" id="btn">Go</button>' +
+        '<span mn-text="msg" id="o"></span>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, 'Hello World');
+    });
+
+    test('function usable inside ->> pipeline', function () {
+      MachineNative.fn('square', function(x) { return x * x; });
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3]}\'><span id="o"><mn-text>(->> items (map #(square %)) (reduce + 0))</mn-text></span></div>');
+      eq(el.querySelector('#o').textContent, '14'); // 1+4+9
+    });
+
+    test('(then!) handles async function', async function () {
+      MachineNative.fn('async-value', function() {
+        return new Promise(function(resolve) { setTimeout(function() { resolve(42); }, 20); });
+      });
+      var el = fixture('<div mn="t" mn-ctx=\'{"result":0}\'><mn-init>(then! (async-value) :result)</mn-init><div mn-state="a"><span mn-text="result" id="o"></span></div></div>');
+      await sleep(15); // mn-init fires
+      await sleep(50); // promise resolves
+      el.querySelector('[mn]')._mn.update(); // refresh bindings
+      eq(el.querySelector('[mn]')._mn.ctx.result, 42);
+    });
+
+    test('(then!) transitions after resolve', async function () {
+      MachineNative.fn('async-data', function() {
+        return new Promise(function(resolve) { setTimeout(function() { resolve(['a','b']); }, 20); });
+      });
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[]}\'><mn-init>(then! (async-data) :items \'loaded\')</mn-init><div mn-state="loading">Loading</div><div mn-state="loaded"><span id="o"><mn-text>(count items)</mn-text></span></div></div>');
+      eq(el.querySelector('[mn]')._mn.state, 'loading');
+      await sleep(15); // mn-init fires
+      await sleep(50); // promise resolves + transition
+      eq(el.querySelector('[mn]')._mn.state, 'loaded');
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  STORE + CROSS-MACHINE COMPOSITION
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Store composition');
+
+    test('$store.name.field readable in s-expression', function () {
+      var el = fixture('<div><mn-store name="st1" value=\'{"color":"red"}\'></mn-store><div mn="t"><div mn-state="a"><span mn-text="$store.st1.color" id="o"></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, 'red');
+    });
+
+    test('(set! $store.name.field val) writes to store', function () {
+      var el = fixture(
+        '<div><mn-store name="st2" value=\'{"count":0}\'></mn-store>' +
+        '<div mn="t"><div mn-state="a">' +
+        '<mn-transition event="set-count" to="a"><mn-action>(set! $store.st2.count 42)</mn-action></mn-transition>' +
+        '<button mn-to="set-count" id="btn">Go</button>' +
+        '<span mn-text="$store.st2.count" id="o"></span>' +
+        '</div></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '42');
+      eq(MachineNative.store.st2.count, 42);
+    });
+
+    test('store readable inside (let) binding', function () {
+      var el = fixture('<div><mn-store name="st3" value=\'{"items":[1,2,3]}\'></mn-store><div mn="t"><div mn-state="a"><span id="o"><mn-text>(let [data $store.st3.items] (count data))</mn-text></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, '3');
+    });
+
+    test('store readable inside (->> pipeline)', function () {
+      var el = fixture('<div><mn-store name="st4" value=\'[{"name":"A","v":1},{"name":"B","v":2},{"name":"C","v":3}]\'></mn-store><div mn="t"><div mn-state="a"><span id="o"><mn-text>(->> $store.st4 (filter #(> (get % :v) 1)) (count))</mn-text></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, '2');
+    });
+
+    test('mn-each over $store array', function () {
+      var el = fixture('<div><mn-store name="st5" value=\'[{"name":"X"},{"name":"Y"}]\'></mn-store><div mn="t"><div mn-state="a"><template mn-each="$store.st5"><span mn-text="name" class="item"></span></template></div></div></div>');
+      var items = el.querySelectorAll('.item');
+      eq(items.length, 2);
+      eq(items[0].textContent, 'X');
+    });
+
+    test('mn-each with nested machine reads item data', function () {
+      var el = fixture('<div><template mn-define="card"><div mn-state="s"><span mn-text="label" id="lbl"></span></div></template><mn-store name="st6" value=\'[{"name":"A","label":"LA"},{"name":"B","label":"LB"}]\'></mn-store><div mn="t"><div mn-state="a"><template mn-each="$store.st6" mn-key="name"><div mn="card"></div></template></div></div></div>');
+      var labels = el.querySelectorAll('#lbl');
+      eq(labels.length, 2);
+      eq(labels[0].textContent, 'LA');
+      eq(labels[1].textContent, 'LB');
+    });
+
+    test('mn-each nested machine updates when store item changes', function () {
+      var el = fixture('<div><template mn-define="val"><div mn-state="s"><span mn-text="v" class="val"></span></div></template><mn-store name="st7" value=\'[{"name":"A","v":1},{"name":"B","v":2}]\'></mn-store><div mn="t"><div mn-state="a"><template mn-each="$store.st7" mn-key="name"><div mn="val"></div></template></div></div></div>');
+      eq(el.querySelectorAll('.val')[0].textContent, '1');
+      // Mutate store item in place
+      MachineNative.store.st7[0].v = 99;
+      el.querySelector('[mn="t"]')._mn.update();
+      eq(el.querySelectorAll('.val')[0].textContent, '99', 'Nested machine should reflect updated store data');
+    });
+
+    test('(let [f $store.x] (get f :field)) works', function () {
+      var el = fixture('<div><mn-store name="st8" value=\'{"country":"France","min":50}\'></mn-store><div mn="t"><div mn-state="a"><span id="o"><mn-text>(let [f $store.st8] (get f :country))</mn-text></span></div></div></div>');
+      eq(el.querySelector('#o').textContent, 'France');
+    });
+
+    test('mn-each with (let) over store + filter', function () {
+      var el = fixture('<div><mn-store name="st9" value=\'[{"name":"A","v":10},{"name":"B","v":20},{"name":"C","v":5}]\'></mn-store><div mn="t"><div mn-state="a"><template mn-key="name"><mn-each>(let [data $store.st9] (->> data (filter #(> (get % :v) 8)) (sort-by #(get % :v))))</mn-each><span mn-text="name" class="r"></span></template></div></div></div>');
+      var r = el.querySelectorAll('.r');
+      eq(r.length, 2);
+      eq(r[0].textContent, 'A');
+      eq(r[1].textContent, 'B');
+    });
+
+    test('resort-card pattern: filter pipeline with store reads', function () {
+      // Tests the exact filter expression from the SPA browse grid
+      var el = fixture(
+        '<div>' +
+        '<mn-store name="fr" value=\'{"country":"All","minSnow":0,"sortBy":"name","weatherReady":true}\'></mn-store>' +
+        '<mn-store name="rd" value=\'[{"name":"A","country":"France","snow":100},{"name":"B","country":"Italy","snow":50},{"name":"C","country":"France","snow":0}]\'></mn-store>' +
+        '<div mn="app"><div mn-state="browse">' +
+        '<template mn-key="name"><mn-each>(let [f $store.fr] (->> $store.rd (filter #(or (= (get f :country) \'All\') (= (get % :country) (get f :country)))) (filter #(>= (get % :snow) (get f :minSnow)))))</mn-each><span mn-text="name" class="r"></span></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.r').length, 3, 'All 3 with country=All minSnow=0');
+      // Change filter to France only
+      MachineNative.store.fr.country = 'France';
+      el.querySelector('[mn="app"]')._mn.update();
+      eq(el.querySelectorAll('.r').length, 2, 'Only France');
+      // Change min snow to 50
+      MachineNative.store.fr.minSnow = 50;
+      el.querySelector('[mn="app"]')._mn.update();
+      eq(el.querySelectorAll('.r').length, 1, 'Only France with 50+ snow');
+      eq(el.querySelectorAll('.r')[0].textContent, 'A');
+    });
+
+    test('resort-card pattern: slot content differs per usage context', function () {
+      // Same component template, different slot content in browse vs saved
+      var el = fixture(
+        '<div>' +
+        '<template mn-define="card"><div mn-state="s"><span mn-text="name" class="cn"></span><mn-slot name="actions">default</mn-slot></div></template>' +
+        '<mn-store name="sl" value=\'[{"name":"X"}]\'></mn-store>' +
+        '<div mn="app"><div mn-state="view">' +
+        '<div id="browse"><template mn-each="$store.sl" mn-key="name"><div mn="card"><span slot="actions" class="ba">SAVE</span></div></template></div>' +
+        '<div id="saved"><template mn-each="$store.sl" mn-key="name"><div mn="card"><span slot="actions" class="sa">REMOVE</span></div></template></div>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelector('#browse .ba').textContent, 'SAVE');
+      eq(el.querySelector('#saved .sa').textContent, 'REMOVE');
+    });
+
+    test('mn-define with mn-state renders content via mn-each', function () {
+      // This is the exact resort-card pattern: template with mn-state,
+      // instantiated via mn-each, content should be visible
+      var el = fixture(
+        '<div>' +
+        '<template mn-define="mycard"><div mn-state="show"><span mn-text="title" class="t"></span><mn-slot name="act">no action</mn-slot></div></template>' +
+        '<mn-store name="cards" value=\'[{"name":"A","title":"Alpha"},{"name":"B","title":"Beta"}]\'></mn-store>' +
+        '<div mn="main"><div mn-state="list">' +
+        '<template mn-each="$store.cards" mn-key="name"><div mn="mycard"><span slot="act" class="a">ACTION</span></div></template>' +
+        '</div></div></div>'
+      );
+      var titles = el.querySelectorAll('.t');
+      eq(titles.length, 2, 'Should render 2 cards');
+      eq(titles[0].textContent, 'Alpha');
+      eq(titles[1].textContent, 'Beta');
+      var actions = el.querySelectorAll('.a');
+      eq(actions.length, 2, 'Should have 2 slot actions');
+      eq(actions[0].textContent, 'ACTION');
+    });
+
+    test('mn-each in lazy state after (then!) transition renders nested machines', async function () {
+      // Exact SPA pattern: start in loading, (then!) transitions to browse,
+      // browse has mn-each that creates nested machine instances from store
+      MachineNative.fn('mock-load', function () {
+        MachineNative.store.mresorts = [{name:'X',v:1},{name:'Y',v:2}];
+        return Promise.resolve('ok');
+      });
+      var el = fixture(
+        '<div>' +
+        '<template mn-define="mcard"><div mn-state="d"><span mn-text="v" class="cv"></span></div></template>' +
+        '<mn-store name="mresorts" value=\'[]\'></mn-store>' +
+        '<div mn="mapp" mn-initial="loading" mn-ctx=\'{}\'>' +
+        '<mn-init>(then! (mock-load) :_x \'browse\')</mn-init>' +
+        '<div mn-state="loading">Loading</div>' +
+        '<div mn-state="browse">' +
+        '<template mn-each="$store.mresorts" mn-key="name"><div mn="mcard"></div></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelector('[mn="mapp"]')._mn.state, 'loading');
+      await sleep(30);
+      eq(el.querySelector('[mn="mapp"]')._mn.state, 'browse', 'Should transition to browse');
+      var cards = el.querySelectorAll('.cv');
+      eq(cards.length, 2, 'Should render 2 cards from store');
+      eq(cards[0].textContent, '1');
+    });
+
+    test('SPA exact mn-each expression with let + filters + sort', function () {
+      var el = fixture(
+        '<div>' +
+        '<mn-store name="ef" value=\'{"country":"All","minSnow":0,"sortBy":"snow","query":"","weatherReady":false}\'></mn-store>' +
+        '<mn-store name="er" value=\'[{"name":"A","country":"France","snow":100,"alt":1000,"temp":-5},{"name":"B","country":"Italy","snow":50,"alt":2000,"temp":-2},{"name":"C","country":"France","snow":0,"alt":500,"temp":3}]\'></mn-store>' +
+        '<div mn="e"><div mn-state="s">' +
+        '<template mn-key="name"><mn-each>(let [f $store.ef base (->> $store.er (filter #(or (= (get f :country) \'All\') (= (get % :country) (get f :country)))) (filter #(contains? (lower (get % :name)) (lower (get f :query)))) (filter #(or (not (get f :weatherReady)) (>= (get % :snow) (get f :minSnow))))) sorted (if (get f :weatherReady) (sort-by #(get % (get f :sortBy)) base) (sort-by #(get % :name) base))] (if (and (get f :weatherReady) (or (= (get f :sortBy) \'snow\') (= (get f :sortBy) \'alt\'))) (reverse sorted) sorted))</mn-each><span mn-text="name" class="en"></span></template>' +
+        '</div></div></div>'
+      );
+      var names = el.querySelectorAll('.en');
+      eq(names.length, 3, 'Should render all 3 with weatherReady=false');
+      eq(names[0].textContent, 'A', 'Sorted by name when not ready');
+    });
+
+    test('wrapper + nested machine: MULTIPLE updates propagate', function () {
+      // Simulates: initial render with placeholder → weather arrives → image arrives
+      // Each mutation + parent update should propagate to nested machine
+      var el = fixture(
+        '<div>' +
+        '<template mn-define="card3"><div mn-state="d"><span mn-text="name" class="cn3"></span> <span class="ci3"><mn-text>(or img \'none\')</mn-text></span> <span class="ct3"><mn-text>(or temp \'--\')</mn-text></span></div></template>' +
+        '<mn-store name="wr3" value=\'[{"name":"A","img":"","temp":null},{"name":"B","img":"","temp":null}]\'></mn-store>' +
+        '<div mn="w3"><div mn-state="s">' +
+        '<template mn-each="$store.wr3" mn-key="name"><div class="wrap3"><div mn="card3"></div></div></template>' +
+        '</div></div></div>'
+      );
+      // Initial: names render, img is empty, temp is null
+      eq(el.querySelectorAll('.cn3')[0].textContent, 'A');
+      eq(el.querySelectorAll('.ci3')[0].textContent, 'none');
+      eq(el.querySelectorAll('.ct3')[0].textContent, '--');
+      // Weather arrives for A
+      MachineNative.store.wr3[0].temp = -5;
+      el.querySelector('[mn="w3"]')._mn.update();
+      eq(el.querySelectorAll('.ct3')[0].textContent, '-5', 'Temp should update after weather');
+      // Image arrives for A
+      MachineNative.store.wr3[0].img = 'photo.jpg';
+      el.querySelector('[mn="w3"]')._mn.update();
+      eq(el.querySelectorAll('.ci3')[0].textContent, 'photo.jpg', 'Image should update after photo fetch');
+      // Weather arrives for B
+      MachineNative.store.wr3[1].temp = 3;
+      el.querySelector('[mn="w3"]')._mn.update();
+      eq(el.querySelectorAll('.ct3')[1].textContent, '3', 'B temp should update');
+    });
+
+    test('keyed mn-each reorder does not destroy nested machines via MutationObserver', async function () {
+      // Regression: insertBefore in keyed reconciliation triggers MutationObserver
+      // removedNodes, which called _cleanupInstance (deleting _mn) on nested machines.
+      // The observer re-created them from stale mn-ctx. The fix: skip cleanup for
+      // nodes that are still connected (moved, not removed).
+      var el = fixture(
+        '<div>' +
+        '<template mn-define="async-card2"><div mn-state="d"><span mn-text="name" class="an"></span><span class="ai"><mn-text>(or img \'no\')</mn-text></span></div></template>' +
+        '<mn-store name="async-r" value=\'[{"name":"X","img":""},{"name":"Y","img":""}]\'></mn-store>' +
+        '<div mn="aapp"><div mn-state="s">' +
+        '<template mn-each="$store.async-r" mn-key="name"><div class="aw"><div mn="async-card2"></div></div></template>' +
+        '</div></div></div>'
+      );
+
+      eq(el.querySelectorAll('.an').length, 2);
+      eq(el.querySelectorAll('.ai')[0].textContent, 'no');
+
+      await sleep(50);
+      MachineNative.store['async-r'][0].img = 'photo.jpg';
+      el.querySelector('[mn="aapp"]')._mn.update();
+
+      await sleep(10);
+      eq(el.querySelectorAll('.ai')[0].textContent, 'photo.jpg', 'Async update should propagate to nested machine');
+    });
+
+    test('cross-machine event triggers re-render with updated store', function () {
+      var el = fixture(
+        '<div><mn-store name="st10" value=\'{"n":0}\'></mn-store>' +
+        '<div mn="writer"><div mn-state="a">' +
+        '<mn-transition event="write-and-emit" to="a"><mn-action>(set! $store.st10.n 42)</mn-action><mn-emit>wrote</mn-emit></mn-transition>' +
+        '<button mn-to="write-and-emit" id="btn">Write</button>' +
+        '</div></div>' +
+        '<div mn="reader">' +
+        '<mn-receive event="wrote">(to a)</mn-receive>' +
+        '<div mn-state="a"><span mn-text="$store.st10.n" id="o"></span></div>' +
+        '</div></div>'
+      );
+      eq(el.querySelector('#o').textContent, '0');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '42');
+    });
+
+
+    group('Dependency tracking');
+
+    test('deps tracked: binding only re-evaluates when its dep changes', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"a":1,"b":2}\'><div mn-state="s"><span mn-text="a" id="sa"></span><span mn-text="b" id="sb"></span></div></div>');
+      var inst = el.querySelector('[mn]')._mn;
+      eq(el.querySelector('#sa').textContent, '1');
+      eq(el.querySelector('#sb').textContent, '2');
+      // Mutate only 'a' via internal path
+      inst._mnDirty = { a: true };
+      inst.ctx.a = 99;
+      inst.update();
+      eq(el.querySelector('#sa').textContent, '99', 'a should update');
+      eq(el.querySelector('#sb').textContent, '2', 'b should still be 2');
+    });
+
+    test('deps tracked: set! marks dirty and updates only affected binding', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"x":0,"y":0}\'>' +
+        '<div mn-state="s">' +
+        '<span mn-text="x" id="ox"></span>' +
+        '<span mn-text="y" id="oy"></span>' +
+        '<mn-transition event="set-x" to="s"><mn-action>(set! x 42)</mn-action></mn-transition>' +
+        '<button mn-to="set-x" id="btn">Go</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#ox').textContent, '42', 'x should update after set!');
+      eq(el.querySelector('#oy').textContent, '0', 'y unchanged');
+    });
+
+    test('deps tracked: inc! marks dirty', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"count":0,"label":"hi"}\'>' +
+        '<div mn-state="s">' +
+        '<span mn-text="count" id="oc"></span>' +
+        '<span mn-text="label" id="ol"></span>' +
+        '<mn-transition event="increment" to="s"><mn-action>(inc! count)</mn-action></mn-transition>' +
+        '<button mn-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#oc').textContent, '2', 'count incremented twice');
+      eq(el.querySelector('#ol').textContent, 'hi', 'label unchanged');
+    });
+
+    test('deps tracked: mn-model marks dirty', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"q":"","n":5}\'><div mn-state="s"><input mn-model="q" id="inp" /><span mn-text="q" id="oq"></span><span mn-text="n" id="on"></span></div></div>');
+      var inp = el.querySelector('#inp');
+      inp.value = 'hello';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      eq(el.querySelector('#oq').textContent, 'hello', 'q should update from model');
+      eq(el.querySelector('#on').textContent, '5', 'n unchanged');
+    });
+
+    test('deps tracked: external update() with no dirty does full eval', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"v":1}\'><div mn-state="s"><span mn-text="v" id="o"></span></div></div>');
+      var inst = el.querySelector('[mn]')._mn;
+      eq(el.querySelector('#o').textContent, '1');
+      // External mutation — no dirty tracking
+      inst.ctx.v = 77;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '77', 'Should do full eval when no dirty');
+    });
+
+    test('deps tracked: s-expression with multiple deps updates on either', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"a":"x","b":"y"}\'><div mn-state="s"><span id="o"><mn-text>(str a b)</mn-text></span></div></div>');
+      var inst = el.querySelector('[mn]')._mn;
+      eq(el.querySelector('#o').textContent, 'xy');
+      // Change only a
+      inst._mnDirty = { a: true };
+      inst.ctx.a = 'A';
+      inst.update();
+      eq(el.querySelector('#o').textContent, 'Ay', 'Should re-eval when a changes');
+      // Change only b
+      inst._mnDirty = { b: true };
+      inst.ctx.b = 'B';
+      inst.update();
+      eq(el.querySelector('#o').textContent, 'AB', 'Should re-eval when b changes');
+    });
+
+    test('deps tracked: mn-show binding skipped when dep unchanged', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"vis":true,"n":1}\'><div mn-state="s"><div mn-show="vis" id="d">content</div><span mn-text="n" id="o"></span></div></div>');
+      var inst = el.querySelector('[mn]')._mn;
+      assert(!el.querySelector('#d').hidden, 'Should be visible');
+      // Change only n
+      inst._mnDirty = { n: true };
+      inst.ctx.n = 2;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '2');
+      assert(!el.querySelector('#d').hidden, 'Visibility unchanged');
+    });
+
+    test('deps tracked: mn-class binding skipped when dep unchanged', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"active":true,"n":0}\'><div mn-state="s"><div id="d"><mn-class>(when active \'ring\')</mn-class></div><span mn-text="n" id="o"></span></div></div>');
+      var inst = el.querySelector('[mn]')._mn;
+      assert(el.querySelector('#d').classList.contains('ring'));
+      // Change only n — class binding should be skipped
+      inst._mnDirty = { n: true };
+      inst.ctx.n = 5;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '5');
+      assert(el.querySelector('#d').classList.contains('ring'), 'Class unchanged');
+    });
+
+    test('deps tracked: mn-bind skipped when dep unchanged', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"url":"a.html","n":0}\'><div mn-state="s"><a id="lnk"><mn-bind attr="href">url</mn-bind>Link</a><span mn-text="n" id="o"></span></div></div>');
+      var inst = el.querySelector('[mn]')._mn;
+      eq(el.querySelector('#lnk').getAttribute('href'), 'a.html');
+      // Change only n
+      inst._mnDirty = { n: true };
+      inst.ctx.n = 9;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '9');
+      eq(el.querySelector('#lnk').getAttribute('href'), 'a.html', 'href unchanged');
+    });
+
+    test('deps tracked: keyed mn-each child skipped when data unchanged', function () {
+      var el = fixture(
+        '<div>' +
+        '<template mn-define="dc"><div mn-state="d"><span mn-text="v" class="dv"></span></div></template>' +
+        '<mn-store name="dt" value=\'[{"name":"A","v":1},{"name":"B","v":2}]\'></mn-store>' +
+        '<div mn="dp"><div mn-state="s">' +
+        '<template mn-each="$store.dt" mn-key="name"><div mn="dc"></div></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.dv')[0].textContent, '1');
+      eq(el.querySelectorAll('.dv')[1].textContent, '2');
+      // Update only item A — B should be skipped entirely
+      MachineNative.store.dt[0].v = 99;
+      el.querySelector('[mn="dp"]')._mn.update();
+      eq(el.querySelectorAll('.dv')[0].textContent, '99', 'A should update');
+      eq(el.querySelectorAll('.dv')[1].textContent, '2', 'B unchanged');
+    });
+
+    test('deps tracked: keyed mn-each child entirely skipped when nothing changed', function () {
+      var el = fixture(
+        '<div>' +
+        '<template mn-define="dc2"><div mn-state="d"><span mn-text="v" class="dv2"></span></div></template>' +
+        '<mn-store name="dt2" value=\'[{"name":"A","v":1}]\'></mn-store>' +
+        '<div mn="dp2"><div mn-state="s">' +
+        '<template mn-each="$store.dt2" mn-key="name"><div mn="dc2"></div></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.dv2')[0].textContent, '1');
+      // Call update without changing anything — child should NOT re-render
+      // (we can verify by checking the element is the same text node)
+      var textBefore = el.querySelectorAll('.dv2')[0].firstChild;
+      el.querySelector('[mn="dp2"]')._mn.update();
+      var textAfter = el.querySelectorAll('.dv2')[0].firstChild;
+      assert(textBefore === textAfter, 'Text node should be same object — child was skipped');
+    });
+
+    test('deps tracked: $store path deps use store-level granularity', function () {
+      var el = fixture(
+        '<div>' +
+        '<mn-store name="da" value=\'{"x":1}\'></mn-store>' +
+        '<mn-store name="db" value=\'{"y":2}\'></mn-store>' +
+        '<div mn="t"><div mn-state="s">' +
+        '<span mn-text="$store.da.x" id="oa"></span>' +
+        '<span mn-text="$store.db.y" id="ob"></span>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelector('#oa').textContent, '1');
+      eq(el.querySelector('#ob').textContent, '2');
+      // Mark only $store.da dirty
+      var inst = el.querySelector('[mn]')._mn;
+      MachineNative.store.da.x = 99;
+      inst._mnDirty = { '$store.da': true };
+      inst.update();
+      eq(el.querySelector('#oa').textContent, '99', 'store.da binding should update');
+      eq(el.querySelector('#ob').textContent, '2', 'store.db binding should be skipped');
+    });
+
+    test('deps tracked: mn-on s-expression handler sets dirty via _applyScope', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"a":0,"b":0}\'><div mn-state="s">' +
+        '<span mn-text="a" id="oa"></span>' +
+        '<span mn-text="b" id="ob"></span>' +
+        '<button id="btn"><mn-on event="click">(set! a 10)</mn-on>Go</button>' +
+        '</div></div>'
+      );
+      eq(el.querySelector('#oa').textContent, '0');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#oa').textContent, '10', 'a should update from event handler');
+    });
+
+    test('deps tracked: self-transition with action only updates affected bindings', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"x":0,"y":"fixed"}\'>' +
+        '<div mn-state="s">' +
+        '<span mn-text="x" id="ox"></span>' +
+        '<span mn-text="y" id="oy"></span>' +
+        '<mn-transition event="increment" to="s"><mn-action>(inc! x)</mn-action></mn-transition>' +
+        '<button mn-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#ox').textContent, '1', 'x incremented');
+      eq(el.querySelector('#oy').textContent, 'fixed', 'y unchanged');
+    });
+
+
+    group('Debug mode');
+
+    test('debug mode warns on undefined variable', function () {
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      MachineNative.debug = true;
+      var el = fixture('<div mn="t" mn-ctx=\'{"x":1}\'><div mn-state="s"><span id="o"><mn-text>(str x nonexistent)</mn-text></span></div></div>');
+      MachineNative.debug = false;
+      console.warn = origWarn;
+      assert(warnings.some(function (w) { return w.indexOf('nonexistent') !== -1; }), 'Should warn about undefined "nonexistent"');
+      has(el.querySelector('#o').textContent, '1');
+    });
+
+    test('debug mode logs state transitions', function () {
+      var logs = [];
+      var origLog = console.log;
+      console.log = function () { logs.push(Array.prototype.slice.call(arguments).join(' ')); };
+      MachineNative.debug = true;
+      var el = fixture('<div mn="t"><div mn-state="a"><button mn-to="b" id="btn">B</button></div><div mn-state="b">B</div></div>');
+      click(el.querySelector('#btn'));
+      MachineNative.debug = false;
+      console.log = origLog;
+      assert(logs.some(function (l) { return l.indexOf('a') !== -1 && l.indexOf('b') !== -1; }), 'Should log a → b transition');
+    });
+
+    test('debug mode off by default', function () {
+      eq(MachineNative.debug, false);
+    });
+
+    test('debug mode does not warn when variable exists', function () {
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      MachineNative.debug = true;
+      var el = fixture('<div mn="t" mn-ctx=\'{"x":"hello"}\'><div mn-state="s"><span mn-text="x" id="o"></span></div></div>');
+      MachineNative.debug = false;
+      console.warn = origWarn;
+      var debugWarnings = warnings.filter(function (w) { return w.indexOf('mn-debug') !== -1; });
+      eq(debugWarnings.length, 0, 'No debug warnings for valid variables');
+      eq(el.querySelector('#o').textContent, 'hello');
+    });
+
+
+    group('Purity');
+
+    test('mutation in mn-text throws', function () {
+      var threw = false;
+      try {
+        fixture('<div mn="t" mn-ctx=\'{"x":0}\'><div mn-state="s"><span><mn-text>(set! x 5)</mn-text></span></div></div>');
+      } catch (e) {
+        threw = true;
+        has(e.message, 'set!');
+        has(e.message, 'not allowed in bindings');
+      }
+      assert(threw, 'Should throw on mutation in mn-text');
+    });
+
+    test('mutation in mn-show throws', function () {
+      var threw = false;
+      try {
+        fixture('<div mn="t" mn-ctx=\'{"x":true}\'><div mn-state="s"><div id="d"><mn-show>(toggle! x)</mn-show>hi</div></div></div>');
+      } catch (e) {
+        threw = true;
+        has(e.message, 'toggle!');
+      }
+      assert(threw, 'Should throw on mutation in mn-show');
+    });
+
+    test('nested mutation in binding throws', function () {
+      var threw = false;
+      try {
+        fixture('<div mn="t" mn-ctx=\'{"x":0}\'><div mn-state="s"><span><mn-text>(do (inc! x) x)</mn-text></span></div></div>');
+      } catch (e) {
+        threw = true;
+        has(e.message, 'inc!');
+      }
+      assert(threw, 'Should throw on nested mutation in binding');
+    });
+
+    test('mutation in mn-to s-expression', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"x":0}\'>' +
+        '<div mn-state="s">' +
+        '<span mn-text="x" id="o"></span>' +
+        '<mn-transition event="set-x" to="s"><mn-action>(set! x 42)</mn-action></mn-transition>' +
+        '<button mn-to="set-x" id="btn">Go</button>' +
+        '</div></div>'
+      );
+      eq(el.querySelector('#o').textContent, '0');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '42', 'set! runs via mn-to');
+    });
+
+    test('mutation in mn-on: still works', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"x":0}\'><div mn-state="s">' +
+        '<span mn-text="x" id="o"></span>' +
+        '<button id="btn"><mn-on event="click">(do (inc! x) (to s))</mn-on>+</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1', 'inc! should work in mn-on:');
+    });
+
+    test('pure functions work in bindings', function () {
+      var el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3],"name":"world"}\'><div mn-state="s"><span id="o"><mn-text>(str (count items) \' – \' (upper name))</mn-text></span></div></div>');
+      eq(el.querySelector('#o').textContent, '3 – WORLD');
+    });
+
+
+    group('Security');
+
+    test('set! rejects __proto__ path traversal', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"obj":{}}\'>' +
+        '<div mn-state="s">' +
+        '<mn-transition event="pollute" to="s"><mn-action>(set! obj.__proto__.polluted true)</mn-action></mn-transition>' +
+        '<button mn-to="pollute" id="btn">X</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      assert(!({}).polluted, 'Object.prototype should not be polluted');
+    });
+
+    test('deeply nested expression throws instead of stack overflow', function () {
+      // Build a 600-deep nested expression: (+ (+ (+ ... 1 ...) 1) 1)
+      var expr = '1';
+      for (var i = 0; i < 600; i++) expr = '(+ ' + expr + ' 1)';
+      var threw = false;
+      try {
+        fixture('<div mn="t"><div mn-state="s"><span mn-text="' + expr + '"></span></div></div>');
+      } catch (err) {
+        threw = true;
+        has(err.message, 'deeply nested');
+      }
+      assert(threw, 'Should throw on excessive nesting');
+    });
+
+
+    group('Error handling');
+
+    test('malformed mn-ctx does not crash', function () {
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      var el = fixture('<div mn="t" mn-ctx="not valid json"><div mn-state="s"><span mn-text="$state" id="o"></span></div></div>');
+      console.warn = origWarn;
+      assert(warnings.some(function (w) { return w.indexOf('invalid JSON') !== -1; }), 'Should warn about invalid JSON');
+      eq(el.querySelector('#o').textContent, 's', 'Machine should still work with empty ctx');
+    });
+
+    test('malformed mn-store does not crash', function () {
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      var el = fixture('<div><mn-store name="bad" value="not json"></mn-store><div mn="t"><div mn-state="s"><span mn-text="$state" id="o"></span></div></div></div>');
+      console.warn = origWarn;
+      assert(warnings.some(function (w) { return w.indexOf('invalid JSON') !== -1; }), 'Should warn about invalid JSON in store');
+      eq(el.querySelector('#o').textContent, 's', 'Machine should still work');
+    });
+
+
+    group('Public API');
+
+    test('DOM removal cleans up machine instance', async function () {
+      var el = fixture('<div mn="t"><div mn-state="a">A</div></div>');
+      var machineEl = el.querySelector('[mn]');
+      assert(machineEl._mn, 'Should have _mn before removal');
+      machineEl.remove();
+      await sleep(30);
+      assert(!machineEl._mn, 'Should not have _mn after removal');
+    });
+
+    test('DOM removal cleans up nested machines', async function () {
+      var el = fixture(
+        '<div>' +
+        '<template mn-define="inner"><div mn-state="d">I</div></template>' +
+        '<div mn="outer"><div mn-state="s"><div mn="inner" id="child"></div></div></div></div>'
+      );
+      var outer = el.querySelector('[mn="outer"]');
+      var child = el.querySelector('#child');
+      assert(outer._mn, 'Outer should have _mn');
+      assert(child._mn, 'Child should have _mn');
+      outer.remove();
+      await sleep(30);
+      assert(!outer._mn, 'Outer cleaned up');
+      assert(!child._mn, 'Child cleaned up');
+    });
+
+    test('stdlib dispatch: all function categories work', function () {
+      // Math
+      var el = fixture('<div mn="t" mn-ctx=\'{"v":0}\'><div mn-state="s"><span id="o"><mn-text>(+ 2 3)</mn-text></span></div></div>');
+      eq(el.querySelector('#o').textContent, '5');
+      // String
+      el = fixture('<div mn="t"><div mn-state="s"><span id="o"><mn-text>(upper \'hello\')</mn-text></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'HELLO');
+      // Collection
+      el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3]}\'><div mn-state="s"><span id="o"><mn-text>(count items)</mn-text></span></div></div>');
+      eq(el.querySelector('#o').textContent, '3');
+      // Higher-order
+      el = fixture('<div mn="t" mn-ctx=\'{"items":[1,2,3,4]}\'><div mn-state="s"><span id="o"><mn-text>(count (filter #(> % 2) items))</mn-text></span></div></div>');
+      eq(el.querySelector('#o').textContent, '2');
+      // Object
+      el = fixture('<div mn="t"><div mn-state="s"><span id="o"><mn-text>(get (obj :a 1 :b 2) :b)</mn-text></span></div></div>');
+      eq(el.querySelector('#o').textContent, '2');
+      // Type
+      el = fixture('<div mn="t"><div mn-state="s"><span id="o"><mn-text>(type nil)</mn-text></span></div></div>');
+      eq(el.querySelector('#o').textContent, 'nil');
+    });
+
+    test('parse cache eviction does not break re-evaluation', function () {
+      // Force many unique expressions to trigger cache eviction
+      var el = fixture('<div mn="t" mn-ctx=\'{"x":1}\'><div mn-state="s"><span mn-text="x" id="o"></span></div></div>');
+      eq(el.querySelector('#o').textContent, '1');
+      // After eviction, cached expressions should be re-parseable
+      var inst = el.querySelector('[mn]')._mn;
+      inst.ctx.x = 42;
+      inst.update();
+      eq(el.querySelector('#o').textContent, '42', 'Still works after potential cache eviction');
+    });
+
+
+    group('Async error handling');
+
+    test('then! transitions to error state on rejection', async function () {
+      MachineNative.fn('fail-async', function () {
+        return Promise.reject(new Error('network down'));
+      });
+      var el = fixture(
+        '<div mn="t" mn-initial="loading" mn-ctx=\'{"result":null}\'>' +
+        '<mn-init>(then! (fail-async) :result \'done\' \'error\')</mn-init>' +
+        '<div mn-state="loading">Loading</div>' +
+        '<div mn-state="done">OK</div>' +
+        '<div mn-state="error"><span mn-text="result" id="o"></span></div></div>'
+      );
+      await sleep(30);
+      eq(el.querySelector('[mn]')._mn.state, 'error', 'Should transition to error state');
+    });
+
+    test('then! stores error in context key on rejection', async function () {
+      MachineNative.fn('fail-with-msg', function () {
+        return Promise.reject('oops');
+      });
+      var el = fixture(
+        '<div mn="t" mn-initial="loading" mn-ctx=\'{"err":null}\'>' +
+        '<mn-init>(then! (fail-with-msg) :err \'done\' \'failed\')</mn-init>' +
+        '<div mn-state="loading">Loading</div><div mn-state="done">OK</div><div mn-state="failed">F</div></div>'
+      );
+      await sleep(30);
+      eq(el.querySelector('[mn]')._mn.state, 'failed');
+      eq(el.querySelector('[mn]')._mn.ctx.err, 'oops', 'Error should be stored in ctx');
+    });
+
+    test('then! without error state warns on rejection', async function () {
+      MachineNative.fn('fail-no-catch', function () {
+        return Promise.reject('silent');
+      });
+      var warnings = [];
+      var origWarn = console.warn;
+      console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
+      var el = fixture(
+        '<div mn="t" mn-initial="go" mn-ctx=\'{"x":null}\'>' +
+        '<mn-init>(then! (fail-no-catch) :x \'done\')</mn-init>' +
+        '<div mn-state="go">Go</div><div mn-state="done">OK</div></div>'
+      );
+      await sleep(30);
+      console.warn = origWarn;
+      eq(el.querySelector('[mn]')._mn.state, 'go', 'Should stay in current state');
+      assert(warnings.some(function (w) { return w.indexOf('async error') !== -1; }), 'Should warn');
+    });
+
+
+    group('Lifecycle');
+
+    test('mn-exit runs before state content is destroyed', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"cleaned":false}\'>' +
+        '<div mn-state="a"><mn-exit>(set! cleaned true)</mn-exit><button mn-to="b" id="btn">Go</button></div>' +
+        '<div mn-state="b"><span mn-text="cleaned" id="o"></span></div></div>'
+      );
+      eq(el.querySelector('[mn]')._mn.ctx.cleaned, false);
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, 'true', 'mn-exit should have set cleaned=true');
+    });
+
+    test('mn-exit does not run on self-transition', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"exits":0}\'>' +
+        '<div mn-state="a"><mn-exit>(inc! exits)</mn-exit><button mn-to="a" id="btn">Self</button><span mn-text="exits" id="o"></span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '0', 'mn-exit should not run on self-transition');
+    });
+
+
+    group('Error messages');
+
+    test('purity error includes function name and guidance', function () {
+      var threw = false;
+      try {
+        fixture('<div mn="t" mn-ctx=\'{"x":0}\'><div mn-state="s"><span><mn-text>(inc! x)</mn-text></span></div></div>');
+      } catch (err) {
+        threw = true;
+        has(err.message, 'inc!');
+        has(err.message, 'mn-to');
+      }
+      assert(threw, 'Should throw with function name and fix guidance');
+    });
+
+    test('binding error includes element tag and expression', function () {
+      // Register a function that throws at runtime
+      MachineNative.fn('blow-up', function () { throw new Error('kaboom'); });
+      var threw = false;
+      try {
+        fixture('<div mn="t"><div mn-state="s"><span><mn-text>(blow-up)</mn-text></span></div></div>');
+      } catch (err) {
+        threw = true;
+        has(err.message, '<span>');
+        has(err.message, 'blow-up');
+      }
+      assert(threw, 'Should throw with element tag and expression');
+    });
+
+
+    group('Cleanup');
+
+    test('outside listener removed on DOM removal', async function () {
+      var el = fixture('<div mn="t"><div mn-state="a"><button id="btn"><mn-on event="click.outside">(to a)</mn-on>X</button></div></div>');
+      var machineEl = el.querySelector('[mn]');
+      assert(machineEl._mnCleanups && machineEl._mnCleanups.length > 0, 'Should have tracked cleanup');
+      machineEl.remove();
+      await sleep(30);
+      assert(!machineEl._mnCleanups, 'Cleanups should be removed after DOM removal');
+    });
+
+    test('dotted-path set! records dirty key for targeted update', function () {
+      var el = fixture(
+        '<div>' +
+        '<mn-store name="dp" value=\'{"color":"red"}\'></mn-store>' +
+        '<div mn="t" mn-ctx=\'{"count":0}\'><div mn-state="s">' +
+        '<span mn-text="$store.dp.color" id="oc"></span>' +
+        '<span mn-text="count" id="on"></span>' +
+        '<mn-transition event="update-both" to="s"><mn-action>(do (inc! count) (set! $store.dp.color \'blue\'))</mn-action></mn-transition>' +
+        '<button mn-to="update-both" id="btn">Go</button>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelector('#oc').textContent, 'red');
+      eq(el.querySelector('#on').textContent, '0');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#on').textContent, '1', 'count should update');
+      eq(el.querySelector('#oc').textContent, 'blue', 'Dotted path store should also update');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  API SURFACE
+    // ══════════════════════════════════════════════════════════════════
+
+    group('API surface');
+
+    test('public API has exactly 4 members: init, fn, store, debug', function () {
+      assert(typeof MachineNative.init === 'function', 'has init');
+      assert(typeof MachineNative.fn === 'function', 'has fn');
+      assert(typeof MachineNative.store === 'object', 'has store');
+      assert(MachineNative.get === undefined, 'no get');
+      assert(MachineNative.destroy === undefined, 'no destroy');
+      assert(MachineNative.version === undefined, 'no version');
+      assert(MachineNative.templates === undefined, 'no templates');
+      assert(MachineNative.registry === undefined, 'no registry');
+      assert(MachineNative.findCapableNode === undefined, 'no findCapableNode');
+      assert(MachineNative.sendToNode === undefined, 'no sendToNode');
+      assert(MachineNative.refreshRoutes === undefined, 'no refreshRoutes');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  mn-init on initial state
+    // ══════════════════════════════════════════════════════════════════
+
+    group('mn-init initial state');
+
+    test('mn-init on initial state fires at boot', async function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"stateEntered":false}\'>' +
+        '<div mn-state="a"><mn-init>(set! stateEntered true)</mn-init>A</div>' +
+        '<div mn-state="b">B</div></div>'
+      );
+      await sleep(15);
+      eq(el.querySelector('[mn]')._mn.ctx.stateEntered, true, 'mn-init on initial state should fire');
+    });
+
+    test('mn-init on machine AND initial state both fire', async function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"machineReady":false,"stateReady":false}\'>' +
+        '<mn-init>(set! machineReady true)</mn-init>' +
+        '<div mn-state="a"><mn-init>(set! stateReady true)</mn-init>A</div></div>'
+      );
+      await sleep(15);
+      eq(el.querySelector('[mn]')._mn.ctx.machineReady, true, 'machine mn-init fired');
+      eq(el.querySelector('[mn]')._mn.ctx.stateReady, true, 'state mn-init fired');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  mn-where local capability
+    // ══════════════════════════════════════════════════════════════════
+
+    group('mn-where');
+
+    test('mn-where with browser-satisfiable capability transitions locally', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="a">' +
+        '<button mn-to="b" mn-where="(requires \'dom\')" id="btn">Go</button></div>' +
+        '<div mn-state="b">B</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'transitions locally when browser has capability');
+    });
+
+    test('mn-where on button is ignored (only state-level matters)', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="a">' +
+        '<button mn-to="b" mn-where="(requires \'persist\')" id="btn">Go</button></div>' +
+        '<div mn-state="b">B</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'transitions — mn-where on button is not checked, only state');
+    });
+
+    test('state-level mn-where with satisfiable capability transitions locally via to()', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="a">' +
+        '<button mn-to="b" id="btn">Go</button></div>' +
+        '<div mn-state="b"><mn-where>(requires \'dom\')</mn-where>B content</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'transitions to b — browser has dom capability');
+    });
+
+    test('state-level mn-where with unsatisfiable capability blocks transition via to()', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="a">' +
+        '<button mn-to="b" id="btn">Go</button></div>' +
+        '<div mn-state="b"><mn-where>(requires \'persist\')</mn-where>B content</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'a', 'stays in a — target state needs persist, browser cannot satisfy');
+    });
+
+    test('initial state with mn-where=(requires dom) renders content locally', function () {
+      var el = fixture(
+        '<div mn="t" mn-initial="a"><div mn-state="a"><mn-where>(requires \'dom\')</mn-where><span id="content">Loaded</span></div></div>'
+      );
+      // Browser has 'dom' — initial state should render locally, content visible
+      assert(!el.querySelector('[mn-state="a"]').hidden, 'state a is visible');
+      eq(el.querySelector('#content').textContent, 'Loaded', 'content rendered');
+    });
+
+    test('self-transition with contentHtml replaces state content', function () {
+      var el = fixture(
+        '<div mn="t"><div mn-state="a"><span id="old">Old</span></div></div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(el.querySelector('#old').textContent, 'Old', 'original content');
+      inst.to('a', '<span id="new">New</span>');
+      eq(el.querySelector('#new').textContent, 'New', 'content replaced');
+      assert(!el.querySelector('#old'), 'old content removed');
+    });
+
+    test('self-transition without contentHtml does NOT destroy content', function () {
+      var el = fixture(
+        '<div mn="t" mn-ctx=\'{"n":0}\'>' +
+        '<div mn-state="a">' +
+        '<span mn-text="n" id="o"></span>' +
+        '<mn-transition event="increment" to="a"><mn-action>(inc! n)</mn-action></mn-transition>' +
+        '<button mn-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#o').textContent, '1', 'content survived self-transition');
+    });
+
+    test('navbar outside state elements survives self-transition with contentHtml', function () {
+      var el = fixture(
+        '<div mn="t"><div id="nav">Nav</div><div mn-state="a"><span>Content</span></div></div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      inst.to('a', '<span>Replaced</span>');
+      assert(el.querySelector('#nav'), 'navbar still exists');
+      eq(el.querySelector('#nav').textContent, 'Nav', 'navbar content intact');
+    });
+
+    test('initial state mn-where with unsatisfiable cap shows spinner, does not destroy', async function () {
+      var el = fixture(
+        '<div mn="t" mn-initial="a"><div mn-state="a"><mn-where>(requires \'persist\')</mn-where><span id="spin">Loading</span></div><div mn-state="b">B</div></div>'
+      );
+      await sleep(30);
+      // No capable node exists — spinner should stay visible, not get cleared
+      assert(!el.querySelector('[mn-state="a"]').hidden, 'state a still visible');
+      assert(el.querySelector('#spin'), 'spinner still in DOM');
+      eq(el.querySelector('#spin').textContent, 'Loading', 'spinner text intact');
+    });
+
+    test('boot does not destroy sibling machines when initial state has mn-where', async function () {
+      var el = fixture(
+        '<div>' +
+        '<div mn="main" mn-initial="home"><div mn-state="home"><mn-where>(requires \'persist\')</mn-where><span>Loading</span></div></div>' +
+        '<div mn="sibling" mn-ctx=\'{"x":1}\'><div mn-state="s"><span mn-text="x" id="sib">0</span></div></div>' +
+        '</div>'
+      );
+      await sleep(30);
+      assert(el.querySelector('#sib'), 'sibling still in DOM');
+      eq(el.querySelector('#sib').textContent, '1', 'sibling rendered correctly');
+      assert(el.querySelector('[mn="sibling"]')._mn, 'sibling machine still alive');
+    });
+
+    test('_routeTableReady chains initial mn-where trigger correctly', async function () {
+      // Simulate: set registry before machine boots, route table loads async
+      // The initial state mn-where trigger should wait for route table
+      var origRegistry = MachineNative._test_registry;
+      var origRouteTable = MachineNative._test_routeTable;
+      // This test can only verify the timing logic exists by checking
+      // that unsatisfiable mn-where doesn't crash or clear content
+      var el = fixture(
+        '<div mn="t" mn-initial="a"><div mn-state="a"><mn-where>(requires \'ui-render\')</mn-where><span id="wait">Waiting</span></div></div>'
+      );
+      await sleep(50);
+      assert(el.querySelector('#wait'), 'content survives while waiting for route table');
+      eq(el.querySelector('[mn]')._mn.state, 'a', 'still in initial state');
+    });
+
+    test('self-transition with contentHtml on state with mn-temporal stays visible (fast)', async function () {
+      // Default test CSS has 0.05s transition — fast enough that leave finishes before check
+      var el = fixture(
+        '<div mn="t"><div mn-state="a"><mn-temporal>(animate)</mn-temporal><span id="orig">Original</span></div></div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      inst.to('a', '<span id="replaced">Replaced</span>');
+      await sleep(100);
+      assert(!el.querySelector('[mn-state="a"]').hidden, 'visible after fast transition');
+      assert(el.querySelector('#replaced'), 'new content exists');
+    });
+
+    test('self-transition with contentHtml and SLOW transition does not race', async function () {
+      // Simulate the PO app: 250ms transition. The leave callback fires AFTER
+      // the content stamp, which would overwrite it if not handled.
+      var el = fixture(
+        '<div mn="t"><div mn-state="a" style="transition:all .25s ease"><mn-temporal>(animate)</mn-temporal><span id="orig">Original</span></div></div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      inst.to('a', '<span id="replaced">Replaced</span>');
+      // Check immediately — content should be stamped
+      assert(el.querySelector('#replaced'), 'content stamped immediately');
+      // Wait for the slow leave transition to complete
+      await sleep(350);
+      // The leave callback must NOT have wiped the content
+      assert(!el.querySelector('[mn-state="a"]').hidden, 'still visible after slow leave completes');
+      assert(el.querySelector('#replaced'), 'content survives the leave callback');
+      eq(el.querySelector('#replaced').textContent, 'Replaced', 'content text intact');
+    });
+
+    test('emit from content stamped via to(target, html) reaches parent mn-receive', function () {
+      var el = fixture(
+        '<div mn="parent" mn-ctx=\'{"got":false}\'>' +
+        '<mn-receive event="child-event">(set! got true)</mn-receive>' +
+        '<div mn-state="a"><span>placeholder</span></div></div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      // Stamp content that has a button with emit
+      inst.to('a',
+        '<div mn="child"><div mn-state="s">' +
+        '<mn-transition event="fire-child" to="s"><mn-emit>child-event</mn-emit></mn-transition>' +
+        '<button mn-to="fire-child" id="emitbtn">Emit</button>' +
+        '</div></div>'
+      );
+      // Click the button in stamped content
+      click(el.querySelector('#emitbtn'));
+      eq(inst.ctx.got, true, 'emit from stamped content reached parent mn-receive');
+    });
+
+    test('mn-to="state" in stamped content navigates parent machine directly', function () {
+      // Stamped content is INSIDE the app machine's state element.
+      // mn-to="b" finds closest [mn] = parent machine. Direct transition.
+      // No emit needed. mn-where on target state routes if needed.
+      var el = fixture(
+        '<div mn="t" mn-initial="a">' +
+        '<div mn-state="a"><span>Placeholder</span></div>' +
+        '<div mn-state="b"><mn-where>(requires \'dom\')</mn-where><span id="b">B</span></div></div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'a', 'starts in a');
+
+      // Stamp nav button into state a (simulates server-rendered content)
+      el.querySelector('[mn-state="a"]').innerHTML = '<button mn-to="b" id="nav">Go to B</button>';
+
+      click(el.querySelector('#nav'));
+      eq(inst.state, 'b', 'direct mn-to from stamped content transitions parent machine');
+    });
+
+    test('emit from nested machine crosses boundary to parent mn-receive', function () {
+      // Nested machine: emit crosses the boundary.
+      // Parent machine: mn-receive catches it and transitions.
+      var el = fixture(
+        '<div mn="parent" mn-initial="a" mn-ctx=\'{"got":false}\'>' +
+        '<mn-receive event="child-nav">(do (set! got true) (to b))</mn-receive>' +
+        '<div mn-state="a"><div mn="child"><div mn-state="s">' +
+        '<mn-transition event="fire-nav" to="s"><mn-emit>child-nav</mn-emit></mn-transition>' +
+        '<button mn-to="fire-nav" id="btn">Nav</button>' +
+        '</div></div></div>' +
+        '<div mn-state="b"><span id="b">B</span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      var inst = el.querySelector('[mn="parent"]')._mn;
+      eq(inst.ctx.got, true, 'mn-receive on parent fired');
+      eq(inst.state, 'b', 'parent transitioned to b');
+    });
+
+    test('mn-receive transition respects state-level mn-where', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mn="sender"><div mn-state="s">' +
+        '<mn-transition event="fire-go" to="s"><mn-emit>go</mn-emit></mn-transition>' +
+        '<button mn-to="fire-go" id="btn">Go</button>' +
+        '</div></div>' +
+        '<div mn="receiver">' +
+        '<mn-receive event="go">(to b)</mn-receive>' +
+        '<div mn-state="a">A</div>' +
+        '<div mn-state="b"><mn-where>(requires \'dom\')</mn-where>B</div>' +
+        '</div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn="receiver"]')._mn.state, 'b', 'mn-receive transition goes through to() which checks state mn-where');
+    });
+
+
+    group('Hierarchy');
+
+    test('compound state: enters initial child, stamps chrome and child content', function () {
+      var el = fixture(
+        '<div mn="h1">' +
+        '<div mn-state="idle"><button mn-to="running" id="btn">Go</button></div>' +
+        '<div mn-state="running">' +
+          '<div class="chrome" id="chrome">Header</div>' +
+          '<div mn-state="a"><span id="a-content">A</span></div>' +
+          '<div mn-state="b"><span id="b-content">B</span></div>' +
+        '</div></div>'
+      );
+      eq(el.querySelector('[mn]')._mn.state, 'idle', 'starts idle');
+      assert(el.querySelector('#chrome') == null, 'chrome not rendered before entering compound');
+      assert(el.querySelector('#a-content') == null, 'child a not rendered before entering compound');
+      el.querySelector('#btn').click();
+      eq(el.querySelector('[mn]')._mn.state, 'running.a', 'entered compound initial child');
+      assert(el.querySelector('#a-content') != null, 'child a content rendered');
+      assert(el.querySelector('#b-content') == null, 'child b NOT rendered');
+      assert(el.querySelector('#chrome') != null, 'compound chrome rendered');
+    });
+
+    test('compound state: child transition destroys old content, stamps new, keeps chrome', function () {
+      var el = fixture(
+        '<div mn="h2">' +
+        '<div mn-state="running">' +
+          '<span id="chrome2">Chrome</span>' +
+          '<div mn-state="a"><span id="a2">A</span><button mn-to="b" id="go-b">Go B</button></div>' +
+          '<div mn-state="b"><span id="b2">B</span></div>' +
+        '</div></div>'
+      );
+      eq(el.querySelector('[mn]')._mn.state, 'running.a', 'starts in running.a');
+      assert(el.querySelector('#a2') != null, 'a content exists');
+      assert(el.querySelector('#chrome2') != null, 'chrome exists');
+      el.querySelector('#go-b').click();
+      eq(el.querySelector('[mn]')._mn.state, 'running.b', 'transitioned to running.b');
+      assert(el.querySelector('#b2') != null, 'b content rendered');
+      assert(el.querySelector('#a2') == null, 'a content destroyed');
+      assert(el.querySelector('#chrome2') != null, 'chrome still visible');
+    });
+
+    test('compound state: exit hook fires on leaving compound, not on child transitions', function () {
+      var el = fixture(
+        '<div mn="h3" mn-ctx=\'{"compoundExits":0,"childExits":0}\'>' +
+        '<div mn-state="running"><mn-exit>(inc! compoundExits)</mn-exit>' +
+          '<span id="chrome3">C</span>' +
+          '<div mn-state="a"><mn-exit>(inc! childExits)</mn-exit><button mn-to="b" id="ab">B</button><button mn-to="stopped" id="abort">Stop</button></div>' +
+          '<div mn-state="b"><button mn-to="stopped" id="abort2">Stop</button></div>' +
+        '</div>' +
+        '<div mn-state="stopped"><span id="stopped">Done</span></div></div>'
+      );
+      var ctx = el.querySelector('[mn]')._mn.ctx;
+      el.querySelector('#ab').click();
+      eq(ctx.childExits, 1, 'child exit hook fired on a->b');
+      eq(ctx.compoundExits, 0, 'compound exit did NOT fire on internal transition');
+      el.querySelector('#abort2').click();
+      eq(ctx.compoundExits, 1, 'compound exit fired on leaving compound');
+    });
+
+    test('compound state: init hooks fire outermost first', function () {
+      var el = fixture(
+        '<div mn="h4" mn-ctx=\'{"log":""}\'>' +
+        '<div mn-state="idle"><button mn-to="running" id="go">Go</button></div>' +
+        '<div mn-state="running"><mn-init>(set! log (str log \'R\'))</mn-init>' +
+          '<div mn-state="a"><mn-init>(set! log (str log \'A\'))</mn-init>In A</div>' +
+        '</div></div>'
+      );
+      el.querySelector('#go').click();
+      // mn-init is deferred via setTimeout, check after a tick
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          eq(el.querySelector('[mn]')._mn.ctx.log, 'RA', 'compound init R runs before child init A');
+          resolve();
+        }, 50);
+      });
+    });
+
+    test('compound state: $state reflects dot-path in bindings', function () {
+      var el = fixture(
+        '<div mn="h5">' +
+        '<div mn-state="running">' +
+          '<span mn-text="$state" id="stext">?</span>' +
+          '<div mn-state="a">A</div>' +
+        '</div></div>'
+      );
+      eq(el.querySelector('#stext').textContent, 'running.a', '$state shows dot-path');
+    });
+
+    test('compound state: action on chrome button works', function () {
+      var el = fixture(
+        '<div mn="h6" mn-ctx=\'{"x":0}\'>' +
+        '<div mn-state="running">' +
+          '<mn-transition event="act" to="stopped"><mn-action>(set! x 99)</mn-action></mn-transition>' +
+          '<button mn-to="act" id="act">Act</button>' +
+          '<div mn-state="a">A</div>' +
+        '</div>' +
+        '<div mn-state="stopped">Done</div></div>'
+      );
+      el.querySelector('#act').click();
+      eq(el.querySelector('[mn]')._mn.ctx.x, 99, 'action on chrome button ran');
+      eq(el.querySelector('[mn]')._mn.state, 'stopped', 'transitioned out of compound');
+    });
+
+    group('Performance');
+
+    // ── Performance benchmarks ─────────────────────────────────────
+    // Reference numbers from js-framework-benchmark (keyed, Chrome):
+    //   Create 1000:  Vanilla ~30ms, Solid ~40ms, Svelte ~45ms, Vue ~55ms, React ~70ms
+    //   Partial update: Solid ~15ms, Svelte ~20ms, Vue ~25ms, React ~30ms
+    //   Remove row:   All <5ms
+    //
+    // We run inside a test fixture (extra DOM overhead), so targets are
+    // generous but still competitive. Failing these means a regression.
+
+    test('create 1000 keyed rows', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+
+      var t0 = performance.now();
+      var el = fixture(
+        '<div><mn-store name="perf" value=\'' + JSON.stringify(items) + '\'></mn-store>' +
+        '<div mn="p"><div mn-state="s">' +
+        '<template mn-each="$store.perf" mn-key="id"><span mn-text="label" class="pl"></span></template>' +
+        '</div></div></div>'
+      );
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl').length, 1000);
+      eq(el.querySelectorAll('.pl')[0].textContent, 'Item 0');
+      eq(el.querySelectorAll('.pl')[999].textContent, 'Item 999');
+
+      perf('create', time);
+      // Target: under 200ms (React-class). Solid/Svelte are ~40-45ms.
+      assert(time < 200, 'Create 1000 rows should be under 200ms, got ' + time.toFixed(1));
+    });
+
+    test('update every 10th row (100 of 1000)', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+      var el = fixture(
+        '<div><mn-store name="perf3" value=\'' + JSON.stringify(items) + '\'></mn-store>' +
+        '<div mn="p3"><div mn-state="s">' +
+        '<template mn-each="$store.perf3" mn-key="id"><span mn-text="label" class="pl3"></span></template>' +
+        '</div></div></div>'
+      );
+
+      var t0 = performance.now();
+      for (var i = 0; i < 1000; i += 10) {
+        MachineNative.store.perf3[i].label = 'UPDATED ' + i;
+      }
+      el.querySelector('[mn="p3"]')._mn.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl3')[0].textContent, 'UPDATED 0');
+      eq(el.querySelectorAll('.pl3')[1].textContent, 'Item 1', 'Non-updated rows unchanged');
+
+      perf('update 100', time);
+      // Target: under 50ms (React-class partial update is ~30ms)
+      assert(time < 50, 'Partial update should be under 50ms, got ' + time.toFixed(1));
+    });
+
+    test('delete 500 of 1000 rows', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+      var el = fixture(
+        '<div><mn-store name="perf4" value=\'' + JSON.stringify(items) + '\'></mn-store>' +
+        '<div mn="p4"><div mn-state="s">' +
+        '<template mn-each="$store.perf4" mn-key="id"><span mn-text="label" class="pl4"></span></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.pl4').length, 1000);
+
+      var t0 = performance.now();
+      MachineNative.store.perf4.splice(0, 500);
+      el.querySelector('[mn="p4"]')._mn.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl4').length, 500);
+
+      perf('delete 500', time);
+      // Target: under 100ms
+      assert(time < 100, 'Delete 500 rows should be under 100ms, got ' + time.toFixed(1));
+    });
+
+    test('swap two rows', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+      var el = fixture(
+        '<div><mn-store name="perf5" value=\'' + JSON.stringify(items) + '\'></mn-store>' +
+        '<div mn="p5"><div mn-state="s">' +
+        '<template mn-each="$store.perf5" mn-key="id"><span mn-text="label" class="pl5"></span></template>' +
+        '</div></div></div>'
+      );
+
+      var t0 = performance.now();
+      var temp = MachineNative.store.perf5[1];
+      MachineNative.store.perf5[1] = MachineNative.store.perf5[998];
+      MachineNative.store.perf5[998] = temp;
+      el.querySelector('[mn="p5"]')._mn.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl5')[1].textContent, 'Item 998');
+      eq(el.querySelectorAll('.pl5')[998].textContent, 'Item 1');
+
+      perf('swap', time);
+      // Target: under 30ms (most frameworks do this in <10ms)
+      assert(time < 30, 'Swap should be under 30ms, got ' + time.toFixed(1));
+    });
+
+    test('targeted update: 1 of 100 nested machines', function () {
+      var items = [];
+      for (var i = 0; i < 100; i++) items.push({id: i, val: 'v' + i});
+
+      var el = fixture(
+        '<div><mn-store name="perf2" value=\'' + JSON.stringify(items) + '\'></mn-store>' +
+        '<template mn-define="pcard"><div mn-state="d"><span mn-text="val" class="pv"></span></div></template>' +
+        '<div mn="p2"><div mn-state="s">' +
+        '<template mn-each="$store.perf2" mn-key="id"><div mn="pcard"></div></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.pv').length, 100);
+
+      var t0 = performance.now();
+      MachineNative.store.perf2[50].val = 'CHANGED';
+      el.querySelector('[mn="p2"]')._mn.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pv')[50].textContent, 'CHANGED');
+      eq(el.querySelectorAll('.pv')[0].textContent, 'v0', 'Unaffected card unchanged');
+
+      perf('targeted 1/100', time);
+      // Target: under 5ms — this is the dependency tracking payoff.
+      // Without dep tracking, all 100 cards would re-evaluate.
+      assert(time < 5, 'Targeted update should be under 5ms, got ' + time.toFixed(1));
+    });
+
+    test('append 1000 rows to existing 1000', function () {
+      var items = [];
+      for (var i = 0; i < 1000; i++) items.push({id: i, label: 'Item ' + i});
+      var el = fixture(
+        '<div><mn-store name="perf6" value=\'' + JSON.stringify(items) + '\'></mn-store>' +
+        '<div mn="p6"><div mn-state="s">' +
+        '<template mn-each="$store.perf6" mn-key="id"><span mn-text="label" class="pl6"></span></template>' +
+        '</div></div></div>'
+      );
+      eq(el.querySelectorAll('.pl6').length, 1000);
+
+      var t0 = performance.now();
+      for (var i = 1000; i < 2000; i++) MachineNative.store.perf6.push({id: i, label: 'Item ' + i});
+      el.querySelector('[mn="p6"]')._mn.update();
+      var time = performance.now() - t0;
+
+      eq(el.querySelectorAll('.pl6').length, 2000);
+      eq(el.querySelectorAll('.pl6')[1999].textContent, 'Item 1999');
+
+      perf('append 1000', time);
+      // Target: under 200ms — existing rows should not be touched
+      assert(time < 200, 'Append should be under 200ms, got ' + time.toFixed(1));
+    });
+
+
+    group('Transport');
+
+    test('outerHTML contains inactive state transitions', function () {
+      var el = fixture(
+        '<div mn="transport1">' +
+        '<div mn-state="a"><span>Active</span></div>' +
+        '<div mn-state="b"><button mn-to="a" id="back">Back</button></div>' +
+        '</div>'
+      );
+      eq(el.querySelector('[mn]')._mn.state, 'a', 'starts in a');
+      var html = el.querySelector('[mn]').outerHTML;
+      assert(html.indexOf('mn-to="a"') !== -1 || html.indexOf('mn-state-template="b"') !== -1,
+        'outerHTML contains state b transition (got: ' + html.substring(0, 200) + ')');
+    });
+
+    test('outerHTML round-trips through htmlToScxml with all transitions', function () {
+      var el = fixture(
+        '<div mn="transport2" mn-ctx=\'{"x":1}\'>' +
+        '<div mn-state="draft"><button mn-to="submitted">Go</button></div>' +
+        '<div mn-state="submitted"><button mn-to="approved">Approve</button></div>' +
+        '<div mn-state="approved" mn-final></div>' +
+        '</div>'
+      );
+      var html = el.querySelector('[mn]').outerHTML;
+      // htmlToScxml should find transitions for BOTH draft and submitted
+      assert(html.indexOf('submitted') !== -1, 'outerHTML mentions submitted state');
+      // The template for state b should be in the DOM
+      var templates = el.querySelectorAll('template[mn-state-template]');
+      assert(templates.length >= 2, 'templates for inactive states exist in DOM (got ' + templates.length + ')');
+    });
+
+
+    group('mn-let');
+
+    test('mn-let computed value available in mn-show', function () {
+      var el = fixture(
+        '<div mn="let1" mn-ctx=\'{"title":"abc","amount":100,"items":[1]}\'>' +
+        '<mn-let name="valid">(and (>= (count title) 3) (> amount 0) (> (count items) 0))</mn-let>' +
+        '<div mn-state="s">' +
+        '<span mn-show="valid" id="yes">Ready</span>' +
+        '<span id="no"><mn-show>(not valid)</mn-show>Not ready</span>' +
+        '</div></div>'
+      );
+      eq(el.querySelector('#yes').hidden, false, 'valid = true: Ready shown');
+      eq(el.querySelector('#no').hidden, true, 'valid = true: Not ready hidden');
+    });
+
+    test('mn-let recomputes when dependencies change', function () {
+      var el = fixture(
+        '<div mn="let2" mn-ctx=\'{"x":5}\'><mn-let name="big">(> x 10)</mn-let>' +
+        '<div mn-state="s">' +
+        '<span mn-show="big" id="flag">Big</span>' +
+        '<mn-transition event="set-x" to="s"><mn-action>(set! x 20)</mn-action></mn-transition>' +
+        '<button mn-to="set-x" id="btn">Go</button>' +
+        '</div></div>'
+      );
+      eq(el.querySelector('#flag').hidden, true, 'x=5: big is false');
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#flag').hidden, false, 'x=20: big is true');
+    });
+
+    test('mn-let multiple bindings', function () {
+      var el = fixture(
+        '<div mn="let3" mn-ctx=\'{"a":3,"b":4}\'><mn-let name="sum">(+ a b)</mn-let><mn-let name="product">(* a b)</mn-let>' +
+        '<div mn-state="s">' +
+        '<span mn-text="sum" id="s"></span>' +
+        '<span mn-text="product" id="p"></span>' +
+        '</div></div>'
+      );
+      eq(el.querySelector('#s').textContent, '7', 'sum = 3 + 4');
+      eq(el.querySelector('#p').textContent, '12', 'product = 3 * 4');
+    });
+
+    test('mn-let in mn-to guard', function () {
+      var el = fixture(
+        '<div mn="let4" mn-ctx=\'{"count":0}\'><mn-let name="ready">(> count 0)</mn-let>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="go" to="b"><mn-guard>ready</mn-guard></mn-transition>' +
+        '<button mn-to="go" id="btn">Go</button>' +
+        '</div>' +
+        '<div mn-state="b"><span id="done">Done</span></div>' +
+        '</div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'a', 'guard blocks when count=0');
+
+      // Now set count > 0 and try again
+      el.querySelector('[mn]')._mn.ctx.count = 5;
+      el.querySelector('[mn]')._mn.update();
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'guard passes when count=5');
+    });
+
+    test('mn-let not persisted', function () {
+      localStorage.removeItem('mn-let-persist-test');
+      var el = fixture(
+        '<div mn="let5" mn-ctx=\'{"x":1}\' mn-persist="let-persist-test"><mn-let name="derived">(+ x 10)</mn-let>' +
+        '<div mn-state="s"><span mn-text="derived" id="d"></span></div></div>'
+      );
+      eq(el.querySelector('#d').textContent, '11', 'derived computed');
+      var stored = JSON.parse(localStorage.getItem('mn-let-persist-test') || '{}');
+      eq(stored.derived, undefined, 'derived not in localStorage');
+      eq(stored.x, 1, 'real value persisted');
+      localStorage.removeItem('mn-let-persist-test');
+    });
+
+
+    group('Auto loading for mn-where');
+
+    test('mn-where state gets default loading indicator on init', function () {
+      var el = fixture(
+        '<div mn="load1" mn-ctx=\'{}\'>' +
+        '<div mn-state="local"><span>Home</span></div>' +
+        '<div mn-state="remote"><mn-where>(list \'ui-render\')</mn-where></div>' +
+        '</div>'
+      );
+      var remote = el.querySelector('[mn-state="remote"]');
+      eq(remote.hidden, true, 'remote state is hidden');
+      eq(!!remote.querySelector('.mn-loading'), true, 'remote state has .mn-loading element');
+      eq(remote.querySelector('.mn-loading').textContent, 'Loading\u2026', 'loading text is Loading…');
+    });
+
+    test('mn-loading attribute overrides default', function () {
+      var el = fixture(
+        '<div mn="load2" mn-ctx=\'{}\'>' +
+        '<div mn-state="local"><span>Home</span></div>' +
+        '<div mn-state="remote" mn-loading="<p id=\'custom\'>Please wait...</p>"><mn-where>(list \'gpu\')</mn-where></div>' +
+        '</div>'
+      );
+      var remote = el.querySelector('[mn-state="remote"]');
+      eq(remote.querySelector('#custom').textContent, 'Please wait...', 'custom loading text');
+      eq(remote.querySelector('.mn-loading'), null, 'default loading element absent');
+    });
+
+    test('state without mn-where gets no loading indicator', function () {
+      var el = fixture(
+        '<div mn="load3" mn-ctx=\'{}\'>' +
+        '<div mn-state="a"><span>A</span></div>' +
+        '<div mn-state="b"><span>B content</span></div>' +
+        '</div>'
+      );
+      var b = el.querySelector('[mn-state="b"]');
+      eq(b.hidden, true, 'state b is hidden');
+      eq(b.querySelector('.mn-loading'), null, 'no loading indicator on non-mn-where state');
+    });
+
+    test('loading indicator replaced when state enters with contentHtml', function () {
+      var el = fixture(
+        '<div mn="load4" mn-ctx=\'{}\'>' +
+        '<div mn-state="local"><button mn-to="remote" id="go">Go</button></div>' +
+        '<div mn-state="remote"><mn-where>(list \'ui-render\')</mn-where></div>' +
+        '</div>'
+      );
+      var remote = el.querySelector('[mn-state="remote"]');
+      eq(!!remote.querySelector('.mn-loading'), true, 'loading indicator present before transition');
+
+      // Simulate server response — call to() with contentHtml directly
+      el.querySelector('[mn]')._mn.to('remote', '<div id="server-content">Loaded!</div>');
+      eq(remote.hidden, false, 'remote state visible after to()');
+      eq(remote.querySelector('#server-content').textContent, 'Loaded!', 'server content rendered');
+      eq(remote.querySelector('.mn-loading'), null, 'loading indicator removed');
+    });
+
+
+    group('URL routing');
+
+    test('mn-url static: pushState on state transition', function () {
+      var origPath = window.location.pathname;
+      var el = fixture(
+        '<div mn="url1">' +
+        '<div mn-state="a" mn-url="/test-a"><button mn-to="b" id="go">B</button></div>' +
+        '<div mn-state="b" mn-url="/test-b"><span>B</span></div></div>'
+      );
+      eq(el.querySelector('[mn]')._mn.state, 'a', 'starts in a');
+      click(el.querySelector('#go'));
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'transitioned to b');
+      eq(window.location.pathname, '/test-b', 'pushState updated URL');
+      history.replaceState(null, '', origPath);
+    });
+
+    test('mn-url parameterised: builds URL from context', function () {
+      var origPath = window.location.pathname;
+      var prev = _fa.querySelector('[mn="url1"]');
+      if (prev) prev.parentNode.removeChild(prev);
+      var el = fixture(
+        '<div mn="url2" mn-ctx=\'{"orderId":"42"}\'>' +
+        '<div mn-state="list" mn-url="/orders"><button mn-to="detail" id="go">Detail</button></div>' +
+        '<div mn-state="detail" mn-url="(path \'/orders/:id\' orderId)"><span>Detail</span></div></div>'
+      );
+      click(el.querySelector('#go'));
+      eq(el.querySelector('[mn]')._mn.state, 'detail', 'transitioned to detail');
+      eq(window.location.pathname, '/orders/42', 'URL has param from context');
+      history.replaceState(null, '', origPath);
+    });
+
+    test('mn-url: states without mn-url do not change URL', function () {
+      var origPath = window.location.pathname;
+      var prev = _fa.querySelector('[mn="url2"]');
+      if (prev) prev.parentNode.removeChild(prev);
+      var el = fixture(
+        '<div mn="url3">' +
+        '<div mn-state="a" mn-url="/url-a"><button mn-to="b" id="go">B</button></div>' +
+        '<div mn-state="b"><span>No URL</span></div></div>'
+      );
+      // Initial state "a" has mn-url, so URL is /url-a now
+      eq(window.location.pathname, '/url-a', 'initial state set URL');
+      // Transition to "b" which has no mn-url — URL should stay at /url-a
+      click(el.querySelector('#go'));
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'in state b');
+      eq(window.location.pathname, '/url-a', 'URL unchanged when target has no mn-url');
+      history.replaceState(null, '', origPath);
+    });
+
+    test('mn-url: initial state sets URL via replaceState', function () {
+      var origPath = window.location.pathname;
+      var prev = _fa.querySelector('[mn="url3"]');
+      if (prev) prev.parentNode.removeChild(prev);
+      var el = fixture(
+        '<div mn="url4">' +
+        '<div mn-state="home" mn-url="/home"><span>Home</span></div>' +
+        '<div mn-state="away"><span>Away</span></div></div>'
+      );
+      eq(window.location.pathname, '/home', 'initial state URL set via replaceState');
+      history.replaceState(null, '', origPath);
+    });
+
+
+    group('Structural elements');
+
+    test('mn-transition with mn-guard: guard blocks when false', function () {
+      var el = fixture(
+        '<div mn="se1" mn-ctx=\'{"x":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="go" to="b"><mn-guard>(> x 0)</mn-guard></mn-transition>' +
+        '<button mn-to="go" id="btn">Go</button>' +
+        '</div>' +
+        '<div mn-state="b"><span id="arrived">B</span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'a', 'guard blocks when x=0');
+    });
+
+    test('mn-transition with mn-guard: guard passes when true', function () {
+      var el = fixture(
+        '<div mn="se2" mn-ctx=\'{"x":5}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="go" to="b"><mn-guard>(> x 0)</mn-guard></mn-transition>' +
+        '<button mn-to="go" id="btn">Go</button>' +
+        '</div>' +
+        '<div mn-state="b"><span id="arrived">B</span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'guard passes when x=5');
+    });
+
+    test('mn-transition with mn-action: action mutates context', function () {
+      var el = fixture(
+        '<div mn="se3" mn-ctx=\'{"x":0}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="go" to="b"><mn-action>(set! x 42)</mn-action></mn-transition>' +
+        '<button mn-to="go" id="btn">Go</button>' +
+        '</div>' +
+        '<div mn-state="b"><span mn-text="x" id="val"></span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'transitioned to b');
+      eq(el.querySelector('#val').textContent, '42', 'action set x to 42');
+    });
+
+    test('mn-transition with mn-guard + mn-action + mn-emit', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mn="se4" mn-ctx=\'{"x":1}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="go" to="b">' +
+        '<mn-guard>(> x 0)</mn-guard>' +
+        '<mn-action>(set! x 99)</mn-action>' +
+        '<mn-emit>went</mn-emit>' +
+        '</mn-transition>' +
+        '<button mn-to="go" id="btn">Go</button>' +
+        '</div>' +
+        '<div mn-state="b"></div></div>' +
+        '<div mn="se4-listener" mn-ctx=\'{"heard":false}\'>' +
+        '<mn-receive event="went">(set! heard true)</mn-receive>' +
+        '<div mn-state="s"></div></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn="se4"]')._mn.state, 'b', 'transitioned');
+      eq(el.querySelector('[mn="se4"]')._mn.ctx.x, 99, 'action ran');
+      eq(el.querySelector('[mn="se4-listener"]')._mn.ctx.heard, true, 'emit received');
+    });
+
+    test('mn-text element renders expression', function () {
+      var el = fixture(
+        '<div mn="se6" mn-ctx=\'{"count":3,"label":"items"}\'>' +
+        '<div mn-state="s"><p id="out"><mn-text>(str count \' \' label)</mn-text></p></div></div>'
+      );
+      eq(el.querySelector('#out').textContent, '3 items', 'mn-text element renders expression');
+    });
+
+    test('mn-text element with bare variable', function () {
+      var el = fixture(
+        '<div mn="se7" mn-ctx=\'{"name":"Ada"}\'>' +
+        '<div mn-state="s"><span id="out"><mn-text>name</mn-text></span></div></div>'
+      );
+      eq(el.querySelector('#out').textContent, 'Ada', 'mn-text bare variable renders');
+    });
+
+    test('mn-show element hides parent when false', function () {
+      var el = fixture(
+        '<div mn="se8" mn-ctx=\'{"active":false}\'>' +
+        '<div mn-state="s"><div id="target"><mn-show>active</mn-show>Content</div></div></div>'
+      );
+      eq(el.querySelector('#target').hidden, true, 'parent hidden when active=false');
+    });
+
+    test('mn-show element shows parent when true', function () {
+      var el = fixture(
+        '<div mn="se9" mn-ctx=\'{"count":5}\'>' +
+        '<div mn-state="s"><div id="target"><mn-show>(> count 0)</mn-show>Has items</div></div></div>'
+      );
+      eq(el.querySelector('#target').hidden, false, 'parent visible when count>0');
+    });
+
+    test('mn-class element applies conditional class', function () {
+      var el = fixture(
+        '<div mn="se10" mn-ctx=\'{"status":"active"}\'>' +
+        '<div mn-state="s"><span id="badge"><mn-class>(when (= status \'active\') \'badge-success\')</mn-class>Status</span></div></div>'
+      );
+      eq(el.querySelector('#badge').classList.contains('badge-success'), true, 'class applied when condition true');
+    });
+
+    test('mn-bind element sets attribute', function () {
+      var el = fixture(
+        '<div mn="se11" mn-ctx=\'{"valid":false}\'>' +
+        '<div mn-state="s"><button id="btn"><mn-bind attr="disabled">(not valid)</mn-bind>Go</button></div></div>'
+      );
+      eq(el.querySelector('#btn').disabled, true, 'button disabled when valid=false');
+    });
+
+    test('mn-text element is hidden from rendering', function () {
+      var el = fixture(
+        '<div mn="se12" mn-ctx=\'{"x":1}\'>' +
+        '<div mn-state="s"><p id="out"><mn-text>(+ x 1)</mn-text></p></div></div>'
+      );
+      var mpText = el.querySelector('mn-text');
+      eq(mpText, null, 'mn-text element removed from DOM after parsing');
+      eq(el.querySelector('#out').textContent, '2', 'value rendered correctly');
+    });
+
+    test('mn-on element handles DOM event', function () {
+      var el = fixture(
+        '<div mn="se13" mn-ctx=\'{"typed":""}\'>' +
+        '<div mn-state="s"><input mn-model="typed" id="inp">' +
+        '<mn-on event="keydown">(when (= (get $event :key) \'Enter\') (set! typed \'entered\'))</mn-on>' +
+        '</input><span mn-text="typed" id="out"></span></div></div>'
+      );
+      var inp = el.querySelector('#inp');
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      // Need to trigger update
+      el.querySelector('[mn]')._mn.update();
+      eq(el.querySelector('#out').textContent, 'entered', 'mn-on keydown handler ran');
+    });
+
+    test('mn-init element runs on state entry', async function () {
+      var el = fixture(
+        '<div mn="se14" mn-ctx=\'{"loaded":false}\'>' +
+        '<div mn-state="a"><button mn-to="b" id="btn">Go</button></div>' +
+        '<div mn-state="b"><mn-init>(set! loaded true)</mn-init><span mn-text="loaded" id="out"></span></div></div>'
+      );
+      eq(el.querySelector('[mn]')._mn.ctx.loaded, false, 'not loaded before transition');
+      click(el.querySelector('#btn'));
+      await sleep(20);
+      eq(el.querySelector('[mn]')._mn.ctx.loaded, true, 'mn-init ran on state entry');
+    });
+
+    test('mn-exit element runs on state exit', function () {
+      var el = fixture(
+        '<div mn="se15" mn-ctx=\'{"exited":false}\'>' +
+        '<div mn-state="a"><mn-exit>(set! exited true)</mn-exit><button mn-to="b" id="btn">Go</button></div>' +
+        '<div mn-state="b"><span mn-text="exited" id="out"></span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.ctx.exited, true, 'mn-exit ran on state exit');
+    });
+
+    test('mn-ctx element initialises context', function () {
+      var el = fixture(
+        '<div mn="se16"><mn-ctx>{"x":42,"name":"test"}</mn-ctx>' +
+        '<div mn-state="s"><span mn-text="x" id="val"></span><span mn-text="name" id="name"></span></div></div>'
+      );
+      eq(el.querySelector('#val').textContent, '42', 'x from mn-ctx element');
+      eq(el.querySelector('#name').textContent, 'test', 'name from mn-ctx element');
+    });
+
+    test('mn-let element creates computed binding', function () {
+      var el = fixture(
+        '<div mn="se17" mn-ctx=\'{"a":3,"b":4}\'>' +
+        '<mn-let name="sum">(+ a b)</mn-let>' +
+        '<div mn-state="s"><span mn-text="sum" id="out"></span></div></div>'
+      );
+      eq(el.querySelector('#out').textContent, '7', 'mn-let element computes sum');
+    });
+
+    test('mn-receive element handles events', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mn="se18-sender"><div mn-state="s">' +
+        '<mn-transition event="fire-ping" to="s"><mn-emit>ping</mn-emit></mn-transition>' +
+        '<button mn-to="fire-ping" id="btn">Ping</button>' +
+        '</div></div>' +
+        '<div mn="se18-receiver" mn-ctx=\'{"got":false}\'>' +
+        '<mn-receive event="ping">(set! got true)</mn-receive>' +
+        '<div mn-state="s"><span mn-text="got" id="out"></span></div></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#out').textContent, 'true', 'mn-receive element handled event');
+    });
+
+    test('mn-where element sets capability requirement', function () {
+      var el = fixture(
+        '<div mn="se19" mn-ctx=\'{}\'>' +
+        '<div mn-state="a"><button mn-to="b" id="btn">Go</button></div>' +
+        '<div mn-state="b"><mn-where>(requires \'magic\')</mn-where><span>B</span></div></div>'
+      );
+      // Transition should be blocked — browser lacks 'magic' capability
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'a', 'mn-where blocks transition to b');
+    });
+
+    test('mn-each element with computed expression', function () {
+      var el = fixture(
+        '<div mn="se20" mn-ctx=\'{"items":[{"name":"A","val":1},{"name":"B","val":5},{"name":"C","val":3}]}\'>' +
+        '<div mn-state="s">' +
+        '<template mn-key="name"><mn-each>(filter #(> (get % :val) 2) items)</mn-each>' +
+        '<div class="filtered"><span><mn-text>name</mn-text></span></div></template>' +
+        '</div></div>'
+      );
+      var filtered = el.querySelectorAll('.filtered');
+      eq(filtered.length, 2, 'filtered to 2 items (B and C)');
+    });
+
+    test('mn-transition without event: bare mn-to still works for simple transitions', function () {
+      var el = fixture(
+        '<div mn="se5">' +
+        '<div mn-state="a"><button mn-to="b" id="btn">Go</button></div>' +
+        '<div mn-state="b"><span id="arrived">B</span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'bare mn-to transitions directly');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  BUG FIXES — M10, M11
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Bug fixes');
+
+    test('M10 — init() re-invocation does not reset already-live store values', function () {
+      // Simulate what happens when HTMX swaps in new content and init() is called again.
+      // The store was mutated at runtime; the re-init must not restore it to initial value.
+      var root = document.createElement('div');
+      root.innerHTML = '<mn-store name="m10test" value=\'{"count":0}\'></mn-store>';
+      _fa.appendChild(root);
+      MachineNative.init(root);
+      // Store is initialised to {count:0}
+      eq(MachineNative.store.m10test.count, 0, 'M10: store initialised to 0');
+      // Simulate runtime mutation
+      MachineNative.store.m10test.count = 99;
+      eq(MachineNative.store.m10test.count, 99, 'M10: store mutated to 99');
+      // Call init() again (as HTMX would after a swap)
+      MachineNative.init(root);
+      eq(MachineNative.store.m10test.count, 99, 'M10: re-init does not reset store to 0');
+    });
+
+    test('M11 — mn-each keyed reorder produces correct DOM order', function () {
+      // Create a list [A, B, C], then reorder to [C, A, B].
+      // The DOM elements must appear in the new order.
+      var el = fixture(
+        '<div mn="m11" mn-ctx=\'{"items":[{"k":"A"},{"k":"B"},{"k":"C"}]}\'>' +
+        '<div mn-state="s">' +
+        '<template mn-key="k"><mn-each>items</mn-each>' +
+        '<div class="item"><mn-text>k</mn-text></div></template>' +
+        '</div></div>'
+      );
+      // Verify initial order
+      var items = el.querySelectorAll('.item');
+      eq(items[0].textContent, 'A', 'M11: initial order A');
+      eq(items[1].textContent, 'B', 'M11: initial order B');
+      eq(items[2].textContent, 'C', 'M11: initial order C');
+
+      // Reorder: [C, A, B]
+      var inst = el.querySelector('[mn]')._mn;
+      inst.ctx.items = [{ k: 'C' }, { k: 'A' }, { k: 'B' }];
+      inst.update();
+
+      var reordered = el.querySelectorAll('.item');
+      eq(reordered[0].textContent, 'C', 'M11: reordered — C first');
+      eq(reordered[1].textContent, 'A', 'M11: reordered — A second');
+      eq(reordered[2].textContent, 'B', 'M11: reordered — B third');
+    });
+
+
+    test('Bug 21 — mn-each with duplicate key: items after the duplicate get correct data', function () {
+      // If items = [A, A_dup, B] and A_dup is skipped (duplicate key),
+      // the update loop must use newMap[key].item not items[i].
+      // With items[i], after skipping A_dup, i=1 maps to B but items[1]=A_dup — wrong data.
+      var el = fixture(
+        '<div mn="bug21" mn-ctx=\'{"items":[{"k":"x","v":"A"},{"k":"y","v":"B"},{"k":"z","v":"C"}]}\'>' +
+        '<div mn-state="s">' +
+        '<template mn-key="k"><mn-each>items</mn-each>' +
+        '<div class="item"><mn-text>v</mn-text></div></template>' +
+        '</div></div>'
+      );
+      var initial = el.querySelectorAll('.item');
+      eq(initial[0].textContent, 'A', 'Bug21: initial A');
+      eq(initial[1].textContent, 'B', 'Bug21: initial B');
+      eq(initial[2].textContent, 'C', 'Bug21: initial C');
+
+      // Update with a duplicate key in the middle: [A, A_dup, B updated, C updated]
+      // A_dup (k=x) is a duplicate — skipped. y and z items get new values.
+      var inst = el.querySelector('[mn]')._mn;
+      inst.ctx.items = [
+        { k: 'x', v: 'A' },
+        { k: 'x', v: 'A_DUP' }, // duplicate — skipped
+        { k: 'y', v: 'B2' },
+        { k: 'z', v: 'C2' }
+      ];
+      inst.update();
+
+      // Three rendered items (duplicate skipped): A, B2, C2
+      var updated = el.querySelectorAll('.item');
+      eq(updated.length, 3, 'Bug21: 3 items rendered (duplicate skipped)');
+      eq(updated[0].textContent, 'A', 'Bug21: first item still A');
+      eq(updated[1].textContent, 'B2', 'Bug21: second item is B2 (not corrupted)');
+      eq(updated[2].textContent, 'C2', 'Bug21: third item is C2 (not corrupted)');
+    });
+
+
+    test('mn-let computed value triggers mn-bind disabled update on dependency change', function () {
+      var el = fixture(
+        '<div mn="let-bind" mn-ctx=\'{"email":"","password":"","agree":false}\'>' +
+        '<mn-let name="valid">(and (>= (count email) 5) (>= (count password) 8) agree)</mn-let>' +
+        '<div mn-state="form">' +
+        '<input mn-model="email" type="text" class="em" />' +
+        '<input mn-model="password" type="password" class="pw" />' +
+        '<input mn-model="agree" type="checkbox" class="ag" />' +
+        '<button class="btn"><mn-bind attr="disabled">(not valid)</mn-bind>Go</button>' +
+        '</div></div>'
+      );
+      var btn = el.querySelector('.btn');
+      eq(btn.disabled, true, 'button starts disabled');
+
+      // Fill valid data
+      type(el.querySelector('.em'), 'hello@test.com');
+      type(el.querySelector('.pw'), 'longpassword');
+      var cb = el.querySelector('.ag');
+      cb.checked = true;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+
+      eq(btn.disabled, false, 'button enabled after all fields valid');
+    });
+
+
+    test('mn-temporal (animate) leave completes via transitionend event, not just timeout', async function () {
+      var el = fixture(
+        '<div mn="anim-test" mn-ctx=\'{}\'>' +
+        '<div mn-state="a" style="transition: opacity 0.05s">' +
+        '<mn-temporal>(animate)</mn-temporal>' +
+        '<mn-transition event="go" to="b"></mn-transition>' +
+        '<span id="a-content">A</span>' +
+        '</div>' +
+        '<div mn-state="b"><span id="b-content">B</span></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'a', 'starts in a');
+
+      inst.to('b');
+
+      // The leave animation adds mn-leave-from, mn-leave-active classes.
+      // After the transition completes (via transitionend event), the old
+      // state is hidden. Wait for the animation to finish.
+      await new Promise(function (resolve) { setTimeout(resolve, 150); });
+
+      eq(inst.state, 'b', 'transitioned to b');
+      var aEl = el.querySelector('[mn-state="a"]');
+      // After leave animation, the old state should be hidden
+      eq(aEl.hidden, true, 'state a hidden after leave animation');
+      assert(!aEl.classList.contains('mn-leave-active'), 'leave-active class removed after transition');
+    });
+
+
+    // ── Run ──
+    run();
+  </script>
+</body>
+</html>

@@ -49,8 +49,8 @@ Quality
 
 | # | Scenario | Expected response |
 |---|---------|-------------------|
-| QS1 | Developer writes `(set! x 5)` inside `mp-text` | Framework throws with function name + guidance |
-| QS2 | Malformed JSON in `mp-ctx='not json'` | Framework warns, uses empty context, page continues |
+| QS1 | Developer writes `(set! x 5)` inside `mn-text` | Framework throws with function name + guidance |
+| QS2 | Malformed JSON in `mn-ctx='not json'` | Framework warns, uses empty context, page continues |
 | QS3 | 1000-row list created | Renders in < 200ms |
 | QS4 | 1 of 100 nested machines updated | Update completes in < 5ms |
 | QS5 | Machine destroyed | All listeners (outside, popstate, inter-machine) cleaned up |
