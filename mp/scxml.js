@@ -17,11 +17,12 @@
  *   <transition event="..." target="..." cond="...">
  *
  * MP extensions (mp- attributes, same prefix as HTML):
- *   mp-to="(s-expression)"       — unified transition (guard + action + target + emit)
- *   mp-init="(s-expression)"     — state entry hook
- *   mp-exit="(s-expression)"     — state exit hook
- *   mp-where="(requires 'cap')"  — capability-based routing
- *   mp-temporal="(s-expression)" — temporal behaviour: (animate), (after), (every)
+ *   <mp-guard>expr</mp-guard>    — transition guard (child element)
+ *   <mp-action>expr</mp-action>  — transition action (child element)
+ *   <mp-init>expr</mp-init>        — state entry hook
+ *   <mp-exit>expr</mp-exit>        — state exit hook
+ *   <mp-where>expr</mp-where>      — capability-based routing
+ *   <mp-temporal>expr</mp-temporal> — temporal behaviour: (animate), (after), (every)
  *
  * @version 0.5.0
  * @license MIT
@@ -38,7 +39,7 @@
 
 
   function _unescXml(str) {
-    return str.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+    return str.replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
   }
 
 
@@ -48,7 +49,7 @@
   //
   // Parses a subset of XML sufficient for SCXML. Returns a tree of
   // { tag, attrs, children } nodes. No namespace resolution, no DTD,
-  // no CDATA — just elements, attributes, and text.
+  // Supports CDATA sections for s-expression content in guard/action elements.
 
   function parseXML(str) {
     var pos = 0;
@@ -136,7 +137,18 @@
           // Comment inside element
           if (str.substring(pos, pos + 4) === '<!--') {
             pos = str.indexOf('-->', pos);
-            if (pos !== -1) pos += 3;
+            if (pos === -1) throw new Error('[mp-scxml] unterminated comment inside element');
+            pos += 3;
+            continue;
+          }
+          // CDATA section
+          if (str.substring(pos, pos + 9) === '<![CDATA[') {
+            var cdataStart = pos + 9;
+            var cdataEnd = str.indexOf(']]>', cdataStart);
+            if (cdataEnd === -1) throw new Error('[mp-scxml] unterminated CDATA section');
+            var cdataText = str.substring(cdataStart, cdataEnd);
+            children.push({ tag: '#text', text: cdataText, attrs: {}, children: [] });
+            pos = cdataEnd + 3;
             continue;
           }
           var child = parseNode();
@@ -146,7 +158,7 @@
           var textStart = pos;
           while (pos < str.length && str[pos] !== '<') pos++;
           var text = str.substring(textStart, pos).trim();
-          if (text) children.push({ tag: '#text', text: text, attrs: {}, children: [] });
+          if (text) children.push({ tag: '#text', text: _unescXml(text), attrs: {}, children: [] });
         }
       }
 
@@ -183,7 +195,7 @@
 
     // mp-ctx attribute carries the full context as JSON (round-trips cleanly)
     if (root.attrs['mp-ctx']) {
-      try { context = JSON.parse(root.attrs['mp-ctx'].replace(/&apos;/g, "'")); }
+      try { context = JSON.parse(root.attrs['mp-ctx']); }
       catch (e) { console.warn('[mp-scxml] failed to parse mp-ctx: ' + e.message); }
     }
 
@@ -275,6 +287,10 @@
     if (node.attrs['mp-exit']) def.exit = node.attrs['mp-exit'];
     if (node.attrs['mp-url']) def.url = node.attrs['mp-url'];
 
+    // mp-temporal: browser-evaluated temporal expression (animate, after, every)
+    // Stored on the definition so it round-trips through compile → snapshot → HTML.
+    if (node.attrs['mp-temporal']) def.temporal = node.attrs['mp-temporal'];
+
     // Temporal behaviour
     if (node.attrs['mp-after']) {
       def.after = {
@@ -307,9 +323,23 @@
         var childFinal = parseState(child, true);
         childStates[childFinal.id] = childFinal.def;
       } else if (child.tag === 'onentry') {
+        if (def.init) console.warn('[mp-scxml] state "' + stateId + '" has both mp-init attribute and <onentry> child — <onentry> takes precedence');
         def.init = extractActions(child);
       } else if (child.tag === 'onexit') {
+        if (def.exit) console.warn('[mp-scxml] state "' + stateId + '" has both mp-exit attribute and <onexit> child — <onexit> takes precedence');
         def.exit = extractActions(child);
+      } else if (child.tag === 'mp-where') {
+        var whereText = '';
+        for (var wi = 0; wi < child.children.length; wi++) {
+          if (child.children[wi].tag === '#text') whereText += child.children[wi].text;
+        }
+        def.where = whereText.trim();
+      } else if (child.tag === 'mp-temporal') {
+        var temporalText = '';
+        for (var ti2 = 0; ti2 < child.children.length; ti2++) {
+          if (child.children[ti2].tag === '#text') temporalText += child.children[ti2].text;
+        }
+        if (temporalText.trim()) def.temporal = temporalText.trim();
       }
     }
 
@@ -325,33 +355,46 @@
 
   // ── Transition parser ─────────────────────────────────────────────────
   //
-  // Two modes, same as HTML mp-to:
+  // Parses a <transition> element from SCXML XML.
   //   target="stateName"         — bare state name, simple transition
-  //   mp-to="(s-expression)"     — unified s-expression with guards, actions, emits
-  //
-  // Transitions use target (bare) or mp-to (s-expression). One rule everywhere.
+  //   cond="expr"                — SCXML standard condition (guard)
+  //   <mp-guard>expr</mp-guard>  — structural child guard
+  //   <mp-action>expr</mp-action>— structural child action
+  //   <mp-emit>name</mp-emit>    — structural child emit
 
   function parseTransition(node) {
     var event = node.attrs.event || null;
     var target = node.attrs.target || null;
-    var mpTo = node.attrs['mp-to'] || null;
 
     var def = {};
 
-    if (mpTo) {
-      // S-expression mode: decompose into canonical { target, guard, action, emit }
-      var slots = engine.decomposeMpTo(mpTo);
-      if (slots.target) def.target = slots.target;
-      if (slots.guard) def.guard = slots.guard;
-      if (slots.action) def.action = slots.action;
-      if (slots.emit) def.emit = slots.emit;
-    } else if (node.attrs.cond && target) {
-      // W3C SCXML cond: guard + bare target
-      def.target = target;
-      def.guard = node.attrs.cond;
-    } else {
-      // Bare target mode: simple transition
-      def.target = target;
+    def.target = target || null;
+    if (node.attrs.cond) def.guard = node.attrs.cond;
+
+    // Structural child elements: <mp-guard>, <mp-action>, <mp-emit>
+    for (var ci = 0; ci < node.children.length; ci++) {
+      var child = node.children[ci];
+      if (child.tag === 'mp-guard') {
+        var guardText = '';
+        for (var gi = 0; gi < child.children.length; gi++) {
+          if (child.children[gi].tag === '#text') guardText += child.children[gi].text;
+        }
+        if (guardText.trim()) def.guard = guardText.trim();
+      }
+      if (child.tag === 'mp-action') {
+        var actionText = '';
+        for (var ai = 0; ai < child.children.length; ai++) {
+          if (child.children[ai].tag === '#text') actionText += child.children[ai].text;
+        }
+        if (actionText.trim()) def.action = actionText.trim();
+      }
+      if (child.tag === 'mp-emit') {
+        var emitText = '';
+        for (var ei = 0; ei < child.children.length; ei++) {
+          if (child.children[ei].tag === '#text') emitText += child.children[ei].text;
+        }
+        if (emitText.trim()) def.emit = emitText.trim();
+      }
     }
 
     // Where: capability-based routing (on transitions)
@@ -371,7 +414,7 @@
   function extractActions(node) {
     for (var i = 0; i < node.children.length; i++) {
       var child = node.children[i];
-      if (child.tag === 'script' || child.tag === 'action') {
+      if (child.tag === 'script' || child.tag === 'action' || child.tag === 'mp-action') {
         // Action text content
         for (var j = 0; j < child.children.length; j++) {
           if (child.children[j].tag === '#text') return child.children[j].text;

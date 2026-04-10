@@ -14,7 +14,7 @@ Extract the engine into `mp/engine.js` as a standalone UMD module with zero plat
 - Parser with cache (`parse`)
 - Evaluator with depth limit (`seval`, `sevalInner`)
 - Pure evaluator (`sevalPure`)
-- Standard library (~60 functions, `stdlib`)
+- Standard library (~120 functions, `stdlib`)
 - First-class function values (`firstClass`)
 - Expression interface (`eval` for reads, `exec` for writes)
 - Scope management (`makeScope`, `applyScope`)
@@ -41,6 +41,5 @@ Extract the engine into `mp/engine.js` as a standalone UMD module with zero plat
 - **UMD module** — works with require(), define(), or as a global.
 
 ## Consequences
-- The frontend `mp/browser.js` currently embeds a copy of the engine code. This is technical debt (D1) — a build script should concatenate `mp/engine.js` + browser DOM code into the single distributable.
-- Until the build script exists, changes to the engine must be manually synced to both files.
+- The frontend `mp/browser.js` imports the engine at runtime via UMD — no build step, no duplication.
 - The engine API is internal — it's stable for machine_perfect consumers but not a public npm package (yet).

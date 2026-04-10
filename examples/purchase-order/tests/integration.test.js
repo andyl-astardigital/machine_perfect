@@ -76,13 +76,12 @@ async function fillAndSubmitOrder(page, title, amount, items) {
   // Add items
   for (var i = 0; i < items.length; i++) {
     await page.type('input[mp-model="newItem"]', items[i]);
-    await page.click('button[mp-to*="push!"]');
+    await page.click('button[mp-to="add-item"]');
     await new Promise(function (r) { setTimeout(r, 200); });
-    // Clear input for next item
   }
 
   // Click submit
-  var submitBtn = await page.$('button[mp-to*="to submitted"]');
+  var submitBtn = await page.$('button[mp-to="submit"]');
   assert(submitBtn, 'submit button exists');
   await submitBtn.click();
 
@@ -137,7 +136,7 @@ test('navbar — orders and create buttons navigate correctly', async function (
     assert.strictEqual(createState, 'create', 'navigated to create');
 
     // Navigate back to orders
-    await page.click('.navbar button[mp-to*="to orders"]');
+    await page.click('#btn-nav-orders');
     await waitForState(page, 'orders', 15000);
     var ordersState = await page.evaluate(function () {
       return document.querySelector('[mp="app"]')._mp.state;
@@ -169,7 +168,7 @@ test('full journey: create order → pipeline approves → navigate to orders �
         hasOrderApproved: html.indexOf('Order Approved') !== -1,
         hasOrderRejected: html.indexOf('Order Rejected') !== -1,
         scxmlFinalState: (html.match(/initial="([^"]+)"/) || [])[1] || 'none',
-        hasViewAllBtn: !!stateEl.querySelector('button[mp-to*="order-approved"]')
+        hasViewAllBtn: !!stateEl.querySelector('#btn-view-all-orders')
       };
     });
     assert.strictEqual(pipeline.hasOrderApproved, true, 'pipeline approved the order');
@@ -178,7 +177,7 @@ test('full journey: create order → pipeline approves → navigate to orders �
     assert.strictEqual(pipeline.hasViewAllBtn, true, 'View All Orders button present');
 
     // ── Step 3: Click View All Orders → navigate to order list ──
-    await page.click('[mp-state="submitted"] button[mp-to*="order-approved"]');
+    await page.click('#btn-view-all-orders');
     await waitForState(page, 'orders', 15000);
 
     // ── Step 4: Verify order appears in list ──
@@ -221,7 +220,7 @@ test('two orders submitted → both appear in order list with correct stats', as
     assert.strictEqual(first, true, 'first order approved');
 
     // Navigate back via View All Orders
-    await page.click('[mp-state="submitted"] button[mp-to*="order-approved"]');
+    await page.click('#btn-view-all-orders');
     await waitForState(page, 'orders', 15000);
 
     // ── Second order ──
@@ -233,7 +232,7 @@ test('two orders submitted → both appear in order list with correct stats', as
     assert.strictEqual(second, true, 'second order approved');
 
     // Navigate back
-    await page.click('[mp-state="submitted"] button[mp-to*="order-approved"]');
+    await page.click('#btn-view-all-orders');
     await waitForState(page, 'orders', 15000);
 
     // ── Verify both orders in list ──
@@ -269,7 +268,7 @@ test('form validation — submit button disabled without title/amount/items', as
 
     // Submit button should be disabled with empty form
     var disabled = await page.evaluate(function () {
-      var btn = document.querySelector('button[mp-to*="to submitted"]');
+      var btn = document.querySelector('button[mp-to="submit"]');
       return btn ? btn.disabled : 'no button';
     });
     assert.strictEqual(disabled, true, 'submit disabled when form is empty');
@@ -278,7 +277,7 @@ test('form validation — submit button disabled without title/amount/items', as
     await page.type('input[mp-model="title"]', 'Incomplete Order');
     await new Promise(function (r) { setTimeout(r, 200); });
     var afterTitle = await page.evaluate(function () {
-      return document.querySelector('button[mp-to*="to submitted"]').disabled;
+      return document.querySelector('button[mp-to="submit"]').disabled;
     });
     assert.strictEqual(afterTitle, true, 'submit disabled with only title');
 
@@ -288,16 +287,16 @@ test('form validation — submit button disabled without title/amount/items', as
     await amountInput.type('100');
     await new Promise(function (r) { setTimeout(r, 200); });
     var afterAmount = await page.evaluate(function () {
-      return document.querySelector('button[mp-to*="to submitted"]').disabled;
+      return document.querySelector('button[mp-to="submit"]').disabled;
     });
     assert.strictEqual(afterAmount, true, 'submit disabled with no items');
 
     // Add item — now enabled
     await page.type('input[mp-model="newItem"]', 'Final Item');
-    await page.click('button[mp-to*="push!"]');
+    await page.click('button[mp-to="add-item"]');
     await new Promise(function (r) { setTimeout(r, 300); });
     var afterItem = await page.evaluate(function () {
-      return document.querySelector('button[mp-to*="to submitted"]').disabled;
+      return document.querySelector('button[mp-to="submit"]').disabled;
     });
     assert.strictEqual(afterItem, false, 'submit enabled with title + amount + item');
   });
@@ -328,7 +327,7 @@ test('cancel from create form returns to orders without submitting', async funct
     await amountInput.type('999');
 
     // Click navbar Orders button to cancel
-    await page.click('.navbar button[mp-to*="to orders"]');
+    await page.click('#btn-nav-orders');
     await waitForState(page, 'orders', 15000);
 
     // Verify no order was created
@@ -367,13 +366,13 @@ test('no console errors through create → submit → view orders lifecycle', as
 
     // Full lifecycle: create → fill → submit → view orders
     await fillAndSubmitOrder(page, 'Error Check Order', 200, ['Pen']);
-    await page.click('[mp-state="submitted"] button[mp-to*="order-approved"]');
+    await page.click('#btn-view-all-orders');
     await waitForState(page, 'orders', 15000);
 
     // Navigate to create and back
     await page.click('button[mp-to="create"]');
     await waitForState(page, 'create');
-    await page.click('.navbar button[mp-to*="to orders"]');
+    await page.click('#btn-nav-orders');
     await waitForState(page, 'orders', 15000);
 
     assert.strictEqual(errors.length, 0, 'no console errors: ' + errors.join('; '));

@@ -12,7 +12,7 @@ Track dependencies at runtime by instrumenting the s-expression evaluator. When 
 ## Rationale
 - **No Proxies** — Proxies add complexity, have edge cases with arrays and nested objects, and require wrapping user data. Our data is plain JS objects.
 - **No compiler** — a compile step would break the "open the HTML file" promise.
-- **100% coverage** — because ALL data access flows through `_seval` → symbol resolution, we see every read. No opt-in, no wrapping, no decorators. Including dynamic property access via `(get obj key)`.
+- **100% coverage** — because ALL data access flows through `seval` → symbol resolution, we see every read. No opt-in, no wrapping, no decorators. Including dynamic property access via `(get obj key)`.
 - **Naturally portable** — the same tracking mechanism works in browser and Node. No platform-specific reactivity system.
 - **The evaluator is the instrumentation point** — Vue needs Proxies because it evaluates JavaScript, which it can't intercept. We evaluate s-expressions, which we fully control.
 

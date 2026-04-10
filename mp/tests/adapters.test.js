@@ -28,6 +28,61 @@ function throws(fn, substr, message) {
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Host adapter validation                                                ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+function makeValidHost(overrides) {
+  var base = {
+    now: function () { return Date.now(); },
+    scheduleAfter: function () {},
+    scheduleEvery: function () {},
+    cancelTimer: function () {},
+    emit: function () {},
+    persist: function () {},
+    log: function () {},
+    capabilities: ['log', 'notify']
+  };
+  var host = {};
+  for (var k in base) host[k] = base[k];
+  for (var ok in overrides) host[ok] = overrides[ok];
+  return host;
+}
+
+describe('validateHost — complete adapter passes');
+eq(adapters.validateHost(makeValidHost()), undefined, 'full host passes (no throw)');
+
+describe('validateHost — capabilities is required');
+// Bug 8 — adapters.js Design Issue: host.capabilities not in validated interface
+// machine.js reads host.capabilities || []; adapter without it silently disables mp-where
+throws(function () {
+  adapters.validateHost(makeValidHost({ capabilities: undefined }));
+}, 'capabilities', 'rejects host without capabilities array');
+
+throws(function () {
+  adapters.validateHost(makeValidHost({ capabilities: 'log' }));
+}, 'capabilities', 'rejects capabilities as string (must be array)');
+
+describe('validateHost — required function fields');
+throws(function () {
+  adapters.validateHost(makeValidHost({ now: null }));
+}, 'now', 'rejects missing now');
+
+throws(function () {
+  adapters.validateHost(makeValidHost({ scheduleAfter: 42 }));
+}, 'scheduleAfter', 'rejects non-function scheduleAfter');
+
+describe('validateHost — reports all missing fields');
+(function () {
+  var caught = null;
+  try { adapters.validateHost({}); } catch (e) { caught = e; }
+  assert(caught !== null, 'throws for empty host');
+  assert(caught.message.indexOf('now') !== -1, 'lists now in error');
+  assert(caught.message.indexOf('emit') !== -1, 'lists emit in error');
+  assert(caught.message.indexOf('capabilities') !== -1, 'lists capabilities in error');
+})();
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  Storage validation                                                     ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 

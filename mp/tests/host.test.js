@@ -1,5 +1,5 @@
 /**
- * server.js — API tests.
+ * host.js — API tests.
  *
  * Run: node mp/tests/host.test.js
  * Starts the server on a random port, exercises every endpoint,
@@ -146,6 +146,7 @@ async function runTests() {
   eq(inspRes.status, 200, 'status 200');
   eq(inspRes.body.state, 'draft', 'state is draft');
   eq(inspRes.body.context.title, 'Test Order', 'context preserved');
+  deepEq(inspRes.body.enabled, ['submit'], 'GET /instances/:id — enabled is array of strings, not objects');
 
   describe('GET /instances/:id — not found');
   var instNotFound = await GET('/instances/nope');
@@ -244,6 +245,49 @@ async function runTests() {
   describe('unknown routes');
   var unknownRoute = await GET('/not/a/real/route');
   eq(unknownRoute.status, 404, '404 on unknown route');
+
+
+  describe('malformed percent-encoded URL returns 404, not crash');
+  var malformedRes = await GET('/instances/%ZZ');
+  eq(malformedRes.status, 404, 'malformed URL returns 404');
+
+
+  // ── Quality check — new bugs ─────────────────────────────────────
+
+  describe('H8 — oversized POST body returns 400, not a hang');
+  // Body size limit already implemented — verifying behaviour is documented
+  var largeBody = JSON.stringify({ definition: 'purchase-order', id: 'big', data: 'x'.repeat(1100000) });
+  var bigRes = await new Promise(function (resolve, reject) {
+    var url = new URL(base + '/instances');
+    var opts = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(largeBody) }
+    };
+    var req = http.request(opts, function (res) {
+      var chunks = '';
+      res.on('data', function (c) { chunks += c; });
+      res.on('end', function () { resolve({ status: res.statusCode, raw: chunks }); });
+    });
+    req.on('error', function () { resolve({ status: 0, raw: '' }); });
+    req.write(largeBody);
+    req.end();
+  });
+  assert(bigRes.status === 400 || bigRes.status === 413 || bigRes.status === 0, 'large body gets error response not a hang');
+
+
+  describe('L8 — createMemoryStorage enforces maxInstances cap');
+  // Test createMemoryStorage directly with a cap
+  var cappedStorage = server.createMemoryStorage({ maxInstances: 3 });
+  cappedStorage.putInstance({ id: 'cap-a', definitionId: 'x', state: 'idle', context: {}, history: [] });
+  cappedStorage.putInstance({ id: 'cap-b', definitionId: 'x', state: 'idle', context: {}, history: [] });
+  cappedStorage.putInstance({ id: 'cap-c', definitionId: 'x', state: 'idle', context: {}, history: [] });
+  cappedStorage.putInstance({ id: 'cap-d', definitionId: 'x', state: 'idle', context: {}, history: [] });
+  eq(cappedStorage.getInstance('cap-a'), null, 'L8: oldest instance evicted when cap exceeded');
+  eq(cappedStorage.getInstance('cap-d').id, 'cap-d', 'L8: newest instance retained with correct id');
+  eq(cappedStorage.listInstances().length, 3, 'L8: exactly 3 instances (cap enforced)');
 
 
   // ── Cleanup ──────────────────────────────────────────────────────

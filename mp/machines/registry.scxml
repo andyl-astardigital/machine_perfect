@@ -5,11 +5,15 @@
        mp-ctx='{"nodes":[],"id":null,"address":null,"capabilities":null,"formats":null}'>
 
   <state id="active">
-    <transition event="register"
-                mp-to="(when (and (some? address) (some? capabilities) (some? formats)) (do (remove-where! nodes :id id) (push! nodes (obj :id id :address address :capabilities capabilities :formats formats :registered_at (now)))))"/>
+    <transition event="register">
+      <mp-guard>(and (some? address) (some? capabilities) (some? formats) (not (some? (find (fn [n] (= (get n :id) id)) nodes))))</mp-guard>
+      <mp-action>(push! nodes (obj :id id :address address :capabilities capabilities :formats formats :registered_at (now)))</mp-action>
+    </transition>
 
-    <transition event="deregister"
-                mp-to="(when (some? id) (remove-where! nodes :id id))"/>
+    <transition event="deregister">
+      <mp-guard>(and (some? id) (some? (find (fn [n] (= (get n :id) id)) nodes)))</mp-guard>
+      <mp-action>(remove-where! nodes :id id)</mp-action>
+    </transition>
   </state>
 
 </scxml>

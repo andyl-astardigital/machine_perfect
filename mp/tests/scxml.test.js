@@ -77,9 +77,9 @@ describe('parseXML — attributes with single quotes');
 var singleQuote = scxml.parseXML("<el a='value'/>");
 eq(singleQuote.attrs.a, 'value', 'single-quoted attribute');
 
-describe('parseXML — mp- prefix attributes preserved by parser');
-var mpAttrs = scxml.parseXML('<state id="x" mp-to="(when (> count 0) (to b))" mp-init="(inc! n)"/>');
-eq(mpAttrs.attrs['mp-to'], '(when (> count 0) (to b))', 'mp-to attribute preserved');
+describe('parseXML — attributes with > inside values preserved by parser');
+var mpAttrs = scxml.parseXML('<state id="x" test-expr="(when (> count 0) (to b))" mp-init="(inc! n)"/>');
+eq(mpAttrs.attrs['test-expr'], '(when (> count 0) (to b))', 'attribute with > inside value preserved');
 eq(mpAttrs.attrs['mp-init'], '(inc! n)', 'mp-init attribute preserved');
 
 describe('parseXML — error on empty input');
@@ -141,50 +141,50 @@ eq(Array.isArray(transDef.states.a.on.go), true, 'a.on.go is an array');
 eq(transDef.states.a.on.go.length, 1, 'a has exactly one go transition');
 eq(transDef.states.a.on.go[0].target, 'b', 'go targets b');
 
-describe('compile — transition with mp-to s-expression');
+describe('compile — transition with child guard element');
 var guardDef = scxml.compile([
   '<scxml initial="a">',
   '  <state id="a">',
-  '    <transition event="go" mp-to="(when (> total 0) (to b))"/>',
+  '    <transition event="go" target="b"><mp-guard>(> total 0)</mp-guard></transition>',
   '  </state>',
   '  <state id="b"/>',
   '</scxml>'
 ].join('\n'), { id: 'guard' });
 
-eq(guardDef.states.a.on.go[0].guard, '(> total 0)', 'guard decomposed from mp-to');
-eq(guardDef.states.a.on.go[0].target, 'b', 'target decomposed from mp-to');
+eq(guardDef.states.a.on.go[0].guard, '(> total 0)', 'guard from child mp-guard element');
+eq(guardDef.states.a.on.go[0].target, 'b', 'target from attribute');
 
-describe('compile — transition with mp-to action + target');
+describe('compile — transition with child action element');
 var actionDef = scxml.compile([
   '<scxml initial="a">',
   '  <state id="a">',
-  '    <transition event="go" mp-to="(do (set! done true) (to b))"/>',
+  '    <transition event="go" target="b"><mp-action>(set! done true)</mp-action></transition>',
   '  </state>',
   '  <state id="b"/>',
   '</scxml>'
 ].join('\n'), { id: 'action' });
 
-eq(actionDef.states.a.on.go[0].action, '(set! done true)', 'action decomposed from mp-to');
-eq(actionDef.states.a.on.go[0].target, 'b', 'target decomposed from mp-to');
+eq(actionDef.states.a.on.go[0].action, '(set! done true)', 'action from child mp-action element');
+eq(actionDef.states.a.on.go[0].target, 'b', 'target from attribute');
 
-describe('compile — transition with mp-to emit');
+describe('compile — transition with child emit element');
 var emitDef = scxml.compile([
   '<scxml initial="a">',
   '  <state id="a">',
-  '    <transition event="go" mp-to="(do (emit moved) (to b))"/>',
+  '    <transition event="go" target="b"><mp-emit>moved</mp-emit></transition>',
   '  </state>',
   '  <state id="b"/>',
   '</scxml>'
 ].join('\n'), { id: 'emit' });
 
-eq(emitDef.states.a.on.go[0].emit, 'moved', 'emit decomposed from mp-to');
-eq(emitDef.states.a.on.go[0].target, 'b', 'target decomposed from mp-to');
+eq(emitDef.states.a.on.go[0].emit, 'moved', 'emit from child mp-emit element');
+eq(emitDef.states.a.on.go[0].target, 'b', 'target from attribute');
 
-describe('compile — multiple transitions on same event');
+describe('compile — multiple transitions on same event (guarded + fallback)');
 var multiDef = scxml.compile([
   '<scxml initial="a">',
   '  <state id="a">',
-  '    <transition event="go" mp-to="(when (> x 10) (to b))"/>',
+  '    <transition event="go" target="b"><mp-guard>(> x 10)</mp-guard></transition>',
   '    <transition event="go" target="c"/>',
   '  </state>',
   '  <state id="b"/><state id="c"/>',
@@ -192,7 +192,7 @@ var multiDef = scxml.compile([
 ].join('\n'), { id: 'multi' });
 
 eq(multiDef.states.a.on.go.length, 2, 'two transitions on go');
-eq(multiDef.states.a.on.go[0].guard, '(> x 10)', 'first has guard decomposed from mp-to');
+eq(multiDef.states.a.on.go[0].guard, '(> x 10)', 'first has guard from child element');
 eq(multiDef.states.a.on.go[1].target, 'c', 'second is fallback');
 
 describe('compile — final state');
@@ -249,12 +249,16 @@ var poDef = scxml.compile([
   '    <data id="approved_at" expr="nil"/>',
   '  </datamodel>',
   '  <state id="draft">',
-  '    <transition event="submit"',
-  '                mp-to="(when (and (> (count items) 0) (not (empty? title))) (do (set! submitted_at (now)) (to submitted)))"/>',
+  '    <transition event="submit" target="submitted">',
+  '      <mp-guard>(and (> (count items) 0) (not (empty? title)))</mp-guard>',
+  '      <mp-action>(set! submitted_at (now))</mp-action>',
+  '    </transition>',
   '  </state>',
   '  <state id="submitted">',
-  '    <transition event="approve"',
-  '                mp-to="(do (set! approved_at (now)) (emit order-approved) (to approved))"/>',
+  '    <transition event="approve" target="approved">',
+  '      <mp-action>(set! approved_at (now))</mp-action>',
+  '      <mp-emit>order-approved</mp-emit>',
+  '    </transition>',
   '    <transition event="reject" target="rejected"/>',
   '  </state>',
   '  <final id="approved"/>',
@@ -336,13 +340,19 @@ var assetDef = scxml.compile([
   '    <data id="decommissioned_at" expr="nil"/>',
   '  </datamodel>',
   '  <state id="procurement">',
-  '    <transition event="receive" mp-to="(do (set! asset_id (now)) (to received))"/>',
+  '    <transition event="receive" target="received">',
+  '      <mp-action>(set! asset_id (now))</mp-action>',
+  '    </transition>',
   '  </state>',
   '  <state id="received">',
-  '    <transition event="commission" mp-to="(do (set! commissioned_at (now)) (to in-service))"/>',
+  '    <transition event="commission" target="in-service">',
+  '      <mp-action>(set! commissioned_at (now))</mp-action>',
+  '    </transition>',
   '  </state>',
   '  <state id="in-service">',
-  '    <transition event="decommission" mp-to="(do (set! decommissioned_at (now)) (to decommissioned))"/>',
+  '    <transition event="decommission" target="decommissioned">',
+  '      <mp-action>(set! decommissioned_at (now))</mp-action>',
+  '    </transition>',
   '    <transition event="repair" target="maintenance"/>',
   '  </state>',
   '  <state id="maintenance">',
@@ -387,7 +397,9 @@ var batchScxml = [
   '<scxml id="batch" initial="idle">',
   '  <state id="idle"><transition event="START" target="running"/></state>',
   '  <state id="running" initial="filling">',
-  '    <transition event="ABORT" mp-to="(do (set! err \'abort\') (to aborted))"/>',
+  '    <transition event="ABORT" target="aborted">',
+  '      <mp-action>(set! err \'abort\')</mp-action>',
+  '    </transition>',
   '    <state id="filling"><transition event="FULL" target="heating"/></state>',
   '    <state id="heating"><transition event="HOT" target="done"/></state>',
   '    <final id="done"/>',
@@ -412,6 +424,167 @@ eq(batchInst.state, 'running.heating', 'transitions between siblings');
 var abortResult = machine.sendEvent(batchInst, 'ABORT');
 eq(batchInst.state, 'aborted', 'ABORT inherited from compound parent');
 eq(batchInst.context.err, 'abort', 'abort action ran');
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Structural child elements in transitions                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('transition with <mp-guard> child compiles guard');
+
+var guardScxml = '<?xml version="1.0"?><scxml id="sg" initial="a" mp-ctx=\'{"x":5}\'>' +
+  '<state id="a"><transition event="go" target="b"><mp-guard>(> x 0)</mp-guard><mp-action>(set! x 0)</mp-action></transition></state>' +
+  '<state id="b"/></scxml>';
+var guardDef = scxml.compile(guardScxml, {});
+var guardInst = machine.createInstance(guardDef);
+var guardResult = machine.sendEvent(guardInst, 'go');
+eq(guardResult.transitioned, true, 'guard (> x 0) passed with x=5');
+eq(guardInst.state, 'b', 'transitioned to b');
+eq(guardInst.context.x, 0, 'action (set! x 0) ran');
+
+describe('transition with <mp-guard> blocks when false');
+
+var guardScxml2 = '<?xml version="1.0"?><scxml id="sg2" initial="a" mp-ctx=\'{"x":0}\'>' +
+  '<state id="a"><transition event="go" target="b"><mp-guard>(> x 0)</mp-guard></transition></state>' +
+  '<state id="b"/></scxml>';
+var guardDef2 = scxml.compile(guardScxml2, {});
+var guardInst2 = machine.createInstance(guardDef2);
+var guardResult2 = machine.sendEvent(guardInst2, 'go');
+eq(guardResult2.transitioned, false, 'guard blocks when x=0');
+eq(guardInst2.state, 'a', 'stays in a');
+
+describe('transition with <mp-emit> child');
+
+var emitScxml = '<?xml version="1.0"?><scxml id="se" initial="a" mp-ctx=\'{}\'>' +
+  '<state id="a"><transition event="go" target="b"><mp-emit>went</mp-emit></transition></state>' +
+  '<state id="b"/></scxml>';
+var emitDef = scxml.compile(emitScxml, {});
+var emitInst = machine.createInstance(emitDef);
+var emitResult = machine.sendEvent(emitInst, 'go');
+eq(emitResult.transitioned, true, 'transition succeeded');
+deepEq(emitResult.emits, ['went'], 'emits exactly ["went"]');
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Bug fixes                                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('Bug 14 — unterminated CDATA throws instead of falling through');
+
+throws(function () {
+  scxml.parseXML('<root><![CDATA[unterminated</root>');
+}, 'unterminated CDATA', 'parseXML throws on unterminated CDATA section');
+
+
+describe('Bug 15a — mp-exit attribute + <onexit> child logs a warning (symmetric with onentry)');
+
+(function () {
+  var warnings = [];
+  var origWarn = console.warn;
+  console.warn = function (msg) { warnings.push(msg); };
+
+  var collidingExitScxml = '<?xml version="1.0"?><scxml id="colx" initial="a" mp-ctx=\'{}\'>' +
+    '<state id="a" mp-exit="(set! x 1)">' +
+    '<onexit><mp-action>(set! x 2)</mp-action></onexit>' +
+    '<transition event="go" target="b"/>' +
+    '</state>' +
+    '<state id="b" mp-final/></scxml>';
+  scxml.compile(collidingExitScxml, {});
+
+  console.warn = origWarn;
+  eq(warnings.filter(function (w) { return w.indexOf('mp-exit') !== -1 && w.indexOf('onexit') !== -1; }).length, 1,
+    'warning logged when mp-exit and onexit both present');
+})();
+
+
+describe('Bug 15 — mp-init attribute + <onentry> child logs a warning');
+
+(function () {
+  var warnings = [];
+  var origWarn = console.warn;
+  console.warn = function (msg) { warnings.push(msg); };
+
+  var collidingScxml = '<?xml version="1.0"?><scxml id="col" initial="a" mp-ctx=\'{}\'>' +
+    '<state id="a" mp-init="(set! x 1)">' +
+    '<onentry><mp-action>(set! x 2)</mp-action></onentry>' +
+    '<transition event="go" target="b"/>' +
+    '</state>' +
+    '<state id="b" mp-final/></scxml>';
+  scxml.compile(collidingScxml, {});
+
+  console.warn = origWarn;
+  eq(warnings.filter(function (w) { return w.indexOf('mp-init') !== -1 && w.indexOf('onentry') !== -1; }).length, 1,
+    'warning logged when mp-init and onentry both present');
+})();
+
+
+describe('Bug 16 — <mp-where> child element compiled into state spec');
+
+var whereScxmlStr = '<?xml version="1.0"?><scxml id="where-test" initial="a" mp-ctx=\'{}\'>' +
+  '<state id="a"><mp-where>(requires \'ui-render\')</mp-where>' +
+  '<transition event="go" target="b"/>' +
+  '</state>' +
+  '<state id="b" mp-final/></scxml>';
+var whereDef = scxml.compile(whereScxmlStr, {});
+eq(whereDef._stateTree['a'].spec.where, "(requires 'ui-render')", '<mp-where> child compiled into state spec.where');
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Quality check — new bugs                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('H4 — unterminated comment inside element throws, not infinite loop');
+
+throws(function () {
+  scxml.parseXML('<root><!-- unterminated</root>');
+}, 'unterminated', 'unterminated comment inside element throws');
+
+throws(function () {
+  scxml.parseXML('<scxml initial="a"><state id="a"><!-- no close</state></scxml>');
+}, 'unterminated', 'unterminated comment inside state element throws');
+
+
+describe('L3 — <onentry><mp-action> child is read by extractActions');
+
+var mpActionScxml = [
+  '<?xml version="1.0"?>',
+  '<scxml id="mpa" initial="a" mp-ctx="{}">',
+  '  <state id="a">',
+  '    <onentry><mp-action>(set! x 1)</mp-action></onentry>',
+  '    <transition event="go" target="b"/>',
+  '  </state>',
+  '  <state id="b" mp-final/>',
+  '</scxml>'
+].join('\n');
+var mpActionDef = scxml.compile(mpActionScxml, {});
+eq(mpActionDef._stateTree['a'].spec.init, '(set! x 1)', '<onentry><mp-action> produces non-null init');
+
+var mpActionInst = machine.createInstance(mpActionDef, { context: { x: 0 } });
+eq(mpActionInst.context.x, 1, 'init action from <mp-action> ran on entry');
+
+
+describe('mp-temporal preserved through compile — attribute form (backwards compat)');
+var temporalDef = scxml.compile('<scxml initial="a"><state id="a" mp-temporal="(after 5000 (to b))"/><state id="b"/></scxml>');
+eq(temporalDef.states.a.temporal, '(after 5000 (to b))', 'mp-temporal attribute stored on state definition');
+
+describe('mp-temporal preserved through compile — element form (canonical)');
+var temporalDefEl = scxml.compile('<scxml initial="a"><state id="a"><mp-temporal>(animate)</mp-temporal></state><state id="b"/></scxml>');
+eq(temporalDefEl.states.a.temporal, '(animate)', 'mp-temporal element stored on state definition');
+
+
+describe('parseXML — text content entities are unescaped');
+var entityXml = scxml.parseXML('<root><guard>&lt; x 10</guard></root>');
+var guardText = entityXml.children[0].children[0].text;
+eq(guardText, '< x 10', 'text content &lt; unescaped to <');
+
+var entityXml2 = scxml.parseXML('<root><data>&amp;amp; &lt;tag&gt;</data></root>');
+var dataText = entityXml2.children[0].children[0].text;
+eq(dataText, '&amp; <tag>', 'multiple entities unescaped in text content');
+
+
+describe('compile — guard in text content (no CDATA) with entities');
+var entityGuardDef = scxml.compile('<scxml initial="a"><state id="a"><transition event="go" target="b"><mp-guard>&lt; x 10</mp-guard></transition></state><state id="b"/></scxml>');
+eq(entityGuardDef.states.a.on.go[0].guard, '< x 10', 'guard text entities unescaped by parser');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗

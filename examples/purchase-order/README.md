@@ -24,25 +24,19 @@ The same `(and (> (count items) 0) (> amount 0))` guard runs in the browser and 
 ## The flow
 
 ```
-Browser                           Server edge              Services
-────────                          ──────────               ────────
-HTML machine     ───POST───→     HTML → SCXML    ───→    Order Service
-  (mp-state,                      (transform               (parse SCXML,
-   mp-to with                      once)                    send 'submit',
-   guards/actions,                                         mutate in place)
-   mp-ctx)                                                       │
-                                                           Approval Service
-                                                             (parse SCXML,
-                                                              approve/reject,
-                                                              mutate in place)
-                                                                 │
-                                                           Fulfilment Service
-                                                             (receive SCXML,
-                                                              log, return)
-                                                                 │
-HTML machine     ←──response──   SCXML → HTML    ←───────────────┘
-  (updated state,                 (transform
-   updated context)                once)
+Browser                           Server
+────────                          ──────
+HTML machine     ───POST───→     HTML → SCXML → compile → executePipeline
+  (mp-state,                      (transforms.htmlToScxml,    (advance through
+   mp-transition,                  scxml.compile)              transitions,
+   mp-ctx)                                                     dispatch effects
+                                                               via adapters:
+                                                               log, notify,
+                                                               persist, fulfil)
+                                                                    │
+HTML machine     ←──response──   SCXML → HTML    ←──────────────────┘
+  (updated state,                 (transforms.scxmlToHtml)
+   updated context)
 ```
 
-Every step is markup. HTML at the edges. SCXML between services. The machine carries its own behaviour.
+Every step is markup. HTML at the edges. SCXML inside the pipeline. The machine carries its own behaviour. Effect adapters (`services.js`) define what this host can do — the framework handles the compile → instance → event loop → dispatch pattern.

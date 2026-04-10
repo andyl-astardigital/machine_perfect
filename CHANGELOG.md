@@ -6,7 +6,7 @@ Initial public release.
 
 ### Core
 - State machines as the component model (`mp`, `mp-state`, `mp-to`)
-- S-expression language with ~80 built-in functions
+- S-expression language with ~120 built-in functions
 - Lazy state rendering: content created on entry, destroyed on exit
 - Two-way data binding (`mp-text`, `mp-model`, `mp-show`, `mp-class`, `mp-bind-*`)
 - Keyed list reconciliation (`mp-each` with `mp-key`)

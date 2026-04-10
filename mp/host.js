@@ -30,7 +30,6 @@ var fs = require('fs');
 var path = require('path');
 var scxml = require('./scxml');
 var machine = require('./machine');
-var engine = require('./engine');
 var adapters = require('./adapters');
 
 
@@ -41,9 +40,12 @@ var adapters = require('./adapters');
 // Dependency injection: the server receives a storage object.
 // In-memory for now, Postgres later. Same interface.
 
-function createMemoryStorage() {
+function createMemoryStorage(options) {
+  options = options || {};
+  var maxInstances = options.maxInstances || 10000;
   var definitions = {};
   var instances = {};
+  var instanceOrder = []; // insertion-ordered IDs for eviction
 
   return {
     // ── Definitions ──
@@ -61,19 +63,29 @@ function createMemoryStorage() {
 
     // ── Instances ──
     putInstance: function (instance) {
+      if (!instances[instance.id]) {
+        instanceOrder.push(instance.id);
+        // Evict oldest if over cap
+        while (instanceOrder.length > maxInstances) {
+          var evicted = instanceOrder.shift();
+          delete instances[evicted];
+        }
+      }
       instances[instance.id] = instance;
     },
     getInstance: function (id) {
       return instances[id] || null;
     },
     listInstances: function () {
-      return Object.keys(instances).map(function (id) {
+      return instanceOrder.filter(function (id) { return !!instances[id]; }).map(function (id) {
         var inst = instances[id];
         return { id: id, definitionId: inst.definitionId, state: inst.state };
       });
     },
     deleteInstance: function (id) {
       delete instances[id];
+      var idx = instanceOrder.indexOf(id);
+      if (idx !== -1) instanceOrder.splice(idx, 1);
     }
   };
 }
@@ -145,7 +157,8 @@ function createServer(options) {
     var params = {};
     for (var i = 0; i < patternParts.length; i++) {
       if (patternParts[i].charAt(0) === ':') {
-        params[patternParts[i].substring(1)] = decodeURIComponent(urlParts[i]);
+        try { params[patternParts[i].substring(1)] = decodeURIComponent(urlParts[i]); }
+        catch (e) { return null; }
       } else if (patternParts[i] !== urlParts[i]) {
         return null;
       }
@@ -160,7 +173,7 @@ function createServer(options) {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
+      'Access-Control-Allow-Headers': 'Content-Type, X-MP-Target, X-MP-Machine'
     });
     res.end(body);
   }
@@ -185,12 +198,15 @@ function createServer(options) {
       try { callback(JSON.parse(body)); }
       catch (err) { callback(null, err); }
     });
+    req.on('error', function (err) {
+      if (!called) { called = true; callback(null, err); }
+    });
   }
 
   // ── Host adapter for instances ──
   // Instances created via the API use this host, which persists
   // snapshots back to storage on every transition.
-  function createHost(instanceId) {
+  function createHost() {
     return {
       now: function () { return Date.now(); },
       scheduleAfter: function (ms, callback) { return setTimeout(callback, ms); },
@@ -200,7 +216,8 @@ function createServer(options) {
       persist: function (snapshot) {
         storage.putInstance(snapshot);
       },
-      log: function () {}
+      log: function () {},
+      capabilities: []
     };
   }
 
@@ -264,7 +281,7 @@ function createServer(options) {
         var inst = machine.createInstance(def, {
           id: instanceId,
           context: body.context || {},
-          host: createHost(instanceId)
+          host: createHost()
         });
         storage.putInstance(inst);
 
@@ -295,7 +312,7 @@ function createServer(options) {
         definitionId: info.definitionId,
         state: info.state,
         context: info.context,
-        enabled: info.enabled,
+        enabled: info.enabled.map(function (t) { return t.event; }),
         isFinal: info.isFinal
       });
     }
@@ -343,7 +360,7 @@ function createServer(options) {
 
               // Execute adapter async — re-inject result events
               try {
-                var adapterResult = adapter(effect.input, inst.context);
+                var adapterResult = adapter(effect.input, JSON.parse(JSON.stringify(inst.context)));
                 // Handle both sync and async adapters
                 if (adapterResult && typeof adapterResult.then === 'function') {
                   adapterResult.then(function (value) {
@@ -389,6 +406,7 @@ function createServer(options) {
           id: inst.id,
           event: result.event,
           transitioned: result.transitioned,
+          targetless: result.targetless || false,
           from: result.from,
           to: result.to,
           reason: result.reason,

@@ -114,7 +114,12 @@ Document click listener (delegated)
     │ finds closest [mp] → machine instance
     │
     ▼
-mp-to="(when (not (empty? newItem)) (do (push! items (obj :name newItem)) (to .)))"
+<button mp-to="add-item">Add Item</button>
+    │
+    │ <mp-transition event="add-item" to=".">
+    │   <mp-guard>(not (empty? newItem))</mp-guard>
+    │   <mp-action>(push! items (obj :name newItem))</mp-action>
+    │ </mp-transition>
     │
     ├─ Evaluate guard: engine.eval("(not (empty? newItem))", ctx)
     │   pure evaluation — cannot mutate
@@ -164,8 +169,8 @@ App machine: mp-initial="orders"
     │
     ▼
 to('orders')
-    │ checks stateMap['orders'] for mp-where attribute
-    │ finds: mp-where="(requires 'ui-render')"
+    │ checks stateMap['orders'] for <mp-where> element
+    │ finds: <mp-where>(requires 'ui-render')</mp-where>
     │ evaluates → ['ui-render']
     │ browser capabilities: ['dom', 'user-input', 'localstorage', 'css-transition']
     │ browser lacks 'ui-render' → ROUTE
@@ -205,7 +210,13 @@ User sees order list (or empty state)
 User clicks [View] on an order card (server-rendered)
     │
     ▼
-Order card machine: mp-to="(emit navigate-detail (obj :id id))"
+Order card machine:
+    │ <button mp-to="view">View</button>
+    │
+    │ <mp-transition event="view">
+    │   <mp-emit event="navigate-detail">(obj :id id)</mp-emit>
+    │ </mp-transition>
+    │
     │ dispatches CustomEvent('mp-navigate-detail') with payload {id: ...}
     │
     ▼
@@ -216,8 +227,8 @@ App machine's mp-receive catches event
     │
     ▼
 to('detail')
-    │ checks stateMap['detail'] for mp-where
-    │ finds: mp-where="(requires 'ui-render')"
+    │ checks stateMap['detail'] for <mp-where>
+    │ finds: <mp-where>(requires 'ui-render')</mp-where>
     │ browser lacks 'ui-render' → ROUTE
     │
     ├─ Phase 5 syncs mp-ctx (now includes _actionId)
@@ -235,7 +246,7 @@ Server receives request
 Browser stamps detail view
     │ nested order-detail machine boots via MutationObserver
     │ mp-each renders items, effects, history
-    │ mp-on:click.outside on delete confirmation
+    │ <mp-on event="click.outside"> on delete confirmation
     │
     ▼
 User sees order detail
@@ -248,15 +259,21 @@ User fills purchase order form, clicks [Send to Pipeline]
     │
     ▼
 Click handler on purchase-order machine (nested inside app)
-    │ mp-to="(when (and (> (count items) 0) (> amount 0)) (do (set! submitted_at (now)) (to submitted)))"
+    │ <button mp-to="submit">Send to Pipeline</button>
+    │
+    │ <mp-transition event="submit" to="submitted">
+    │   <mp-guard>(and (> (count items) 0) (> amount 0))</mp-guard>
+    │   <mp-action>(set! submitted_at (now))</mp-action>
+    │ </mp-transition>
+    │
     │ guard evaluates → true
     │ action executes: (set! submitted_at (now))
     │ calls inst.to('submitted')
     │
     ▼
 to('submitted')
-    │ checks stateMap['submitted'] for mp-where
-    │ finds: mp-where="(requires 'log' 'notify' 'persist' 'fulfil')"
+    │ checks stateMap['submitted'] for <mp-where>
+    │ finds: <mp-where>(requires 'log' 'notify' 'persist' 'fulfil')</mp-where>
     │ browser lacks all → ROUTE
     │
     ├─ _sendMachineToNode(purchaseOrderEl, node, 'submitted')
@@ -308,10 +325,14 @@ User clicks [Delete Order] on detail view
     ▼
 delete-confirm machine: mp-to="open" → shows confirmation
 User clicks [Yes, delete]
-    │ mp-to="(do (emit delete-order (obj :id id)) (to closed))"
+    │ <button mp-to="confirm-delete">Yes, delete</button>
+    │
+    │ <mp-transition event="confirm-delete" to="closed">
+    │   <mp-action>(emit delete-order (obj :id id))</mp-action>
+    │ </mp-transition>
     │
     ▼
-App machine mp-receive:
+App machine <mp-receive>:
     │ (on 'delete-order' (do
     │     (set! _action 'delete')
     │     (set! _actionId (get $detail :id))
@@ -319,7 +340,7 @@ App machine mp-receive:
     │
     ▼
 to('orders')
-    │ mp-where="(requires 'ui-render')" → ROUTE
+    │ <mp-where>(requires 'ui-render')</mp-where> → ROUTE
     │ Phase 5 syncs mp-ctx: {_action: 'delete', _actionId: 'po-xxx'}
     │ POST to server with synced context
     │
@@ -343,7 +364,7 @@ User sees order removed
 
 ```
 Orders state entered
-    │ mp-temporal="(every 30000 (to orders))"
+    │ <mp-temporal>(every 30000 (to orders))</mp-temporal>
     │ interval starts: every 30 seconds
     │
     ▼
@@ -352,7 +373,7 @@ Orders state entered
     │
     ▼
 to('orders') — targets current state
-    │ checks mp-where="(requires 'ui-render')" → ROUTE
+    │ checks <mp-where>(requires 'ui-render')</mp-where> → ROUTE
     │ sends to capable node
     │ server returns fresh order list
     │ stamps updated content
@@ -368,7 +389,7 @@ User sees refreshed data (no page reload)
 | Guard evaluation | `engine.eval(guardExpr, ctx)` — pure, cannot mutate |
 | Action execution | `engine.exec(actionExpr, ctx)` — mutates, records dirty keys |
 | Context sync | Phase 5: `setAttribute('mp-ctx', JSON.stringify(ctx))` |
-| Capability check | `to()` reads target state's `mp-where`, evaluates, checks host capabilities |
+| Capability check | `to()` reads target state's `<mp-where>`, evaluates, checks host capabilities |
 | Remote routing | `_findCapableNode` + `_sendMachineToNode` — same for all sources |
 | Content stamping | `stateEl.innerHTML = html` + `_initNested` + `_scanBindAttrs` |
 | Purity enforcement | `sevalPure` rejects mutations in guards — browser and server |

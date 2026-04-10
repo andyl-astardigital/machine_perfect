@@ -12,15 +12,20 @@
   </datamodel>
 
   <state id="draft">
-    <transition event="submit"
-                mp-to="(when (and (> (count items) 0) (> amount 0)) (do (set! submitted_at (now)) (to submitted)))"/>
+    <transition event="submit" target="submitted">
+      <mp-guard>(and (> (count items) 0) (> amount 0))</mp-guard>
+      <mp-action>(set! submitted_at (now))</mp-action>
+    </transition>
   </state>
 
   <state id="submitted">
-    <transition event="approve"
-                mp-to="(do (set! approved_at (now)) (emit order-approved) (to approved))"/>
-    <transition event="reject"
-                mp-to="(do (set! rejected_reason (get $event :reason)) (to rejected))"/>
+    <transition event="approve" target="approved">
+      <mp-action>(set! approved_at (now))</mp-action>
+      <mp-emit>order-approved</mp-emit>
+    </transition>
+    <transition event="reject" target="rejected">
+      <mp-action>(set! rejected_reason (get $event :reason))</mp-action>
+    </transition>
     <transition event="withdraw" target="draft"/>
   </state>
 

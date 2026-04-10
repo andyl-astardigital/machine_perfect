@@ -51,16 +51,16 @@
       if (stateTree[candidate]) return candidate;
       path = parent;
     }
-    // Check top-level
-    if (stateTree[target]) return target;
     return null;
   }
 
   function _descendToAtomic(statePath, stateTree) {
+    if (!stateTree[statePath]) return statePath;
     var spec = stateTree[statePath].spec;
     while (spec.states) {
       var childName = spec.initial || Object.keys(spec.states)[0];
       statePath = statePath + '.' + childName;
+      if (!stateTree[statePath]) return statePath;
       spec = stateTree[statePath].spec;
     }
     return statePath;
@@ -69,7 +69,7 @@
   function _getAncestors(statePath, stateTree) {
     var ancestors = [];
     var path = statePath;
-    while (path) {
+    while (path && stateTree[path]) {
       ancestors.push(path);
       path = stateTree[path].parent;
     }
@@ -85,7 +85,7 @@
     return null; // no common ancestor (top-level siblings)
   }
 
-  function _validateTransitions(states, parentPath, allNames, stateTree, defId) {
+  function _validateTransitions(states, parentPath, stateTree, defId) {
     for (var stateName in states) {
       var fullPath = parentPath ? parentPath + '.' + stateName : stateName;
       var state = states[stateName];
@@ -110,7 +110,7 @@
       }
       // Recurse into compound states
       if (state.states) {
-        _validateTransitions(state.states, fullPath, allNames, stateTree, defId);
+        _validateTransitions(state.states, fullPath, stateTree, defId);
       }
     }
   }
@@ -126,15 +126,16 @@
       throw new Error('[mp] initial state "' + initial + '" does not exist in "' + spec.id + '"');
     }
 
+    // Deep-clone caller's states so _validateTransitions' array normalisation
+    // never mutates the spec object the caller holds a reference to.
+    var states = JSON.parse(JSON.stringify(spec.states));
+
     // Build state tree (recursive, handles compound states)
     var stateTree = {};
-    _buildStateTree(spec.states, null, 0, stateTree);
+    _buildStateTree(states, null, 0, stateTree);
 
-    // All fully-qualified state names for target validation
-    var allStateNames = Object.keys(stateTree);
-
-    // Validate transitions recursively
-    _validateTransitions(spec.states, null, allStateNames, stateTree, spec.id);
+    // Validate transitions recursively (mutates cloned states — safe)
+    _validateTransitions(states, null, stateTree, spec.id);
 
     // Register __timeout transitions for states with `after` timers.
     // Done at definition time so the definition is never mutated at runtime.
@@ -152,7 +153,8 @@
       id: spec.id,
       initial: initial,
       context: spec.context || {},
-      states: spec.states,
+      maxHistory: spec.maxHistory != null ? spec.maxHistory : 200,
+      states: states,
       stateNames: stateNames,
       _stateTree: stateTree
     };
@@ -172,8 +174,9 @@
     // Deep-copy default context so instances don't share mutable state
     var context = deepCopy(definition.context);
     if (options.context) {
-      for (var key in options.context) {
-        if (options.context.hasOwnProperty(key)) context[key] = options.context[key];
+      var optCtx = deepCopy(options.context);
+      for (var key in optCtx) {
+        if (optCtx.hasOwnProperty(key)) context[key] = optCtx[key];
       }
     }
 
@@ -293,6 +296,7 @@
 
     // ── Targetless transition: run action, no state change, no lifecycle ──
     if (!taken.target) {
+      var oldCtxTargetless = instance._watchers && instance._watchers.length > 0 ? deepCopy(instance.context) : null;
       instance._mpDirty = {};
       var targetlessEffects = [];
       if (taken.action) {
@@ -306,8 +310,11 @@
       result.changed = Object.keys(dirty);
       result.effects = targetlessEffects;
       result.emits = taken.emit ? [taken.emit] : [];
-      instance.history.push({ timestamp: instance._host.now(), event: eventName, data: eventData || null, from: fromState, to: fromState, changed: result.changed });
+      instance.history.push({ timestamp: instance._host.now(), event: eventName, data: eventData != null ? eventData : null, from: fromState, to: fromState, changed: result.changed });
+      var maxHistTargetless = definition.maxHistory;
+      if (instance.history.length > maxHistTargetless) instance.history.shift();
       if (instance._host.persist) instance._host.persist(snapshot(instance));
+      _notifyWatchers(instance, result.changed, oldCtxTargetless);
       return result;
     }
 
@@ -338,7 +345,8 @@
       var exitSpec = tree[exitPath[ei]].spec;
       clearTimersForState(instance, exitPath[ei]);
       if (exitSpec.exit) {
-        engine.exec(exitSpec.exit, instance.context, exitPath[ei], null, null, instance);
+        var exitResult = engine.exec(exitSpec.exit, instance.context, exitPath[ei], null, null, instance);
+        if (exitResult && exitResult.effects) effects = effects.concat(exitResult.effects);
       }
     }
 
@@ -364,7 +372,11 @@
 
     // ── Eventless transitions on the final atomic state ──
     var emitsAuto;
-    var autoLimit = 100;
+    // 101 iterations: up to 100 real transitions plus one final stability check.
+    // The extra pass lets the machine confirm the new state has no more auto
+    // transitions before declaring the limit exceeded. Without it, a machine
+    // that takes exactly 100 steps would trigger a spurious warning.
+    var autoLimit = 101;
     while (autoLimit-- > 0) {
       var autoSpec = tree[instance.state] ? tree[instance.state].spec : null;
       var autoTransitions = (autoSpec && autoSpec.on && autoSpec.on.__auto) || [];
@@ -392,7 +404,7 @@
       for (var aei = 0; aei < autoExit.length; aei++) {
         var aeSpec = tree[autoExit[aei]].spec;
         clearTimersForState(instance, autoExit[aei]);
-        if (aeSpec.exit) engine.exec(aeSpec.exit, instance.context, autoExit[aei], null, null, instance);
+        if (aeSpec.exit) { var aeResult = engine.exec(aeSpec.exit, instance.context, autoExit[aei], null, null, instance); if (aeResult && aeResult.effects) effects = effects.concat(aeResult.effects); }
       }
       if (autoTaken.action) {
         var aar = engine.exec(autoTaken.action, instance.context, instance.state, null, null, instance);
@@ -410,7 +422,7 @@
       toState = autoAtomicTo;
       if (autoTaken.emit) { if (!emitsAuto) emitsAuto = []; emitsAuto.push(autoTaken.emit); }
     }
-    if (autoLimit <= 0) console.warn('[mp] eventless transition loop limit reached in "' + definition.id + '" at state "' + instance.state + '"');
+    if (autoLimit < 0) console.warn('[mp] eventless transition loop limit reached in "' + definition.id + '" at state "' + instance.state + '"');
 
     // ── Collect emitted events ──
     var emits = [];
@@ -438,12 +450,14 @@
     var historyEntry = {
       timestamp: instance._host.now(),
       event: eventName,
-      data: eventData || null,
+      data: eventData != null ? eventData : null,
       from: fromState,
       to: toState,
       changed: result.changed
     };
     instance.history.push(historyEntry);
+    var maxHist = definition.maxHistory;
+    if (instance.history.length > maxHist) instance.history.shift();
 
     // ── Notify host ──
     if (instance._host.persist) {
@@ -481,6 +495,7 @@
       if (spec.on) {
         for (var eventName in spec.on) {
           if (seen[eventName]) continue; // child takes priority
+          if (eventName === '.' || eventName.charAt(0) === '_') continue; // internal
           var transitions = spec.on[eventName];
           for (var i = 0; i < transitions.length; i++) {
             var transition = transitions[i];
@@ -495,6 +510,7 @@
                 guard: transition.guard || null
               });
               seen[eventName] = true;
+              break;
             }
           }
         }
@@ -533,10 +549,10 @@
       definitionId: instance.definitionId,
       state: instance.state,
       context: deepCopy(instance.context),
-      history: instance.history,
+      history: deepCopy(instance.history),
       // Pending timers — stored so they survive persistence/restart.
       // The host re-establishes them on restore.
-      pendingTimers: instance._pendingTimers || null
+      pendingTimers: instance._pendingTimers ? deepCopy(instance._pendingTimers) : null
     };
   }
 
@@ -552,6 +568,7 @@
       _host: host,
       _timers: [],
       _pendingTimers: [],
+      _stateTimers: {},
       _mpDirty: null
     };
 
@@ -563,19 +580,23 @@
         if (timer.type === 'after') {
           var elapsed = now - timer.createdAt;
           var remaining = Math.max(0, timer.ms - elapsed);
-          var afterMeta = { type: 'after', ms: timer.ms, target: timer.target, createdAt: timer.createdAt };
+          var afterMeta = { type: 'after', ms: timer.ms, target: timer.target, createdAt: timer.createdAt, _statePath: timer._statePath || null };
           instance._pendingTimers.push(afterMeta);
-          (function (meta) {
+          (function (meta, statePath) {
             var id = host.scheduleAfter(remaining, function () {
               instance._pendingTimers = instance._pendingTimers.filter(function (t) { return t !== meta; });
               sendEvent(instance, '__timeout', null);
             });
             instance._timers.push(id);
-          })(afterMeta);
+            if (statePath) {
+              if (!instance._stateTimers[statePath]) instance._stateTimers[statePath] = [];
+              instance._stateTimers[statePath].push(id);
+            }
+          })(afterMeta, timer._statePath || null);
         } else if (timer.type === 'every') {
-          var everyMeta = { type: 'every', ms: timer.ms, action: timer.action, createdAt: timer.createdAt };
+          var everyMeta = { type: 'every', ms: timer.ms, action: timer.action, createdAt: timer.createdAt, _statePath: timer._statePath || null };
           instance._pendingTimers.push(everyMeta);
-          (function (action) {
+          (function (action, statePath) {
             var id = host.scheduleEvery(timer.ms, function () {
               if (action) {
                 engine.exec(action, instance.context, instance.state, null, null, instance);
@@ -583,7 +604,11 @@
               }
             });
             instance._timers.push(id);
-          })(timer.action);
+            if (statePath) {
+              if (!instance._stateTimers[statePath]) instance._stateTimers[statePath] = [];
+              instance._stateTimers[statePath].push(id);
+            }
+          })(timer.action, timer._statePath || null);
         }
       }
     } else {
@@ -675,6 +700,15 @@
         }
       }
 
+      // Compound state initial validation
+      if (state.states) {
+        var childInitialName = state.initial || Object.keys(state.states)[0];
+        var fullChildPath = stateName + '.' + childInitialName;
+        if (!tree[fullChildPath]) {
+          issues.push({ type: 'invalid-initial', state: stateName, message: 'Compound state "' + stateName + '" has initial "' + childInitialName + '" which does not exist as a child state' });
+        }
+      }
+
       // Timer validation
       if (state.after && state.after.target) {
         var afterResolved = _resolveTarget(state.after.target, stateName, tree);
@@ -741,19 +775,32 @@
     while (walkPath && tree && tree[walkPath]) {
       var walkSpec = tree[walkPath].spec;
       if (walkSpec.on) {
-        for (var name in walkSpec.on) { if (!seen[name]) { enabled.push(name); seen[name] = true; } }
+        for (var name in walkSpec.on) {
+          if (name === '.' || name.charAt(0) === '_') continue;
+          if (seen[name]) continue;
+          var transitions = walkSpec.on[name];
+          for (var ti = 0; ti < transitions.length; ti++) {
+            var guardPasses = true;
+            if (transitions[ti].guard) {
+              guardPasses = !!engine.eval(transitions[ti].guard, instance.context, instance.state, null);
+            }
+            if (guardPasses) { enabled.push(name); seen[name] = true; break; }
+          }
+        }
       }
       walkPath = tree[walkPath].parent;
     }
     return {
-      instanceId: instance.id,
+      id: instance.id,
       event: eventName,
       from: fromState,
       to: toState,
       transitioned: transitioned,
+      targetless: false,
       reason: reason,
       changed: [],
       emits: [],
+      effects: [],
       enabled: enabled,
       isFinal: !!(currentSpec && currentSpec.final),
       context: deepCopy(instance.context),
@@ -833,7 +880,7 @@
     }
     var copy = {};
     for (var key in obj) {
-      if (obj.hasOwnProperty(key)) copy[key] = deepCopy(obj[key]);
+      if (obj.hasOwnProperty(key) && key !== '__proto__' && key !== 'constructor' && key !== 'prototype') copy[key] = deepCopy(obj[key]);
     }
     return copy;
   }
@@ -859,8 +906,12 @@
     instance._watchers.push(callback);
   }
 
-  function unwatch(instance) {
-    instance._watchers = [];
+  function unwatch(instance, callback) {
+    if (callback) {
+      instance._watchers = (instance._watchers || []).filter(function (w) { return w !== callback; });
+    } else {
+      instance._watchers = [];
+    }
   }
 
   function _notifyWatchers(instance, changedKeys, oldCtx) {
@@ -914,6 +965,7 @@
 
     // Initial state may require routing (mp-where on initial state)
     if (inst.route) {
+      clearTimers(inst);
       return {
         instance: inst, format: format, history: inst.history,
         effects: effectLog, route: inst.route, blocked: false
@@ -922,6 +974,8 @@
 
     var step = 0;
 
+    try {
+
     while (step < maxSteps) {
       step++;
 
@@ -929,17 +983,24 @@
       var currentSpec = tree[inst.state] ? tree[inst.state].spec : null;
       if (!currentSpec || currentSpec.final) break;
 
-      // Collect events from current state (skip internal events).
+      // Collect events from current state AND all ancestor states (hierarchy
+      // means child inherits parent events). Skip internal events. Child takes
+      // priority over parent — duplicates from ancestors are ignored.
       // Sorted alphabetically for deterministic execution order.
-      // When multiple events are available, the default eventSelector picks
-      // the first (alphabetically). If that event's guard blocks, the pipeline
-      // tries remaining events in order. Override eventSelector to change this.
-      var allEvents = currentSpec.on ? Object.keys(currentSpec.on) : [];
+      var seenEvents = {};
       var events = [];
-      for (var ei = 0; ei < allEvents.length; ei++) {
-        if (allEvents[ei] !== '.' && allEvents[ei] !== '__timeout' && allEvents[ei] !== '__auto') {
-          events.push(allEvents[ei]);
+      var walkPath = inst.state;
+      while (walkPath && tree[walkPath]) {
+        var walkSpec = tree[walkPath].spec;
+        if (walkSpec.on) {
+          for (var ev in walkSpec.on) {
+            if (!seenEvents[ev] && ev !== '.' && ev !== '__timeout' && ev !== '__auto') {
+              seenEvents[ev] = true;
+              events.push(ev);
+            }
+          }
         }
+        walkPath = tree[walkPath].parent;
       }
       events.sort();
       if (events.length === 0) break;
@@ -958,6 +1019,12 @@
         };
       }
 
+      // Targetless transition — action ran, context mutated, continue pipeline
+      if (result.targetless) {
+        if (result.effects && result.effects.length > 0) effectLog = effectLog.concat(result.effects);
+        continue;
+      }
+
       // Guard blocked — try remaining events before giving up
       if (!result.transitioned) {
         var advanced = false;
@@ -971,7 +1038,7 @@
               effects: effectLog, route: result.route, blocked: false
             };
           }
-          if (result.transitioned) { advanced = true; break; }
+          if (result.transitioned || result.targetless) { advanced = true; break; }
         }
         if (!advanced) {
           return {
@@ -998,11 +1065,182 @@
       if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
     }
 
+    var inFinalState = definition._stateTree[inst.state] && definition._stateTree[inst.state].spec.final;
+    var exhausted = step >= maxSteps && !inFinalState;
     return {
       instance: inst, format: format, history: inst.history,
-      effects: effectLog, blocked: step >= maxSteps,
-      reason: step >= maxSteps ? 'maxSteps exceeded' : null
+      effects: effectLog, blocked: exhausted,
+      reason: exhausted ? 'maxSteps exceeded' : null
     };
+
+    } finally { clearTimers(inst); }
+  }
+
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  Async pipeline — awaits effect adapters                                ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+  //
+  // Same structure as executePipeline but awaits each effect adapter's return
+  // value. The result is injected back into context via the `bind` field on
+  // invoke!. on-success / on-error events are sent after each effect resolves.
+  //
+  // Usage:
+  //   var result = await machine.executePipelineAsync(def, {
+  //     effects: { solver: async function (input) { return await solve(input); } },
+  //     maxSteps: 10
+  //   });
+
+  async function executePipelineAsync(definition, options) {
+    options = options || {};
+    var maxSteps = options.maxSteps || 10;
+    var effectAdapters = options.effects || {};
+    var eventSelector = options.eventSelector || function (events) { return events[0]; };
+    var formatUpdater = options.formatUpdater || null;
+    var format = options.format || null;
+    var effectLog = [];
+
+    var host = {
+      now: function () { return Date.now(); },
+      scheduleAfter: function (ms, cb) { return setTimeout(cb, ms); },
+      scheduleEvery: function (ms, cb) { return setInterval(cb, ms); },
+      cancelTimer: function (id) { clearTimeout(id); clearInterval(id); },
+      emit: function () {},
+      persist: null,
+      log: function () {},
+      capabilities: options.capabilities || Object.keys(effectAdapters)
+    };
+
+    var inst = createInstance(definition, { host: host, context: options.context });
+
+    if (inst.route) {
+      clearTimers(inst);
+      return {
+        instance: inst, format: format, history: inst.history,
+        effects: effectLog, route: inst.route, blocked: false
+      };
+    }
+
+    var step = 0;
+
+    try {
+
+    while (step < maxSteps) {
+      step++;
+
+      var tree = definition._stateTree;
+      var currentSpec = tree[inst.state] ? tree[inst.state].spec : null;
+      if (!currentSpec || currentSpec.final) break;
+
+      var seenEvents = {};
+      var events = [];
+      var walkPath = inst.state;
+      while (walkPath && tree[walkPath]) {
+        var walkSpec = tree[walkPath].spec;
+        if (walkSpec.on) {
+          for (var ev in walkSpec.on) {
+            if (!seenEvents[ev] && ev !== '.' && ev !== '__timeout' && ev !== '__auto') {
+              seenEvents[ev] = true;
+              events.push(ev);
+            }
+          }
+        }
+        walkPath = tree[walkPath].parent;
+      }
+      events.sort();
+      if (events.length === 0) break;
+
+      var eventToSend = eventSelector(events, inst.context, inst.state);
+      if (!eventToSend) break;
+
+      var result = sendEvent(inst, eventToSend);
+
+      if (result.route) {
+        if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
+        return {
+          instance: inst, format: format, history: inst.history,
+          effects: effectLog, route: result.route, blocked: false
+        };
+      }
+
+      if (result.targetless) {
+        if (result.effects && result.effects.length > 0) {
+          await _dispatchEffectsAsync(result.effects, effectAdapters, inst, effectLog);
+        }
+        continue;
+      }
+
+      if (!result.transitioned) {
+        var advanced = false;
+        for (var ri = 0; ri < events.length; ri++) {
+          if (events[ri] === eventToSend) continue;
+          result = sendEvent(inst, events[ri]);
+          if (result.route) {
+            if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
+            return {
+              instance: inst, format: format, history: inst.history,
+              effects: effectLog, route: result.route, blocked: false
+            };
+          }
+          if (result.transitioned || result.targetless) { advanced = true; break; }
+        }
+        if (!advanced) {
+          return {
+            instance: inst, format: format, history: inst.history,
+            effects: effectLog, blocked: true, reason: 'no matching transition'
+          };
+        }
+      }
+
+      // Await each effect adapter — inject results into context via bind
+      if (result.effects) {
+        await _dispatchEffectsAsync(result.effects, effectAdapters, inst, effectLog);
+      }
+
+      if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
+    }
+
+    var inFinalState = definition._stateTree[inst.state] && definition._stateTree[inst.state].spec.final;
+    var exhausted = step >= maxSteps && !inFinalState;
+    return {
+      instance: inst, format: format, history: inst.history,
+      effects: effectLog, blocked: exhausted,
+      reason: exhausted ? 'maxSteps exceeded' : null
+    };
+
+    } finally { clearTimers(inst); }
+  }
+
+  async function _dispatchEffectsAsync(effects, adapters, inst, effectLog, depth) {
+    if (!depth) depth = 0;
+    if (depth > 8) return; // prevent infinite effect chains
+    for (var i = 0; i < effects.length; i++) {
+      var effect = effects[i];
+      var adapter = adapters[effect.type];
+      if (!adapter) {
+        effectLog.push({ type: effect.type, input: effect.input, service: 'no-adapter' });
+        continue;
+      }
+      try {
+        var value = await adapter(effect.input, deepCopy(inst.context));
+        if (effect.bind) inst.context[effect.bind] = value;
+        effectLog.push({ type: effect.type, input: effect.input, service: 'host' });
+        if (effect['on-success']) {
+          var successResult = sendEvent(inst, effect['on-success'], value);
+          if (successResult.effects && successResult.effects.length > 0) {
+            await _dispatchEffectsAsync(successResult.effects, adapters, inst, effectLog, depth + 1);
+          }
+        }
+      } catch (err) {
+        effectLog.push({ type: effect.type, input: effect.input, service: 'error', error: String(err) });
+        if (effect['on-error']) {
+          var errorResult = sendEvent(inst, effect['on-error'], { error: err && err.message ? err.message : String(err) });
+          if (errorResult.effects && errorResult.effects.length > 0) {
+            await _dispatchEffectsAsync(errorResult.effects, adapters, inst, effectLog, depth + 1);
+          }
+        }
+      }
+    }
   }
 
 
@@ -1017,6 +1255,7 @@
     watch: watch,
     unwatch: unwatch,
     executePipeline: executePipeline,
+    executePipelineAsync: executePipelineAsync,
     version: '0.5.0'
   };
 });

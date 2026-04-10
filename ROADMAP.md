@@ -1,8 +1,8 @@
 # Roadmap
 
-## v1.0 (current)
+## v0.5 (current)
 
-Shipped. 1145 tests. The framework works end-to-end: browser machines, server pipelines, capability routing, URL routing, emit payloads, computed bindings, auto loading states, 24-lesson interactive guide, purchase order reference app.
+1,359 tests. The framework works end-to-end: browser machines, server pipelines, capability routing, URL routing, emit payloads, computed bindings, auto loading states, 24-lesson interactive guide, purchase order reference app.
 
 ## v1.1: Production server
 

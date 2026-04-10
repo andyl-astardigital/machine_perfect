@@ -38,8 +38,7 @@
 //   getInstance(id)             Retrieve an instance by id.
 //                               Returns: instance object or null.
 //
-//   listInstances(filter?)      List instances, optionally filtered.
-//                               filter: { definitionId?, state?, status? }
+//   listInstances()              List all instances.
 //                               Returns: [{ id, definitionId, state }]
 //
 //   deleteInstance(id)           Remove an instance.
@@ -122,6 +121,14 @@
 //
 //   log(level, ...args)         Diagnostic output.
 //
+//   capabilities                Array of capability strings this host
+//                               provides. Required for mp-where routing —
+//                               machine.js reads host.capabilities || []
+//                               so an adapter without this silently reports
+//                               no capabilities and mp-where always routes
+//                               remotely instead of executing locally.
+//                               Example: ['log', 'notify', 'persist']
+//
 // The server creates a host adapter per instance that delegates to
 // the storage adapter for persistence and to effect adapters for
 // side effects.
@@ -134,6 +141,18 @@
 //
 // Verify that an object satisfies an adapter interface at startup,
 // before the first request hits it.
+
+function validateHost(host) {
+  var requiredFns = ['now', 'scheduleAfter', 'scheduleEvery', 'cancelTimer', 'emit', 'persist', 'log'];
+  var missing = [];
+  for (var i = 0; i < requiredFns.length; i++) {
+    if (typeof host[requiredFns[i]] !== 'function') missing.push(requiredFns[i]);
+  }
+  if (!Array.isArray(host.capabilities)) missing.push('capabilities (must be an array)');
+  if (missing.length > 0) {
+    throw new Error('[mp] host adapter missing fields: ' + missing.join(', '));
+  }
+}
 
 function validateStorage(adapter) {
   var required = ['putDefinition', 'getDefinition', 'listDefinitions',
@@ -162,6 +181,7 @@ function validateEffects(effects) {
 
 
 module.exports = {
+  validateHost: validateHost,
   validateStorage: validateStorage,
   validateEffect: validateEffect,
   validateEffects: validateEffects

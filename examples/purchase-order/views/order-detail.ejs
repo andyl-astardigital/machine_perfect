@@ -1,9 +1,9 @@
 <%# The detail view IS a machine. Uses:
-    mp-ctx, mp-state, mp-temporal="(animate)" (CSS enter), mp-text, mp-class with cond,
-    mp-each + mp-key for items/effects/history, mp-show,
-    mp-bind-data-*, mp-on:click.outside for delete confirmation,
-    (date-fmt), (str), (count), (cond), (let), (fn), (->), (->>),
-    (filter), (map), (reduce), (sort-by), when-state %>
+    mp-ctx, mp-state, <mp-temporal>(animate)</mp-temporal>, <mp-text>, <mp-class> with cond,
+    mp-each + mp-key for items/effects/history, <mp-show>,
+    <mp-bind attr="data-item">, <mp-on event="click.outside"> for delete confirmation,
+    (date-fmt), (str), (count), (cond), (let), (fn), (->>),
+    (filter), (map), (reduce), (sort-by) %>
 
 <div class="max-w-2xl mx-auto space-y-4">
   <button mp-to="orders" class="btn btn-ghost btn-sm gap-1">
@@ -12,101 +12,117 @@
     </svg> Back
   </button>
 
-  <div mp="order-detail" mp-ctx='<%- JSON.stringify(order) %>'>
-    <div mp-state="viewing" mp-temporal="(animate)">
+  <div mp="order-detail" mp-ctx='<%- JSON.stringify(order).replace(/'/g, "&#39;") %>'>
+    <div mp-state="viewing">
+      <mp-temporal>(animate)</mp-temporal>
 
       <!-- Header -->
       <div class="card bg-base-100 shadow-xl mb-4">
         <div class="card-body p-5 gap-3">
           <div class="flex items-start justify-between">
             <div>
-              <h2 class="text-2xl font-bold" mp-text="title"></h2>
-              <p class="text-sm text-base-content/50 mt-1"
-                 mp-text="(->> created_at (date-fmt) (str 'Created '))"></p>
+              <h2 class="text-2xl font-bold"><mp-text>title</mp-text></h2>
+              <p class="text-sm text-base-content/50 mt-1">
+                <mp-text>(->> created_at (date-fmt) (str 'Created '))</mp-text>
+              </p>
             </div>
             <div class="text-right">
-              <p class="text-3xl font-bold font-mono" mp-text="(str '£' amount)"></p>
-              <div class="badge mt-1"
-                   mp-class="(cond
-                     (= status 'fulfilled') 'badge-success'
-                     (= status 'rejected') 'badge-error'
-                     (= status 'approved') 'badge-info'
-                     true 'badge-ghost')"
-                   mp-text="status"></div>
+              <p class="text-3xl font-bold font-mono"><mp-text>(str '£' amount)</mp-text></p>
+              <div class="badge mt-1">
+                <mp-text>status</mp-text>
+                <mp-class>(cond
+                  (= status 'fulfilled') 'badge-success'
+                  (= status 'rejected') 'badge-error'
+                  (= status 'approved') 'badge-info'
+                  true 'badge-ghost')</mp-class>
+              </div>
             </div>
           </div>
-          <div mp-show="(not (empty? notes))">
+          <div>
+            <mp-show>(not (empty? notes))</mp-show>
             <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/40 mb-1">Notes</h4>
-            <p class="text-sm text-base-content/70" mp-text="notes"></p>
+            <p class="text-sm text-base-content/70"><mp-text>notes</mp-text></p>
           </div>
           <!-- Summary using let + ->> + reduce -->
-          <p class="text-xs text-base-content/40"
-             mp-text="(let [total-qty (->> items (map (fn [i] (get i :qty))) (reduce + 0))]
-                        (str (count items) ' items &middot; ' total-qty ' units &middot; £' amount))"></p>
+          <p class="text-xs text-base-content/40">
+            <mp-text>(let [total-qty (->> items (map (fn [i] (get i :qty))) (reduce + 0))]
+                       (str (count items) ' items &middot; ' total-qty ' units &middot; £' amount))</mp-text>
+          </p>
         </div>
       </div>
 
       <!-- Items — mp-each with mp-key -->
       <div class="card bg-base-100 shadow-xl mb-4">
         <div class="card-body p-4 gap-2">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40"
-              mp-text="(str 'Items (' (count items) ')')"></h3>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40">
+            <mp-text>(str 'Items (' (count items) ')')</mp-text>
+          </h3>
           <template mp-each="items" mp-key="name">
-            <div class="flex items-center justify-between bg-base-200 rounded px-3 py-2"
-                 mp-bind-data-item="name">
-              <span class="text-sm font-medium" mp-text="name"></span>
-              <span class="text-sm font-mono text-base-content/50" mp-text="(str 'qty: ' qty)"></span>
+            <div class="flex items-center justify-between bg-base-200 rounded px-3 py-2">
+              <mp-bind attr="data-item">name</mp-bind>
+              <span class="text-sm font-medium"><mp-text>name</mp-text></span>
+              <span class="text-sm font-mono text-base-content/50"><mp-text>(str 'qty: ' qty)</mp-text></span>
             </div>
           </template>
         </div>
       </div>
 
       <!-- Effects — mp-each with sort-by and cond classes -->
-      <div mp-show="(> (count effects) 0)" class="card bg-base-100 shadow-xl mb-4">
+      <div class="card bg-base-100 shadow-xl mb-4">
+        <mp-show>(> (count effects) 0)</mp-show>
         <div class="card-body p-4 gap-2">
           <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40">Pipeline effects</h3>
-          <template mp-each="(->> effects (sort-by (fn [e] (get e :service))))" mp-key="detail">
+          <template mp-key="detail"><mp-each>(->> effects (sort-by (fn [e] (get e :service))))</mp-each>
             <div class="flex items-center gap-2 text-xs bg-base-200 rounded px-3 py-2">
-              <span class="badge badge-xs"
-                    mp-class="(cond (= type 'log') 'badge-info' (= type 'notify') 'badge-warning' (= type 'fulfil') 'badge-success' (= type 'persist') 'badge-accent' true 'badge-ghost')"
-                    mp-text="type"></span>
-              <span class="badge badge-xs badge-outline" mp-text="service"></span>
-              <span class="text-base-content/60 font-mono" mp-text="detail"></span>
+              <span class="badge badge-xs">
+                <mp-text>type</mp-text>
+                <mp-class>(cond (= type 'log') 'badge-info' (= type 'notify') 'badge-warning' (= type 'fulfil') 'badge-success' (= type 'persist') 'badge-accent' true 'badge-ghost')</mp-class>
+              </span>
+              <span class="badge badge-xs badge-outline"><mp-text>service</mp-text></span>
+              <span class="text-base-content/60 font-mono"><mp-text>detail</mp-text></span>
             </div>
           </template>
           <!-- Effect count using filter -->
-          <p class="text-xs text-base-content/30 mt-1"
-             mp-text="(let [logs (->> effects (filter (fn [e] (= (get e :type) 'log'))) (count))
-                            notifs (->> effects (filter (fn [e] (= (get e :type) 'notify'))) (count))]
-                       (str logs ' log &middot; ' notifs ' notify &middot; ' (count effects) ' total'))"></p>
+          <p class="text-xs text-base-content/30 mt-1">
+            <mp-text>(let [logs (->> effects (filter (fn [e] (= (get e :type) 'log'))) (count))
+                           notifs (->> effects (filter (fn [e] (= (get e :type) 'notify'))) (count))]
+                      (str logs ' log &middot; ' notifs ' notify &middot; ' (count effects) ' total'))</mp-text>
+          </p>
         </div>
       </div>
 
       <!-- History — mp-each -->
-      <div mp-show="(> (count history) 0)" class="card bg-base-100 shadow-xl mb-4">
+      <div class="card bg-base-100 shadow-xl mb-4">
+        <mp-show>(> (count history) 0)</mp-show>
         <div class="card-body p-4 gap-2">
           <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/40">Audit trail</h3>
           <template mp-each="history" mp-key="timestamp">
             <div class="flex items-center gap-2 text-xs bg-base-200 rounded px-3 py-2">
-              <span class="badge badge-xs"
-                    mp-class="(cond (= event 'submitted') 'badge-info' (= event 'approved') 'badge-success' (= event 'rejected') 'badge-error' (= event 'fulfilled') 'badge-accent' true 'badge-ghost')"
-                    mp-text="event"></span>
-              <span class="text-base-content/60 font-mono" mp-text="(str from ' &rarr; ' to)"></span>
+              <span class="badge badge-xs">
+                <mp-text>event</mp-text>
+                <mp-class>(cond (= event 'submitted') 'badge-info' (= event 'approved') 'badge-success' (= event 'rejected') 'badge-error' (= event 'fulfilled') 'badge-accent' true 'badge-ghost')</mp-class>
+              </span>
+              <span class="text-base-content/60 font-mono"><mp-text>(str from ' &rarr; ' to)</mp-text></span>
             </div>
           </template>
         </div>
       </div>
 
-      <!-- Delete with mp-on:click.outside confirmation -->
+      <!-- Delete with click.outside confirmation -->
       <div class="flex justify-end">
         <div mp="delete-confirm" mp-ctx='{"open":false}'>
           <div mp-state="closed">
             <button mp-to="open" class="btn btn-error btn-sm btn-outline">Delete Order</button>
           </div>
-          <div mp-state="open" mp-on:click.outside="closed" mp-temporal="(animate)">
+          <div mp-state="open">
+            <mp-temporal>(animate)</mp-temporal>
+            <mp-on event="click.outside">(to closed)</mp-on>
+            <mp-transition event="confirm-delete" to="closed">
+              <mp-action>(emit delete-order (obj :id id))</mp-action>
+            </mp-transition>
             <div class="flex items-center gap-2 bg-error/10 border border-error rounded-lg px-4 py-2">
               <span class="text-sm text-error">Are you sure?</span>
-              <button mp-to="(do (emit delete-order (obj :id id)) (to closed))"
+              <button mp-to="confirm-delete"
                       class="btn btn-error btn-xs">Yes, delete</button>
               <button mp-to="closed" class="btn btn-ghost btn-xs">Cancel</button>
             </div>

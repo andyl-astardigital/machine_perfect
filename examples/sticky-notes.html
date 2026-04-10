@@ -31,45 +31,60 @@
 <body class="bg-base-300 text-base-content min-h-screen">
 
   <!--
-    Sticky Notes — zero JavaScript.
+    Sticky Notes. Zero JavaScript.
 
     Each note is an independent state machine with four states:
-    viewing → editing → confirming → deleted.
+    viewing, editing, confirming, deleted.
 
-    Edit one note — the others don't move. That's the component model.
-    The HTML IS the application. No script tags below.
+    Edit one note and the others don't move. That's the component model.
+    The HTML IS the application.
   -->
 
   <template mp-define="note">
-    <div mp-state="viewing" mp-temporal="(animate)" class="card note shadow-md">
+    <div mp-state="viewing" class="card note shadow-md">
+      <mp-temporal>(animate)</mp-temporal>
+      <mp-transition event="start-editing" to="editing">
+        <mp-action>(set! draft text)</mp-action>
+      </mp-transition>
       <div class="card-body p-4 gap-2">
-        <p mp-text="text" class="text-sm whitespace-pre-wrap leading-relaxed select-text"></p>
+        <p class="text-sm whitespace-pre-wrap leading-relaxed select-text"><mp-text>text</mp-text></p>
         <div class="flex justify-end gap-1 mt-auto pt-2 note-divider">
-          <button mp-to="(do (set! draft text) (to editing))"
+          <button mp-to="start-editing"
                   class="btn btn-xs btn-ghost opacity-50 hover:opacity-100">edit</button>
           <button mp-to="confirming"
                   class="btn btn-xs btn-ghost opacity-50 hover:opacity-100 note-delete">delete</button>
         </div>
       </div>
     </div>
-    <div mp-state="editing" mp-temporal="(animate)" class="card note shadow-md">
+    <div mp-state="editing" class="card note shadow-md">
+      <mp-temporal>(animate)</mp-temporal>
+
+      <mp-transition event="save" to="viewing">
+        <mp-guard>(> (count draft) 0)</mp-guard>
+        <mp-action>(set! text draft)</mp-action>
+      </mp-transition>
+
       <div class="card-body p-4 gap-2">
         <textarea mp-model="draft" rows="3"
-                  class="textarea textarea-bordered w-full text-sm bg-transparent"
-                  mp-on:keydown="(when (= (get $event :key) 'Escape') (to viewing))"></textarea>
+                  class="textarea textarea-bordered w-full text-sm bg-transparent">
+          <mp-on event="keydown">(when (= (get $event :key) 'Escape') (to viewing))</mp-on>
+        </textarea>
         <div class="flex justify-end gap-1">
-          <button mp-to="(when (> (count draft) 0) (do (set! text draft) (to viewing)))"
-                  class="btn btn-xs btn-primary">save</button>
+          <button mp-to="save" class="btn btn-xs btn-primary">save</button>
           <button mp-to="viewing" class="btn btn-xs btn-ghost">cancel</button>
         </div>
       </div>
     </div>
-    <div mp-state="confirming" mp-temporal="(animate)" class="card note shadow-md">
+    <div mp-state="confirming" class="card note shadow-md">
+      <mp-temporal>(animate)</mp-temporal>
+      <mp-transition event="confirm-delete" to="deleted">
+        <mp-emit>note-deleted</mp-emit>
+      </mp-transition>
       <div class="card-body p-4 gap-2 items-center justify-center">
         <p class="text-sm font-bold">Delete this note?</p>
         <div class="flex gap-2">
           <button mp-to="viewing" class="btn btn-xs btn-ghost">keep</button>
-          <button mp-to="(do (emit note-deleted) (to deleted))" class="btn btn-xs btn-error">delete</button>
+          <button mp-to="confirm-delete" class="btn btn-xs btn-error">delete</button>
         </div>
       </div>
     </div>
@@ -78,9 +93,9 @@
 
   <template mp-define="toast">
     <div mp-state="idle"></div>
-    <div mp-state="show" mp-temporal="(after 2000 (to idle))"
-         class="alert alert-success shadow-lg text-sm">
-      <span mp-text="message"></span>
+    <div mp-state="show" class="alert alert-success shadow-lg text-sm">
+      <mp-temporal>(after 2000 (to idle))</mp-temporal>
+      <span><mp-text>message</mp-text></span>
     </div>
   </template>
 
@@ -92,25 +107,27 @@
     <span class="badge bg-mp-dark text-mp-lavender border-mp-purple text-xs">machine_perfect</span>
   </div>
 
-  <main class="max-w-5xl mx-auto p-6 space-y-6"
-        mp="app">
-
+  <main class="max-w-5xl mx-auto p-6 space-y-6" mp="app">
     <div mp-state="board">
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        <div mp="note" mp-ctx='{"text":"Ship machine_perfect\nThe framework is ready","draft":"","color":"yellow"}'
-             mp-class="(str 'note-' color)"></div>
-        <div mp="note" mp-ctx='{"text":"Call Sarah about the demo","draft":"","color":"pink"}'
-             mp-class="(str 'note-' color)"></div>
-        <div mp="note" mp-ctx='{"text":"Review state machine patterns\nNested machines, guards, actions","draft":"","color":"blue"}'
-             mp-class="(str 'note-' color)"></div>
-        <div mp="note" mp-ctx='{"text":"Buy coffee beans","draft":"","color":"green"}'
-             mp-class="(str 'note-' color)"></div>
+        <div mp="note" mp-ctx='{"text":"Ship machine_perfect\nThe framework is ready","draft":"","color":"yellow"}'>
+          <mp-class>(str 'note-' color)</mp-class>
+        </div>
+        <div mp="note" mp-ctx='{"text":"Call Sarah about the demo","draft":"","color":"pink"}'>
+          <mp-class>(str 'note-' color)</mp-class>
+        </div>
+        <div mp="note" mp-ctx='{"text":"Review state machine patterns\nNested machines, guards, actions","draft":"","color":"blue"}'>
+          <mp-class>(str 'note-' color)</mp-class>
+        </div>
+        <div mp="note" mp-ctx='{"text":"Buy coffee beans","draft":"","color":"green"}'>
+          <mp-class>(str 'note-' color)</mp-class>
+        </div>
       </div>
     </div>
 
     <div class="toast toast-end toast-bottom z-50">
-      <div mp="toast" mp-ctx='{"message":""}'
-           mp-receive="(on 'note-deleted' (do (set! message 'Note deleted') (to show)))">
+      <div mp="toast" mp-ctx='{"message":""}'>
+        <mp-receive event="note-deleted">(do (set! message 'Note deleted') (to show))</mp-receive>
       </div>
     </div>
   </main>

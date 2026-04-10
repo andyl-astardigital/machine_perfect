@@ -2,24 +2,26 @@
  * machine_perfect — markup transforms.
  *
  * Structural conversion between HTML machine markup and SCXML.
- * S-expressions pass through untouched. State and context travel
- * inside the markup attributes — nothing is extracted or wrapped.
+ * State and context travel inside the markup — nothing is extracted or wrapped.
+ * S-expressions are structural child elements, never attribute strings.
  *
  * HTML is the browser substrate. SCXML is the service substrate.
  * These transforms are the bridge. They run once at the edge.
+ *
+ * Rule: parentheses → elements. Bare words → attributes.
  *
  * @version 0.5.0
  * @license MIT
  */
 (function (root, factory) {
   if (typeof exports === 'object' && typeof module !== 'undefined') {
-    module.exports = factory(require('./engine'));
+    module.exports = factory(require('./scxml'));
   } else if (typeof define === 'function' && define.amd) {
-    define(['./engine'], factory);
+    define(['./scxml'], factory);
   } else {
-    root.MPTransforms = factory(root.MPEngine);
+    root.MPTransforms = factory(root.MPSCXML);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : typeof self !== 'undefined' ? self : this, function (engine) {
+})(typeof globalThis !== 'undefined' ? globalThis : typeof self !== 'undefined' ? self : this, function (scxml) {
 
   // Minimal XML attribute escaping. Only < and & MUST be escaped in attributes.
   // > is legal inside XML attribute values and must NOT be escaped — s-expressions
@@ -34,14 +36,19 @@
   // ║  HTML → SCXML                                                           ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
-  // Receives raw HTML string containing mp-* attributes.
+  // Receives raw HTML string containing mp-* markup.
   // Produces an SCXML string with the same semantics.
   // Current state and context travel in the markup — mp-ctx becomes
-  // <datamodel>, mp-current-state becomes SCXML initial override.
+  // the mp-ctx attribute on <scxml>, mp-current-state becomes SCXML initial.
+  //
+  // Transitions are extracted exclusively from <mp-transition> structural
+  // elements. Bare mp-to attributes on buttons are UI triggers and are not
+  // transported to SCXML. Lifecycle hooks (<mp-init>, <mp-exit>) are read
+  // from child elements and output as mp-init/mp-exit attributes in SCXML.
   //
   // This is a TEXT transform. It does not parse into a canonical format
-  // and rewrite. It reads the HTML, maps attributes to SCXML elements,
-  // and the s-expressions pass through as-is.
+  // and rewrite. It reads the HTML, maps elements to SCXML, and the
+  // s-expressions pass through as-is.
 
   function htmlToScxml(html) {
     var lines = [];
@@ -62,185 +69,304 @@
     var ctx = ctxMatch ? unescapeEntities(ctxMatch[1]) : null;
 
     lines.push('<scxml xmlns="http://www.w3.org/2005/07/scxml"');
-    lines.push('');
     lines.push('       id="' + esc(id) + '"');
     if (initial) lines.push('       initial="' + esc(initial) + '"');
     // Context travels as a single attribute — same pattern as mp-ctx in HTML.
-    // Complex values (arrays of objects) survive the round-trip intact.
     if (ctx) lines.push("       mp-ctx='" + ctx.replace(/'/g, '&apos;') + "'");
     lines.push('>');
 
-    // Extract all tags from the HTML, find state elements and their transitions
-    var allTags = extractTags(html);
-    var stateTags = [];
-    for (var ti = 0; ti < allTags.length; ti++) {
-      if (allTags[ti]['mp-state']) stateTags.push(allTags[ti]);
+    // Build a tree of states from the HTML, preserving parent-child nesting.
+    // Uses div depth tracking to determine which mp-state divs are children of which.
+    var stateNodes = _buildHtmlStateTree(html);
+
+    // Merge <template mp-state-template="X"> content into corresponding state nodes.
+    // The browser serialises inactive states as empty divs with transitions in a template sibling.
+    var templateRegex = /<template\s+mp-state-template="([^"]+)"[^>]*>([\s\S]*?)<\/template>/g;
+    var templateMatch;
+    while ((templateMatch = templateRegex.exec(html)) !== null) {
+      _mergeTemplateContent(stateNodes, templateMatch[1], templateMatch[2]);
     }
 
-    for (var si = 0; si < stateTags.length; si++) {
-      var stateAttrsObj = stateTags[si];
-      var stateName = stateAttrsObj['mp-state'];
-      var isFinal = 'mp-final' in stateAttrsObj;
-      var initAttr = stateAttrsObj['mp-init'] || null;
-      var exitAttr = stateAttrsObj['mp-exit'] || null;
-
-      if (isFinal) {
-        lines.push('  <final id="' + esc(stateName) + '"/>');
-        continue;
-      }
-
-      // Find transitions within this state's content section
-      var stateStart = html.indexOf('mp-state="' + stateName + '"');
-      var nextStateIdx = -1;
-      for (var nsi = si + 1; nsi < stateTags.length; nsi++) {
-        var idx = html.indexOf('mp-state="' + stateTags[nsi]['mp-state'] + '"', stateStart + 1);
-        if (idx !== -1) { nextStateIdx = idx; break; }
-      }
-      var stateContent = nextStateIdx !== -1
-        ? html.substring(stateStart, nextStateIdx)
-        : html.substring(stateStart);
-
-      var rawTransitions = extractTransitions(stateContent);
-
-      // Filter and deduplicate transitions for SCXML output.
-      //
-      // 1. Skip targetless transitions — emit, push!, remove-where!, etc.
-      //    are browser-side UI actions. Only (to ...) transitions participate
-      //    in the state machine's formal graph.
-      //
-      // 2. Deduplicate — when template-in-DOM is active, the browser
-      //    outerHTML includes both live content AND a <template> sibling,
-      //    producing duplicate transitions for the active state.
-      var transitions = [];
-      var seenMpTo = {};
-      for (var di = 0; di < rawTransitions.length; di++) {
-        if (!rawTransitions[di].target) continue;
-        var key = rawTransitions[di].mpTo || rawTransitions[di].target || '';
-        if (seenMpTo.hasOwnProperty(key)) continue;
-        seenMpTo[key] = true;
-        transitions.push(rawTransitions[di]);
-      }
-
-      var urlAttr = stateAttrsObj['mp-url'] || null;
-
-      var scxmlAttrs = ' id="' + esc(stateName) + '"';
-      if (initAttr) scxmlAttrs += ' mp-init="' + esc(initAttr) + '"';
-      if (exitAttr) scxmlAttrs += ' mp-exit="' + esc(exitAttr) + '"';
-      if (urlAttr) scxmlAttrs += ' mp-url="' + esc(urlAttr) + '"';
-
-      if (transitions.length > 0) {
-        lines.push('  <state' + scxmlAttrs + '>');
-        for (var tii = 0; tii < transitions.length; tii++) {
-          var trans = transitions[tii];
-          var transAttrs = '';
-          if (trans.event) transAttrs += ' event="' + esc(trans.event) + '"';
-          if (trans.mpTo && trans.mpTo.charAt(0) === '(') {
-            // S-expression: pass through as mp-to
-            transAttrs += ' mp-to="' + esc(trans.mpTo) + '"';
-          } else if (trans.target) {
-            // Bare target
-            transAttrs += ' target="' + esc(trans.target) + '"';
-          }
-          if (trans.where) transAttrs += ' mp-where="' + esc(trans.where) + '"';
-          lines.push('    <transition' + transAttrs + '/>');
-        }
-        lines.push('  </state>');
-      } else {
-        lines.push('  <state' + scxmlAttrs + '/>');
-      }
+    for (var si = 0; si < stateNodes.length; si++) {
+      _htmlStateNodeToScxml(stateNodes[si], lines, '  ');
     }
 
     lines.push('</scxml>');
     return lines.join('\n');
   }
 
-  function extractAttr(tag, name) {
-    var match = tag.match(new RegExp(name + '="([^"]*)"'));
-    return match ? match[1] : null;
-  }
-
-  function extractTransitions(stateContent) {
-    var transitions = [];
-    var tags = extractTags(stateContent);
-    for (var i = 0; i < tags.length; i++) {
-      var attrs = tags[i];
-      if (attrs['mp-to']) {
-        var mpToVal = attrs['mp-to'];
-        var trans = { target: null, event: null, guard: null, action: null, emit: null, where: attrs['mp-where'] || null };
-
-        if (mpToVal.charAt(0) === '(' && engine && engine.decomposeMpTo) {
-          // S-expression: decompose into canonical slots
-          var slots = engine.decomposeMpTo(mpToVal);
-          trans.target = slots.target;
-          trans.guard = slots.guard;
-          trans.action = slots.action;
-          trans.emit = slots.emit;
-          trans.event = attrs['mp-event'] || slots.target;
-        } else {
-          // Bare state name
-          trans.target = mpToVal;
-          trans.event = attrs['mp-event'] || mpToVal;
-        }
-
-        // Store the original mp-to for SCXML output
-        trans.mpTo = mpToVal;
-        transitions.push(trans);
-      }
-    }
-    return transitions;
-  }
-
-  // Parse all opening tags in a string, extracting their attributes.
-  // Handles quoted attribute values that contain > and < (s-expressions).
-  function extractTags(html) {
-    var tags = [];
+  // Build a tree of state nodes from HTML by tracking div open/close depth.
+  // Returns an array of top-level state nodes, each with a children array.
+  function _buildHtmlStateTree(html) {
+    // Find all mp-state div positions with their nesting depth
+    var statePositions = [];
     var pos = 0;
+    var divDepth = 0;
     while (pos < html.length) {
-      var tagStart = html.indexOf('<', pos);
-      if (tagStart === -1) break;
-      if (html[tagStart + 1] === '/') { pos = tagStart + 1; continue; }
-      // Skip HTML comments
-      if (html[tagStart + 1] === '!' && html[tagStart + 2] === '-' && html[tagStart + 3] === '-') {
-        var commentEnd = html.indexOf('-->', tagStart + 4);
+      var nextTag = html.indexOf('<', pos);
+      if (nextTag === -1) break;
+      // Skip comments
+      if (html.substring(nextTag, nextTag + 4) === '<!--') {
+        var commentEnd = html.indexOf('-->', nextTag + 4);
         pos = commentEnd !== -1 ? commentEnd + 3 : html.length;
         continue;
       }
-
-      // Parse attributes by scanning for key="value" pairs
-      var attrs = {};
-      var i = tagStart + 1;
-      // Skip tag name
-      while (i < html.length && !/[\s\/>]/.test(html[i])) i++;
-
-      while (i < html.length) {
-        // Skip whitespace
-        while (i < html.length && /\s/.test(html[i])) i++;
-        if (html[i] === '>' || html[i] === '/') break;
-
-        // Attribute name
-        var nameStart = i;
-        while (i < html.length && html[i] !== '=' && !/[\s\/>]/.test(html[i])) i++;
-        var attrName = html.substring(nameStart, i);
-
-        if (html[i] === '=') {
-          i++; // skip =
-          var quote = html[i];
-          if (quote === '"' || quote === "'") {
-            i++; // skip opening quote
-            var valStart = i;
-            while (i < html.length && html[i] !== quote) i++;
-            attrs[attrName] = unescapeEntities(html.substring(valStart, i));
-            i++; // skip closing quote
-          }
-        } else {
-          attrs[attrName] = true;
-        }
+      // Closing tag
+      if (html[nextTag + 1] === '/') {
+        var closeEnd = html.indexOf('>', nextTag);
+        var closeTag = html.substring(nextTag + 2, closeEnd).trim().toLowerCase();
+        if (closeTag === 'div') divDepth--;
+        pos = closeEnd + 1;
+        continue;
       }
+      // Self-closing or opening tag — scan for attributes
+      var tagEnd = nextTag + 1;
+      var inQ = false;
+      while (tagEnd < html.length) {
+        if (html[tagEnd] === '"' || html[tagEnd] === "'") {
+          if (!inQ) { inQ = html[tagEnd]; }
+          else if (html[tagEnd] === inQ) { inQ = false; }
+        } else if (!inQ && (html[tagEnd] === '>' || (html[tagEnd] === '/' && html[tagEnd + 1] === '>'))) {
+          break;
+        }
+        tagEnd++;
+      }
+      var tagStr = html.substring(nextTag + 1, tagEnd);
+      var selfClose = html[tagEnd] === '/';
+      var tagNameEnd = 0;
+      while (tagNameEnd < tagStr.length && !/[\s\/>]/.test(tagStr[tagNameEnd])) tagNameEnd++;
+      var tagName = tagStr.substring(0, tagNameEnd).toLowerCase();
 
-      if (Object.keys(attrs).length > 0) tags.push(attrs);
-      pos = i + 1;
+      if (tagName === 'div') {
+        var mpStateMatch = tagStr.match(/mp-state="([^"]+)"/);
+        if (mpStateMatch) {
+          var attrs = {};
+          var attrRegex = /([a-z][\w-]*)(?:="([^"]*)")?/gi;
+          var am;
+          while ((am = attrRegex.exec(tagStr)) !== null) {
+            attrs[am[1]] = am[2] !== undefined ? unescapeEntities(am[2]) : true;
+          }
+          // Slice the content between this div's > and its closing </div>
+          var contentStart = tagEnd + (selfClose ? 2 : 1);
+          var contentEnd = _findClosingDiv(html, contentStart);
+          statePositions.push({
+            name: mpStateMatch[1],
+            isFinal: 'mp-final' in attrs,
+            attrs: attrs,
+            depth: divDepth,
+            content: html.substring(contentStart, contentEnd)
+          });
+        }
+        if (!selfClose) divDepth++;
+      }
+      pos = tagEnd + (selfClose ? 2 : 1);
     }
-    return tags;
+
+    // Build tree from flat list using depth
+    var roots = [];
+    var stack = [];
+    for (var i = 0; i < statePositions.length; i++) {
+      var sp = statePositions[i];
+      var node = { name: sp.name, isFinal: sp.isFinal, attrs: sp.attrs, content: sp.content, children: [] };
+      while (stack.length > 0 && stack[stack.length - 1].depth >= sp.depth) stack.pop();
+      if (stack.length > 0) {
+        stack[stack.length - 1].node.children.push(node);
+      } else {
+        roots.push(node);
+      }
+      stack.push({ depth: sp.depth, node: node });
+    }
+    return roots;
+  }
+
+  // Find the matching </div> for a div that opened at the given position.
+  function _findClosingDiv(html, start) {
+    var depth = 1;
+    var pos = start;
+    while (pos < html.length && depth > 0) {
+      var next = html.indexOf('<', pos);
+      if (next === -1) break;
+      if (html.substring(next, next + 4) === '<!--') {
+        var ce = html.indexOf('-->', next + 4);
+        pos = ce !== -1 ? ce + 3 : html.length;
+        continue;
+      }
+      if (html[next + 1] === '/') {
+        var cEnd = html.indexOf('>', next);
+        var cTag = html.substring(next + 2, cEnd).trim().toLowerCase();
+        if (cTag === 'div') depth--;
+        if (depth === 0) return next;
+        pos = cEnd + 1;
+      } else {
+        // Check if it's a div open (not self-closing)
+        var oEnd = next + 1;
+        var inQ2 = false;
+        while (oEnd < html.length) {
+          if ((html[oEnd] === '"' || html[oEnd] === "'") && !inQ2) inQ2 = html[oEnd];
+          else if (html[oEnd] === inQ2) inQ2 = false;
+          else if (!inQ2 && (html[oEnd] === '>' || (html[oEnd] === '/' && html[oEnd + 1] === '>'))) break;
+          oEnd++;
+        }
+        var oTag = html.substring(next + 1, oEnd);
+        var oNameEnd = 0;
+        while (oNameEnd < oTag.length && !/[\s\/>]/.test(oTag[oNameEnd])) oNameEnd++;
+        if (oTag.substring(0, oNameEnd).toLowerCase() === 'div' && html[oEnd] !== '/') depth++;
+        pos = oEnd + (html[oEnd] === '/' ? 2 : 1);
+      }
+    }
+    return html.length;
+  }
+
+  // Merge template content into the corresponding state node (recursive).
+  function _mergeTemplateContent(nodes, name, templateContent) {
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].name === name) { nodes[i].content += templateContent; return; }
+      if (nodes[i].children.length > 0) _mergeTemplateContent(nodes[i].children, name, templateContent);
+    }
+  }
+
+  // Emit a single state node as SCXML, recursing into children for compound states.
+  function _htmlStateNodeToScxml(node, lines, indent) {
+    if (node.isFinal) {
+      var finalAttrs = ' id="' + esc(node.name) + '"';
+      var fInit = node.attrs['mp-init'] || null;
+      var fExit = node.attrs['mp-exit'] || null;
+      if (!fInit) { var fim = node.content.match(/<mp-init>([\s\S]*?)<\/mp-init>/i); if (fim) fInit = unescapeEntities(fim[1].trim()); }
+      if (!fExit) { var fem = node.content.match(/<mp-exit>([\s\S]*?)<\/mp-exit>/i); if (fem) fExit = unescapeEntities(fem[1].trim()); }
+      if (fInit) finalAttrs += ' mp-init="' + esc(fInit) + '"';
+      if (fExit) finalAttrs += ' mp-exit="' + esc(fExit) + '"';
+      lines.push(indent + '<final' + finalAttrs + '/>');
+      return;
+    }
+
+    var initAttr = node.attrs['mp-init'] || null;
+    var exitAttr = node.attrs['mp-exit'] || null;
+    var content = node.content;
+
+    // Compound state initial — read from HTML comment <!-- initial="X" -->
+    var compoundInitial = null;
+    if (node.children.length > 0) {
+      var initialComment = content.match(/<!--\s*initial="([^"]+)"\s*-->/);
+      if (initialComment) compoundInitial = initialComment[1];
+    }
+
+    // Strip child state div regions before extracting lifecycle hooks and transitions.
+    // Without this, a parent would capture a child's <mp-init> if it appears first.
+    var ownContent = content;
+    for (var cci = 0; cci < node.children.length; cci++) {
+      var childMarker = 'mp-state="' + node.children[cci].name + '"';
+      var childIdx = ownContent.indexOf(childMarker);
+      if (childIdx !== -1) {
+        var divStart = ownContent.lastIndexOf('<', childIdx);
+        var divEnd = _findClosingDiv(ownContent, childIdx + childMarker.length + 2);
+        var closeDiv = ownContent.indexOf('>', divEnd);
+        ownContent = ownContent.substring(0, divStart) + ownContent.substring(closeDiv + 1);
+      }
+    }
+
+    // Extract lifecycle hooks from own content (after child stripping)
+    if (!initAttr) { var ie = ownContent.match(/<mp-init>([\s\S]*?)<\/mp-init>/i); if (ie) initAttr = unescapeEntities(ie[1].trim()); }
+    if (!exitAttr) { var ee = ownContent.match(/<mp-exit>([\s\S]*?)<\/mp-exit>/i); if (ee) exitAttr = unescapeEntities(ee[1].trim()); }
+    var temporalEl = ownContent.match(/<mp-temporal>([\s\S]*?)<\/mp-temporal>/i);
+    var temporalAttr = temporalEl ? unescapeEntities(temporalEl[1].trim()) : null;
+    var whereEl = ownContent.match(/<mp-where>([\s\S]*?)<\/mp-where>/i);
+    var whereAttr = whereEl ? unescapeEntities(whereEl[1].trim()) : null;
+    var urlAttr = node.attrs['mp-url'] || null;
+    if (!urlAttr) { var ue = ownContent.match(/<mp-url>([\s\S]*?)<\/mp-url>/i); if (ue) urlAttr = unescapeEntities(ue[1].trim()); }
+
+    var scxmlAttrs = ' id="' + esc(node.name) + '"';
+    if (initAttr) scxmlAttrs += ' mp-init="' + esc(initAttr) + '"';
+    if (exitAttr) scxmlAttrs += ' mp-exit="' + esc(exitAttr) + '"';
+    if (urlAttr) scxmlAttrs += ' mp-url="' + esc(urlAttr) + '"';
+    if (compoundInitial) scxmlAttrs += ' initial="' + esc(compoundInitial) + '"';
+
+    // Transitions
+    var rawTransitions = extractStructuralTransitions(ownContent);
+    var transitions = [];
+    var seenKey = {};
+    for (var di = 0; di < rawTransitions.length; di++) {
+      var raw = rawTransitions[di];
+      if (!raw.target && !raw.event && !raw.action && !raw.guard && !raw.emit) continue;
+      var key = (raw.event || '') + '\x1f' + (raw.target || '') + '\x1f' + (raw.guard || '') + '\x1f' + (raw.action || '');
+      if (seenKey.hasOwnProperty(key)) continue;
+      seenKey[key] = true;
+      transitions.push(raw);
+    }
+
+    var childIndent = indent + '  ';
+    var hasContent = whereAttr || temporalAttr || transitions.length > 0 || node.children.length > 0;
+
+    if (!hasContent) {
+      lines.push(indent + '<state' + scxmlAttrs + '/>');
+      return;
+    }
+
+    lines.push(indent + '<state' + scxmlAttrs + '>');
+    if (whereAttr) lines.push(childIndent + '<mp-where><![CDATA[' + whereAttr + ']]></mp-where>');
+    if (temporalAttr) lines.push(childIndent + '<mp-temporal><![CDATA[' + temporalAttr + ']]></mp-temporal>');
+
+    for (var tii = 0; tii < transitions.length; tii++) {
+      var trans = transitions[tii];
+      var tAttrs = '';
+      if (trans.event) tAttrs += ' event="' + esc(trans.event) + '"';
+      if (trans.target) tAttrs += ' target="' + esc(trans.target) + '"';
+      if (trans.guard || trans.action || trans.emit) {
+        lines.push(childIndent + '<transition' + tAttrs + '>');
+        if (trans.guard) lines.push(childIndent + '  <mp-guard><![CDATA[' + trans.guard + ']]></mp-guard>');
+        if (trans.action) lines.push(childIndent + '  <mp-action><![CDATA[' + trans.action + ']]></mp-action>');
+        if (trans.emit) lines.push(childIndent + '  <mp-emit><![CDATA[' + trans.emit + ']]></mp-emit>');
+        lines.push(childIndent + '</transition>');
+      } else {
+        lines.push(childIndent + '<transition' + tAttrs + '/>');
+      }
+    }
+
+    // Recurse into child states
+    for (var ci = 0; ci < node.children.length; ci++) {
+      _htmlStateNodeToScxml(node.children[ci], lines, childIndent);
+    }
+
+    lines.push(indent + '</state>');
+  }
+
+
+  function extractAttr(str, name) {
+    var m = str.match(new RegExp(name + '="([^"]*)"')) ||
+            str.match(new RegExp(name + "='([^']*)'"));
+    return m ? m[1] : null;
+  }
+
+  // Extract <mp-transition> elements from HTML string.
+  // Returns array of { event, target, guard, action, emit, where }.
+  // CDATA sections in SCXML are unwrapped transparently.
+  function extractStructuralTransitions(html) {
+    var transitions = [];
+    // Match both self-closing <mp-transition .../> and full <mp-transition ...>...</mp-transition>
+    var re = /<mp-transition\s+([^>]*?)(?:\/>|>([\s\S]*?)<\/mp-transition>)/gi;
+    var match;
+    while ((match = re.exec(html)) !== null) {
+      var attrs = match[1];
+      var content = match[2] || '';
+      var event = extractAttr(attrs, 'event');
+      var target = extractAttr(attrs, 'to');
+      var guard = null, action = null, emit = null;
+
+      var guardMatch = content.match(/<mp-guard>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/mp-guard>/i);
+      if (guardMatch) guard = unescapeEntities(guardMatch[1].trim());
+      var actionMatch = content.match(/<mp-action>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/mp-action>/i);
+      if (actionMatch) action = unescapeEntities(actionMatch[1].trim());
+      var emitMatch = content.match(/<mp-emit>([\s\S]*?)<\/mp-emit>/i);
+      if (emitMatch) emit = unescapeEntities(emitMatch[1].trim());
+
+      transitions.push({
+        event: event || null,
+        target: target,
+        guard: guard,
+        action: action,
+        emit: emit
+      });
+    }
+    return transitions;
   }
 
 
@@ -252,19 +378,27 @@
   // No full parse and rewrite. Just update the attributes.
 
   function updateScxmlState(scxmlString, newState, newContext) {
-    // Update initial attribute to reflect current state
+    var escapedState = esc(newState);
     var updated;
     if (scxmlString.indexOf('initial="') !== -1) {
-      updated = scxmlString.replace(/initial="[^"]*"/, 'initial="' + esc(newState) + '"');
+      // perf: use function form — replacement string must not be interpreted for $ patterns
+      updated = scxmlString.replace(/initial="[^"]*"/, function () { return 'initial="' + escapedState + '"'; });
     } else {
-      // No initial attribute yet — add it after the id attribute
-      updated = scxmlString.replace(/id="([^"]*)"/, 'id="$1"\n       initial="' + esc(newState) + '"');
+      updated = scxmlString.replace(/id="([^"]*)"/, function (m, idVal) {
+        return 'id="' + idVal + '"\n       initial="' + escapedState + '"';
+      });
     }
 
-    // Update context attribute in place
     if (newContext) {
       var ctxJson = JSON.stringify(newContext).replace(/'/g, '&apos;');
-      updated = updated.replace(/mp-ctx='[^']*'/, "mp-ctx='" + ctxJson + "'");
+      if (updated.indexOf("mp-ctx='") !== -1) {
+        updated = updated.replace(/mp-ctx='[^']*'/, function () { return "mp-ctx='" + ctxJson + "'"; });
+      } else {
+        // No mp-ctx attribute yet — insert before the closing > of the <scxml> tag
+        updated = updated.replace(/(<scxml\b[^>]*?)(\s*\/?>)/, function (m, p1, p2) {
+          return p1 + " mp-ctx='" + ctxJson + "'" + p2;
+        });
+      }
     }
 
     return updated;
@@ -275,79 +409,153 @@
   // ║  SCXML → HTML                                                           ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
-  // Converts SCXML back to HTML machine markup for the browser.
+  // Converts SCXML back to HTML machine markup for the browser runtime.
   // Inverse of htmlToScxml.
+  //
+  // SCXML state attributes mp-init/mp-exit become <mp-init>/<mp-exit> child
+  // elements in the HTML output. SCXML <transition> elements become
+  // <mp-transition> structural elements with optional <mp-guard>, <mp-action>,
+  // <mp-emit> children. Guard/action content is unwrapped from CDATA sections.
+
+  // Escape < and & for HTML text content. > is safe in element content.
+  function escHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  }
 
   function scxmlToHtml(scxmlString) {
+    var root = scxml.parseXML(scxmlString);
+    var id = root.attrs.id || root.attrs.name || 'machine';
+    var initial = root.attrs.initial || null;
+    var ctxStr = root.attrs['mp-ctx'] || null;
+
     var lines = [];
-
-    var idMatch = scxmlString.match(/id="([^"]+)"/);
-    var id = idMatch ? idMatch[1] : 'machine';
-    var initialMatch = scxmlString.match(/initial="([^"]+)"/);
-    var initial = initialMatch ? initialMatch[1] : null;
-
-    // Context attribute — mp-ctx in both HTML and SCXML
-    var ctxMatch = scxmlString.match(/mp-ctx='([^']*)'/) || scxmlString.match(/mp-ctx="([^"]*)"/);
-    var ctxStr = ctxMatch ? unescapeEntities(ctxMatch[1]) : null;
-
-    lines.push('<div mp="' + id + '"');
+    lines.push('<div mp="' + escHtml(id) + '"');
     if (initial) lines.push('     mp-current-state="' + initial + '"');
-    if (ctxStr) lines.push("     mp-ctx='" + ctxStr + "'");
+    if (ctxStr) lines.push("     mp-ctx='" + ctxStr.replace(/'/g, '&#39;') + "'");
     lines.push('>');
 
-    // States
-    var stateRegex = /<state\s+id="([^"]+)"([^>]*?)(?:\/>|>([\s\S]*?)<\/state>)/g;
-    var stateMatch;
-    while ((stateMatch = stateRegex.exec(scxmlString)) !== null) {
-      var stateName = stateMatch[1];
-      var stateAttrs = stateMatch[2] || '';
-      var stateContent = stateMatch[3] || '';
-      var stateHtmlAttrs = ' mp-state="' + stateName + '"';
-
-      var mpInit = extractAttr(stateAttrs, 'mp-init');
-      var mpExit = extractAttr(stateAttrs, 'mp-exit');
-      var mpUrl = extractAttr(stateAttrs, 'mp-url');
-      if (mpInit) stateHtmlAttrs += ' mp-init="' + mpInit + '"';
-      if (mpExit) stateHtmlAttrs += ' mp-exit="' + mpExit + '"';
-      if (mpUrl) stateHtmlAttrs += ' mp-url="' + mpUrl + '"';
-
-      lines.push('  <div' + stateHtmlAttrs + '>');
-
-      // Transitions within state — use extractTags for quote-aware parsing
-      var transTags = extractTags(stateContent);
-      for (var tti = 0; tti < transTags.length; tti++) {
-        var ta = transTags[tti];
-        if (!ta['target'] && !ta['event'] && !ta['mp-to']) continue;
-
-        var mpToVal = ta['mp-to'] || null;
-        var target = ta['target'] || null;
-        var event = ta['event'] || null;
-        var where = ta['mp-where'] || null;
-
-        var btnAttrs = '';
-        if (mpToVal) {
-          // mp-to s-expression passes through unchanged
-          btnAttrs = ' mp-to="' + mpToVal + '"';
-        } else if (target) {
-          btnAttrs = ' mp-to="' + target + '"';
-        }
-        if (where) btnAttrs += ' mp-where="' + where + '"';
-        var label = event || target || 'action';
-        lines.push('    <button' + btnAttrs + '>' + esc(label) + '</button>');
-      }
-
-      lines.push('  </div>');
-    }
-
-    // Final states
-    var finalRegex = /<final\s+id="([^"]+)"\s*\/>/g;
-    var finalMatch;
-    while ((finalMatch = finalRegex.exec(scxmlString)) !== null) {
-      lines.push('  <div mp-state="' + finalMatch[1] + '" mp-final></div>');
+    // Walk parsed tree — handles nested/compound states correctly
+    for (var ci = 0; ci < root.children.length; ci++) {
+      var child = root.children[ci];
+      if (child.tag === 'state') _stateToHtml(child, lines, '  ');
+      else if (child.tag === 'final') _finalToHtml(child, lines, '  ');
     }
 
     lines.push('</div>');
     return lines.join('\n');
+  }
+
+  function _getTextContent(node) {
+    var text = '';
+    for (var i = 0; i < node.children.length; i++) {
+      if (node.children[i].tag === '#text') text += node.children[i].text;
+    }
+    return text.trim();
+  }
+
+  function _stateToHtml(node, lines, indent) {
+    var stateName = node.attrs.id;
+    if (!stateName) return;
+
+    var mpInit = node.attrs['mp-init'] || null;
+    var mpExit = node.attrs['mp-exit'] || null;
+    var mpUrl = node.attrs['mp-url'] || null;
+    var mpTemporal = node.attrs['mp-temporal'] || null;
+    var initialChild = node.attrs.initial || null;
+
+    lines.push(indent + '<div mp-state="' + escHtml(stateName) + '">');
+    var childIndent = indent + '  ';
+
+    // Scan children for lifecycle elements, transitions, and nested states
+    var hasChildStates = false;
+    for (var i = 0; i < node.children.length; i++) {
+      var child = node.children[i];
+      if (child.tag === 'onentry') mpInit = _getTextContent(child) || _extractActionText(child);
+      else if (child.tag === 'onexit') mpExit = _getTextContent(child) || _extractActionText(child);
+      else if (child.tag === 'mp-where') { lines.push(childIndent + '<mp-where>' + escHtml(_getTextContent(child)) + '</mp-where>'); }
+      else if (child.tag === 'mp-temporal') { if (!mpTemporal) mpTemporal = _getTextContent(child); }
+      else if (child.tag === 'state' || child.tag === 'final') hasChildStates = true;
+    }
+
+    // Emit lifecycle/temporal/url as child elements
+    if (mpInit) lines.push(childIndent + '<mp-init>' + escHtml(mpInit) + '</mp-init>');
+    if (mpExit) lines.push(childIndent + '<mp-exit>' + escHtml(mpExit) + '</mp-exit>');
+    if (mpTemporal) lines.push(childIndent + '<mp-temporal>' + escHtml(mpTemporal) + '</mp-temporal>');
+    if (mpUrl) lines.push(childIndent + '<mp-url>' + escHtml(mpUrl) + '</mp-url>');
+
+    // Transitions
+    for (var ti = 0; ti < node.children.length; ti++) {
+      if (node.children[ti].tag === 'transition') {
+        _transitionToHtml(node.children[ti], lines, childIndent);
+      }
+    }
+
+    // Nested states (compound)
+    if (hasChildStates) {
+      if (initialChild) lines.push(childIndent + '<!-- initial="' + initialChild + '" -->');
+      for (var si = 0; si < node.children.length; si++) {
+        if (node.children[si].tag === 'state') _stateToHtml(node.children[si], lines, childIndent);
+        else if (node.children[si].tag === 'final') _finalToHtml(node.children[si], lines, childIndent);
+      }
+    }
+
+    lines.push(indent + '</div>');
+  }
+
+  function _extractActionText(node) {
+    for (var i = 0; i < node.children.length; i++) {
+      var c = node.children[i];
+      if (c.tag === 'script' || c.tag === 'action' || c.tag === 'mp-action') {
+        return _getTextContent(c);
+      }
+    }
+    return null;
+  }
+
+  function _finalToHtml(node, lines, indent) {
+    var stateName = node.attrs.id;
+    if (!stateName) return;
+    var mpInit = node.attrs['mp-init'] || null;
+    var mpExit = node.attrs['mp-exit'] || null;
+    if (!mpInit && !mpExit) {
+      lines.push(indent + '<div mp-state="' + escHtml(stateName) + '" mp-final></div>');
+    } else {
+      lines.push(indent + '<div mp-state="' + escHtml(stateName) + '" mp-final>');
+      if (mpInit) lines.push(indent + '  <mp-init>' + escHtml(mpInit) + '</mp-init>');
+      if (mpExit) lines.push(indent + '  <mp-exit>' + escHtml(mpExit) + '</mp-exit>');
+      lines.push(indent + '</div>');
+    }
+  }
+
+  function _transitionToHtml(node, lines, indent) {
+    var event = node.attrs.event || null;
+    var target = node.attrs.target || null;
+    var cond = node.attrs.cond || null;
+
+    var guard = cond || null;
+    var action = null;
+    var emit = null;
+
+    for (var i = 0; i < node.children.length; i++) {
+      var child = node.children[i];
+      if (child.tag === 'mp-guard') guard = _getTextContent(child) || guard;
+      else if (child.tag === 'mp-action') action = _getTextContent(child);
+      else if (child.tag === 'mp-emit') emit = _getTextContent(child);
+    }
+
+    var mpTransAttrs = '';
+    if (event) mpTransAttrs += ' event="' + esc(event) + '"';
+    if (target) mpTransAttrs += ' to="' + esc(target) + '"';
+
+    if (guard || action || emit) {
+      lines.push(indent + '<mp-transition' + mpTransAttrs + '>');
+      if (guard) lines.push(indent + '  <mp-guard>' + escHtml(guard) + '</mp-guard>');
+      if (action) lines.push(indent + '  <mp-action>' + escHtml(action) + '</mp-action>');
+      if (emit) lines.push(indent + '  <mp-emit>' + escHtml(emit) + '</mp-emit>');
+      lines.push(indent + '</mp-transition>');
+    } else {
+      lines.push(indent + '<mp-transition' + mpTransAttrs + '></mp-transition>');
+    }
   }
 
 
@@ -391,6 +599,9 @@
     updateScxmlState: updateScxmlState,
     extractContext: extractContext,
     extractMachine: extractMachine,
+    // Exported for testing — internal helpers with stable contracts
+    extractStructuralTransitions: extractStructuralTransitions,
+    extractAttr: extractAttr,
     version: '0.5.0'
   };
 });

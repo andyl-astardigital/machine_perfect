@@ -24,8 +24,8 @@
 
 | Interface | Direction | Description |
 |-----------|-----------|-------------|
-| HTML attributes | In (browser) | `mp-state`, `mp-to="(when guard (do action (emit name) (to target)))"`, etc. |
-| SCXML documents | In (backend) | `<state>`, `<transition>`, `mp-to` with s-expression guards, actions, emits |
+| HTML attributes | In (browser) | `mp-state`, `<mp-transition event="name" to="target"><mp-guard>guard</mp-guard><mp-action>action</mp-action><mp-emit>name</mp-emit></mp-transition>`, etc. |
+| SCXML documents | In (backend) | `<state>`, `<transition>` with `cond`, `mp-action`, `mp-emit` attributes |
 | Canonical JSON | In/Out (both) | Machine definitions as portable computation documents |
 | DOM | Out (browser) | textContent, attributes, visibility, CSS classes |
 | HTTP API | In/Out (backend) | Events in, machine state + enabled transitions out |

@@ -7,7 +7,7 @@
 | Expression language | S-expressions (Clojure-inspired) | JavaScript expressions (security risk, inconsistent syntax) |
 | Component model | Finite state machines | Components with arbitrary state (React/Vue model) |
 | Reactivity | Runtime dependency tracking via evaluator instrumentation | Proxies (Vue), compiler (Svelte), virtual DOM (React) |
-| Binding purity | Structural enforcement — `_eval` rejects mutation forms | Convention only (Alpine) |
+| Binding purity | Structural enforcement — `eval` rejects mutation forms | Convention only (Alpine) |
 | Shared engine | Single JS codebase, ES5, UMD | Rust port (two codebases to maintain) |
 | Backend markup | SCXML + MP extensions | Custom XML format (no standard to build on) |
 | Backend persistence | Postgres with JSONB datamodels | Document DB (less query power), flat files (no transactions) |

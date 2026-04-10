@@ -65,7 +65,8 @@ describe('parse — #() shorthand');
 var short = engine.parse('#(> % 0)');
 eq(short[0].v, 'fn', 'desugars to fn');
 eq(short[1].t, 'V', 'params is vector');
-eq(short[1].v[0].v, '%', 'param is %');
+eq(short[1].v[0].v, '%1', 'first param is %1 (% is bound as alias at call time)');
+eq(short[1].v[1].v, '%2', 'second param is %2');
 
 describe('parse — multiple expressions become do');
 var multi = engine.parse('(inc! x) (dec! y)');
@@ -322,7 +323,7 @@ describe('stdlib — uuid');
 var id1 = evalExpr('(uuid)');
 var id2 = evalExpr('(uuid)');
 eq(typeof id1, 'string', 'uuid returns string');
-assert(id1.length >= 16, 'uuid length >= 16 (got ' + id1.length + ')');
+assert(id1.length >= 18, 'uuid length >= 18 (got ' + id1.length + ')');
 assert(id1 !== id2, 'uuid returns unique values (got ' + id1 + ' vs ' + id2 + ')');
 
 describe('stdlib — date-fmt');
@@ -400,8 +401,8 @@ eq(engine.depKey('$store.resorts'), '$store.resorts', '$store without sub → fu
 
 describe('get — paths');
 eq(engine.get({ a: { b: { c: 42 } } }, 'a.b.c'), 42, 'nested get');
-eq(engine.get({ a: 1 }, 'b.c'), undefined, 'missing path returns undefined');
-eq(engine.get(null, 'a'), undefined, 'null object returns undefined');
+eq(engine.get({ a: 1 }, 'b.c'), null, 'missing path returns null');
+eq(engine.get(null, 'a'), null, 'null object returns null');
 
 describe('set — paths');
 var setObj = {};
@@ -482,7 +483,7 @@ evalExpr('nonexistent', {});
 engine.debug = false;
 console.warn = origWarn;
 eq(warnings.length, 1, 'exactly one warning for undefined var');
-assert(warnings[0].indexOf('nonexistent') !== -1, 'warning mentions the undefined var name');
+eq(warnings[0], '[mp-debug] undefined variable "nonexistent"', 'warning message is exact');
 
 describe('debug — no warning when variable exists');
 warnings = [];
@@ -681,7 +682,7 @@ deepEq(evalExpr("(select-keys (obj :a 1 :b 2) [])"), {}, 'select-keys with empty
 
 describe('stdlib — zipmap');
 deepEq(evalExpr("(zipmap [:a :b :c] [1 2 3])"), { a: 1, b: 2, c: 3 }, 'zipmap creates object from keys and vals');
-deepEq(evalExpr("(zipmap [:a :b] [1])"), { a: 1, b: undefined }, 'zipmap with fewer vals than keys');
+deepEq(evalExpr("(zipmap [:a :b] [1])"), { a: 1, b: null }, 'zipmap with fewer vals than keys');
 deepEq(evalExpr("(zipmap [] [])"), {}, 'zipmap empty');
 
 describe('stdlib — polymorphic conj');
@@ -699,43 +700,6 @@ eq(evalExpr('(> 3 1 2)'), false, '> variadic not descending');
 eq(evalExpr('(<= 1 1 2)'), true, '<= variadic non-descending');
 eq(evalExpr('(>= 3 3 1)'), true, '>= variadic non-ascending');
 
-describe('decomposeMpTo');
-var d1 = engine.decomposeMpTo('(to submitted)');
-eq(d1.target, 'submitted', 'bare (to X) extracts target');
-eq(d1.guard, null, 'bare (to X) has no guard');
-eq(d1.action, null, 'bare (to X) has no action');
-
-var d2 = engine.decomposeMpTo("(when (> amount 0) (to submitted))");
-eq(d2.target, 'submitted', 'guarded: extracts target');
-eq(d2.guard, '(> amount 0)', 'guarded: extracts guard');
-eq(d2.action, null, 'guarded: no action');
-
-var d3 = engine.decomposeMpTo("(do (set! x 1) (to b))");
-eq(d3.target, 'b', 'do: extracts target');
-eq(d3.action, '(set! x 1)', 'do: extracts action');
-eq(d3.guard, null, 'do: no guard');
-
-var d4 = engine.decomposeMpTo("(when (> n 0) (do (set! submitted_at (now)) (emit order-submitted) (to submitted)))");
-eq(d4.target, 'submitted', 'full: extracts target');
-eq(d4.guard, '(> n 0)', 'full: extracts guard');
-eq(d4.action, '(set! submitted_at (now))', 'full: extracts action');
-eq(d4.emit, 'order-submitted', 'full: extracts emit');
-eq(d4.emitPayload, null, 'full: no emit payload');
-
-var d4b = engine.decomposeMpTo("(emit navigate-detail (obj :id id))");
-eq(d4b.emit, 'navigate-detail', 'emit+payload: extracts emit name');
-eq(d4b.emitPayload, '(obj :id id)', 'emit+payload: extracts payload expression');
-eq(d4b.target, null, 'emit+payload: no target');
-
-var d4c = engine.decomposeMpTo("(do (emit order-saved (obj :title title)) (to done))");
-eq(d4c.emit, 'order-saved', 'do+emit+payload: extracts emit name');
-eq(d4c.emitPayload, '(obj :title title)', 'do+emit+payload: extracts payload expression');
-eq(d4c.target, 'done', 'do+emit+payload: extracts target');
-
-var d5 = engine.decomposeMpTo("(inc! count)");
-eq(d5.target, null, 'mutation only: no target');
-eq(d5.action, '(inc! count)', 'mutation only: extracts action');
-
 describe('stdlib — hasOwnProperty guards');
 var protoObj = Object.create({ inherited: true });
 protoObj.own = 1;
@@ -751,6 +715,108 @@ eq(assocInResult.inherited, undefined, 'assoc-in does not copy inherited propert
 describe('stdlib — aliases');
 deepEq(evalExpr("(starts-with? 'hello' 'he')"), true, 'starts-with? alias');
 deepEq(evalExpr("(ends-with? 'hello' 'lo')"), true, 'ends-with? alias');
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Bug fixes                                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('#() lambda shorthand — body IS the s-expression');
+eq(evalExpr('(#(%) 42)'), 42, '#(x) single atom returns x');
+eq(evalExpr('(#(+ % 1) 5)'), 6, '#(fn arg...) body is the function call expression');
+eq(evalExpr('(#(> % 2) 5)'), true, '#() predicate: (> 5 2)');
+deepEq(evalExpr('(map #(+ % 10) [1 2 3])'), [11, 12, 13], '#() works in map');
+
+describe('Bug 2 — parseCache prototype collision');
+eq(engine.parse('constructor').t, 'Y', 'parse "constructor" returns symbol node, not Object.constructor');
+eq(engine.parse('toString').t, 'Y', 'parse "toString" returns symbol node');
+eq(engine.parse('valueOf').t, 'Y', 'parse "valueOf" returns symbol node');
+
+describe('Bug 3 — mutationForms completeness');
+throws(function () { evalExpr('(then! nil)'); }, 'mutation', 'then! blocked in pure eval');
+throws(function () { evalExpr('(focus! nil)'); }, 'mutation', 'focus! blocked in pure eval');
+throws(function () { evalExpr('(prevent! nil)'); }, 'mutation', 'prevent! blocked in pure eval');
+throws(function () { evalExpr('(stop! nil)'); }, 'mutation', 'stop! blocked in pure eval');
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Quality check — new bugs                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('M1 — first/last/nth/find return null not undefined for empty/no-match');
+eq(evalExpr('(first [])'), null, '(first []) → nil');
+eq(evalExpr('(last [])'), null, '(last []) → nil');
+eq(evalExpr('(nth [] 0)'), null, '(nth [] 0) → nil');
+eq(evalExpr('(find #(> % 10) [1 2 3])'), null, '(find …) no match → nil');
+eq(evalExpr('(= (first []) nil)'), true, '(= (first []) nil) → true');
+
+describe('M2 — ends-with? does not crash on nil needle');
+eq(evalExpr("(ends-with? 'hello' nil)"), false, "(ends-with? 'hello' nil) → false");
+eq(evalExpr("(ends-with? nil nil)"), false, "(ends-with? nil nil) → false");
+
+describe('M3 — distinct does not crash on nil input');
+deepEq(evalExpr('(distinct nil)'), [], '(distinct nil) → []');
+deepEq(evalExpr('(distinct [])'), [], '(distinct []) → []');
+
+describe('M4 — bare-symbol lookup returns null for undefined keys');
+eq(evalExpr('undefinedVar', {}), null, 'undefined bare symbol → nil');
+eq(evalExpr('$item', {}), null, '$item not in ctx → nil');
+
+describe('M9 — to and emit blocked in pure eval (guard context)');
+throws(function () { evalExpr('(to someState)', {}); }, 'mutation', 'to blocked in pure eval');
+throws(function () { evalExpr('(emit someEvent)', {}); }, 'mutation', 'emit blocked in pure eval');
+
+describe('L1 — #() shorthand supports %1 and %2 for multi-arg lambdas');
+eq(evalExpr('(#(%1) 42)'), 42, '#(%1) → first arg');
+eq(evalExpr('(reduce #(+ %1 %2) 0 [1 2 3])'), 6, '#(%1 %2) → two-arg reduce');
+eq(evalExpr('(#(%) 42)'), 42, '#(%) still works (backward compat)');
+
+describe('L2 — division and mod by zero');
+throws(function () { evalExpr('(/ 5 0)'); }, 'zero', '(/ 5 0) throws');
+throws(function () { evalExpr('(mod 5 0)'); }, 'zero', '(mod 5 0) throws');
+
+
+describe('H1 — missing dotted path returns null, not undefined');
+// get() returns undefined for missing paths; seval passes it through.
+// Arithmetic like (+ user.score 10) then produces NaN instead of erroring cleanly.
+// All missing-path lookups must return null, consistent with bare-symbol behaviour.
+eq(evalExpr('user.score', {}), null, 'missing dotted path in empty ctx returns null');
+eq(evalExpr('user.score', { user: {} }), null, 'missing nested key returns null');
+eq(evalExpr('(some? user.score)', { user: {} }), false, 'missing nested key is nil? false');
+
+
+describe('H2 — index-of returns null (not -1) when item not found');
+// -1 is truthy in JS. (if (index-of lst 99) "found" "not found") would wrongly return
+// "found" when 99 is absent. Must return null to match nil-for-not-found convention.
+eq(evalExpr('(index-of [1 2 3] 99)'), null, 'index-of not-found returns null');
+eq(evalExpr('(if (index-of [1 2 3] 99) true false)'), false, 'index-of null is falsy in conditionals');
+eq(evalExpr('(index-of [1 2 3] 2)'), 1, 'index-of found still returns correct index');
+
+
+describe('get — missing key returns null, not undefined');
+eq(evalExpr('(get (obj :a 1) :missing)'), null, 'get missing key returns null');
+eq(evalExpr('(= (get (obj :a 1) :missing) nil)'), true, 'get missing key equals nil');
+eq(evalExpr('(nil? (get (obj :a 1) :missing))'), true, 'get missing key is nil?');
+
+describe('zipmap — missing values are null, not undefined');
+deepEq(evalExpr("(zipmap [:a :b] [1])"), { a: 1, b: null }, 'zipmap with fewer vals: missing val is null');
+eq(evalExpr('(= (get (zipmap [:a :b] [1]) :b) nil)'), true, 'zipmap missing val equals nil');
+
+describe('in-state? — null input returns false, not crash');
+eq(evalExpr('(in-state? undefinedVar)', { $state: 'active' }), false, 'in-state? with undefined var returns false');
+
+describe('evalExpr — empty/null input returns null, not undefined');
+eq(evalExpr('', {}), null, 'empty string returns null');
+eq(evalExpr(null, {}), null, 'null returns null');
+eq(evalExpr(undefined, {}), null, 'undefined returns null');
+
+describe('L5 — parse cache uses `str in parseCache` for explicit presence check');
+// Object.create(null) prevents prototype pollution, but `if (parseCache[str])` would
+// still miss falsy values (impossible with AST nodes, but wrong idiom).
+// Verify the cache is hit correctly for any expression.
+var p1 = engine.parse('(+ 1 2)');
+var p2 = engine.parse('(+ 1 2)');
+assert(p1 === p2, 'parse cache returns same object reference (cache hit confirmed)');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗

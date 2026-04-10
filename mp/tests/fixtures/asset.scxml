@@ -10,22 +10,26 @@
   </datamodel>
 
   <state id="procurement">
-    <transition event="receive"
-                mp-to="(do (set! asset_tag (str 'AST-' (now))) (to received))"/>
+    <transition event="receive" target="received">
+      <mp-action>(set! asset_tag (str 'AST-' (now)))</mp-action>
+    </transition>
   </state>
 
   <state id="received">
-    <transition event="commission"
-                mp-to="(do (set! commissioned_at (now)) (to in-service))"/>
+    <transition event="commission" target="in-service">
+      <mp-action>(set! commissioned_at (now))</mp-action>
+    </transition>
     <transition event="reject-delivery" target="returned"/>
   </state>
 
   <state id="in-service">
-    <transition event="decommission"
-                mp-to="(do (set! decommissioned_at (now)) (to decommissioned))"/>
+    <transition event="decommission" target="decommissioned">
+      <mp-action>(set! decommissioned_at (now))</mp-action>
+    </transition>
     <transition event="repair" target="maintenance"/>
-    <transition event="transfer"
-                mp-to="(do (set! location (get $event :location)) (to transferring))"/>
+    <transition event="transfer" target="transferring">
+      <mp-action>(set! location (get $event :location))</mp-action>
+    </transition>
   </state>
 
   <state id="transferring">

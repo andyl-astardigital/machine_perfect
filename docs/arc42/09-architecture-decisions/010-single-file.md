@@ -17,7 +17,6 @@ Distribute the frontend as a single file (`mp/browser.js`) that embeds the share
 - **Competitive positioning** — Alpine, Mithril, and Preact all distribute as single files. It's the expected form factor for lightweight frameworks.
 
 ## Consequences
-- The engine code exists in two places: `mp/engine.js` (source of truth) and embedded in `mp/browser.js` (distribution copy).
-- A build script is needed to concatenate `mp/engine.js` + browser DOM code into the distributable. Until then, manual sync.
-- The file is ~2000 lines / ~60KB unminified. Reasonable for a framework. Minified + gzipped would be ~8-10KB.
-- npm consumers get the single file via `require('machine-perfect')` which points to `mp/browser.js`.
+- The engine is a separate module (`mp/engine.js`) imported by `mp/browser.js` at runtime. No build step, no duplication.
+- `mp/browser.js` is ~2100 lines / ~98KB unminified. The engine adds ~800 lines. Reasonable for a framework.
+- npm consumers get the browser runtime via `require('machine-perfect/browser')` and the engine via `require('machine-perfect')`.

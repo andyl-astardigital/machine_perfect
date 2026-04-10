@@ -4,18 +4,23 @@
     uses mp-to because it lives inside the purchase-order machine's DOM. %>
 <div class="max-w-3xl mx-auto space-y-4">
   <div class="flex items-center justify-between">
-    <h2 class="text-xl font-bold text-mp-gold">Pipeline Complete</h2>
-    <button mp-to="(emit order-approved)"
-            class="btn btn-primary btn-sm gap-1">View All Orders</button>
+    <h2 class="text-xl font-bold text-mp-gold"><%= blocked ? 'Pipeline Result' : 'Pipeline Complete' %></h2>
+    <button id="btn-view-all-orders" class="btn btn-primary btn-sm gap-1">
+      <mp-on event="click">(emit navigate-orders)</mp-on>
+      View All Orders
+    </button>
   </div>
 
   <!-- Status card -->
-  <div class="card shadow-xl <%= blocked ? 'bg-error/10 border border-error' : 'bg-success/10 border border-success' %>">
+  <div class="card shadow-xl <%= blocked ? (reason === 'maxSteps exceeded' ? 'bg-warning/10 border border-warning' : 'bg-error/10 border border-error') : 'bg-success/10 border border-success' %>">
     <div class="card-body p-4 gap-2">
       <div class="flex items-center gap-3">
         <div class="text-3xl"><%- blocked ? '&#x2717;' : '&#x2713;' %></div>
         <div>
-          <h3 class="font-bold"><%- blocked ? 'Order Rejected' : 'Order Approved &amp; Fulfilled' %></h3>
+          <h3 class="font-bold"><%- blocked ? (reason === 'maxSteps exceeded' ? 'Pipeline Stalled — Too Many Steps' : 'Order Rejected') : 'Order Approved &amp; Fulfilled' %></h3>
+          <% if (blocked && reason) { %>
+            <p class="text-xs text-base-content/50 mt-1">Reason: <%= reason %></p>
+          <% } %>
         </div>
       </div>
     </div>

@@ -32,7 +32,10 @@ tests/
 `mp`, `mp-state`, `mp-initial`, `mp-final`, `mp-ctx`, `mp-to`, `mp-where`, `mp-init`, `mp-exit`
 
 **Browser-only attributes:**
-`mp-text`, `mp-model`, `mp-show`, `mp-class`, `mp-bind-*`, `mp-each`, `mp-key`, `mp-on:*`, `mp-temporal`, `mp-persist`, `mp-ref`, `mp-let`, `mp-url`, `mp-loading`, `mp-store`, `mp-receive`, `mp-define`, `mp-slot`, `mp-import`
+`mp-model`, `mp-each`, `mp-key`, `mp-persist`, `mp-ref`, `mp-url`, `mp-loading`, `mp-store`, `mp-define`, `mp-slot`, `mp-import`
+
+**Structural child elements (all s-expression logic):**
+`<mp-text>`, `<mp-show>`, `<mp-class>`, `<mp-bind>`, `<mp-on>`, `<mp-let>`, `<mp-transition>`, `<mp-guard>`, `<mp-action>`, `<mp-emit>`, `<mp-init>`, `<mp-exit>`, `<mp-temporal>`, `<mp-receive>`, `<mp-where>`, `<mp-each>`, `<mp-ctx>`
 
 **2 JS methods, 2 JS properties:**
 `init(config)`, `fn(name, func)`, `store`, `debug`
@@ -80,7 +83,7 @@ Browser tests use the same `assert`/`eq`/`has` pattern with no framework. Integr
 Never make micro decisions without designing them first. Build the best solution, not the quickest. If that requires rethinking the architecture, rethink the architecture. Never change code without a failing test first. If you hit a roadblock, design the solution in the arc42 docs before coding.
 
 ### Functions
-Under 150 lines. `_seval` is the only exception because a flat switch is the correct evaluator shape. Extract when self-contained or duplicated. Closures stay closures when they capture mutable shared state.
+Under 150 lines. `sevalInner` is the only exception because a flat switch is the correct evaluator shape. Extract when self-contained or duplicated. Closures stay closures when they capture mutable shared state.
 
 ### Comments
 Major sections get box-drawing headers with prose. Subsections get `// -- name --` headers. Inline comments explain why, not what. `// perf:` prefix for performance-motivated code. No TODO, FIXME, or HACK.
@@ -89,7 +92,7 @@ Major sections get box-drawing headers with prose. Subsections get `// -- name -
 All `JSON.parse` calls wrapped in try/catch with helpful error messages. Binding errors re-throw with element tag and expression. Unknown functions warn and return null. Invalid attribute combinations warn with specific guidance. Debug mode (`MachinePerfect.debug = true`) logs transitions, guard failures, and routing decisions.
 
 ### Purity
-`_eval` rejects all `!` mutation forms. Bindings cannot change state. `_exec` allows mutations and is used by mp-to s-expressions, mp-on:, mp-init, and mp-exit. This split is structural, not conventional.
+`eval` rejects all `!` mutation forms. Bindings (`<mp-text>`, `<mp-show>`, `<mp-class>`, `<mp-bind>`) cannot change state. `exec` allows mutations and is used by `<mp-action>`, `<mp-on>`, `<mp-init>`, and `<mp-exit>`. This split is structural, not conventional.
 
 ### Style
 ES5 throughout the shared engine and browser runtime. `var`, `function`, `for`. Backend code may use modern Node.js features. Two blank lines between major sections. `== null` for null/undefined checks (intentional loose equality).

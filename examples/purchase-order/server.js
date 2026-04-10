@@ -171,16 +171,15 @@ var server = http.createServer(function (req, res) {
     var body = '';
     req.on('data', function (chunk) { body += chunk; });
     req.on('end', function () {
-      try {
-        var machineName = req.headers['x-mp-machine'];
-        var targetState = req.headers['x-mp-target'];
+      var machineName = req.headers['x-mp-machine'];
+      var targetState = req.headers['x-mp-target'];
 
-        // ── UI render: app machine requests a view ──
-        if (machineName === 'app' && targetState) {
+      // ── UI render: app machine requests a view ──
+      if (machineName === 'app' && targetState) {
+        try {
           var ctx = transforms.extractContext(body);
           console.log('\n  UI render: ' + targetState + (ctx._action ? ' action=' + ctx._action : ''));
 
-          // Handle delete action carried in context
           if (ctx._action === 'delete' && ctx._actionId) {
             var delIdx = orders.findIndex(function (o) { return o.id === ctx._actionId; });
             if (delIdx !== -1) {
@@ -200,42 +199,48 @@ var server = http.createServer(function (req, res) {
           } else {
             sendHtml(res, render('order-list', { orders: orders }));
           }
-          return;
+        } catch (err) {
+          console.error('[server]', err.message);
+          res.writeHead(500, { 'Content-Type': 'text/html' });
+          res.end('<div class="alert alert-error"><span>Error: ' + escHtml(err.message) + '</span></div>');
         }
-
-        // ── Pipeline execution: advance the machine through services ──
-        var isHtml = body.trim().indexOf('<scxml') === -1;
-        var scxmlInput;
-
-        if (isHtml) {
-          console.log('\n  Pipeline: received HTML (' + body.length + ' bytes)');
-          scxmlInput = transforms.htmlToScxml(body);
-        } else {
-          console.log('\n  Pipeline: received SCXML (' + body.length + ' bytes)');
-          scxmlInput = body;
-        }
-
-        var result = services.execute(scxmlInput);
-        console.log('  Complete.\n');
-
-        if (isHtml) {
-          var htmlBack = transforms.scxmlToHtml(result.scxml);
-          sendHtml(res, render('pipeline-result', {
-            blocked: result.blocked || false,
-            effects: result.effects || [],
-            history: result.history || [],
-            scxml: result.scxml,
-            htmlBack: htmlBack
-          }));
-        } else {
-          sendScxml(res, result.scxml);
-        }
-
-      } catch (err) {
-        console.error('[server]', err.message);
-        res.writeHead(500, { 'Content-Type': 'text/html' });
-        res.end('<div class="alert alert-error"><span>Error: ' + escHtml(err.message) + '</span></div>');
+        return;
       }
+
+      // ── Pipeline execution: advance the machine through services ──
+      var isHtml = body.trim().indexOf('<scxml') === -1;
+      var scxmlInput;
+
+      if (isHtml) {
+        console.log('\n  Pipeline: received HTML (' + body.length + ' bytes)');
+        scxmlInput = transforms.htmlToScxml(body);
+      } else {
+        console.log('\n  Pipeline: received SCXML (' + body.length + ' bytes)');
+        scxmlInput = body;
+      }
+
+      services.executeAsync(scxmlInput)
+        .then(function (result) {
+          console.log('  Complete.\n');
+          if (isHtml) {
+            var htmlBack = transforms.scxmlToHtml(result.scxml);
+            sendHtml(res, render('pipeline-result', {
+              blocked: result.blocked || false,
+              reason: result.reason || null,
+              effects: result.effects || [],
+              history: result.history || [],
+              scxml: result.scxml,
+              htmlBack: htmlBack
+            }));
+          } else {
+            sendScxml(res, result.scxml);
+          }
+        })
+        .catch(function (err) {
+          console.error('[server]', err.message);
+          res.writeHead(500, { 'Content-Type': 'text/html' });
+          res.end('<div class="alert alert-error"><span>Error: ' + escHtml(err.message) + '</span></div>');
+        });
     });
     return;
   }
@@ -243,6 +248,14 @@ var server = http.createServer(function (req, res) {
 
   // ── Static files + SPA fallback ───────────────────────────────────
   if (urlPath === '/') urlPath = '/examples/purchase-order/index.html';
+
+  // Prevent path traversal: reject any path that escapes ROOT
+  var filePath = path.join(ROOT, urlPath);
+  var resolvedRoot = path.resolve(ROOT);
+  var resolvedFile = path.resolve(filePath);
+  if (!resolvedFile.startsWith(resolvedRoot + path.sep) && resolvedFile !== resolvedRoot) {
+    res.writeHead(403); res.end('Forbidden'); return;
+  }
 
   var ext = path.extname(urlPath);
   if (!ext && !urlPath.startsWith('/api/')) {
@@ -255,7 +268,6 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
-  var filePath = path.join(ROOT, urlPath);
   fs.readFile(filePath, function (err, data) {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
     res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream' });

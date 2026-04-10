@@ -8,10 +8,12 @@
  */
 
 var fs = require('fs');
+var http = require('http');
 var path = require('path');
 var scxml = require('../scxml');
 var machine = require('../machine');
 var engine = require('../engine');
+var registry = require('../registry');
 
 var passed = 0;
 var failed = 0;
@@ -194,6 +196,189 @@ describe('registry — always active');
 eq(inst.state, 'active', 'still in active state after all operations');
 
 
-// ── Summary ─────────────────────────────────────────────────────────
-console.log('\n' + passed + ' passed, ' + failed + ' failed, ' + (passed + failed) + ' total\n');
-process.exit(failed > 0 ? 1 : 0);
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Bug fixes                                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('Bug 17 — register event is targetless (transitioned=false, targetless=true)');
+// The HTTP handler must check `result.targetless` not just `result.transitioned`,
+// otherwise it always returns {registered: false} even on success.
+
+(function () {
+  var freshInst = machine.createInstance(registryDef);
+  freshInst.context.id = 'bugtest-1';
+  freshInst.context.address = 'http://localhost:9000';
+  freshInst.context.capabilities = ['log'];
+  freshInst.context.formats = ['html'];
+  var result = machine.sendEvent(freshInst, 'register');
+  eq(result.transitioned, false, 'register: transitioned=false (targetless, no state change)');
+  eq(result.targetless, true, 'register: targetless=true (self-update)');
+  eq(freshInst.context.nodes.length, 1, 'node was added despite transitioned=false');
+})();
+
+
+describe('H7 — duplicate node ID registration is rejected');
+
+(function () {
+  var dupInst = machine.createInstance(registryDef);
+  dupInst.context.id = 'dup-1';
+  dupInst.context.address = 'http://localhost:5000';
+  dupInst.context.capabilities = ['log'];
+  dupInst.context.formats = ['html'];
+  machine.sendEvent(dupInst, 'register');
+  eq(dupInst.context.nodes.length, 1, 'first registration succeeds');
+
+  // Same ID, different address — must be rejected
+  dupInst.context.id = 'dup-1';
+  dupInst.context.address = 'http://localhost:5001';
+  var rDup = machine.sendEvent(dupInst, 'register');
+  eq(rDup.transitioned, false, 'duplicate id: transitioned=false');
+  assert(!rDup.targetless, 'duplicate id: not targetless (guard blocked)');
+  eq(dupInst.context.nodes.length, 1, 'still one node — original not replaced');
+  eq(dupInst.context.nodes[0].address, 'http://localhost:5000', 'original address preserved');
+})();
+
+
+describe('Bug 18 — deregister with null id: guard blocks, not targetless');
+// The HTTP handler must check result.targetless before responding 200.
+// The deregister guard is (some? id) — null id fails the guard.
+
+(function () {
+  var freshInst = machine.createInstance(registryDef);
+  freshInst.context.id = null;  // null id fails (some? id)
+  var result = machine.sendEvent(freshInst, 'deregister');
+  eq(result.transitioned, false, 'deregister null id: transitioned=false');
+  assert(!result.targetless, 'deregister null id: not targetless (guard blocked)');
+  // HTTP handler must return 400 for this case, not 200
+})();
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  HTTP server tests                                                      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+//
+// Spin up a real registry server on a random port and exercise the API.
+
+var httpPort = 13000 + Math.floor(Math.random() * 1000);
+var httpBase = 'http://localhost:' + httpPort;
+
+function httpPost(url, body) {
+  return new Promise(function (resolve, reject) {
+    var data = body ? JSON.stringify(body) : '{}';
+    var urlObj = new URL(url);
+    var opts = {
+      hostname: urlObj.hostname, port: urlObj.port, path: urlObj.pathname,
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+    };
+    var req = http.request(opts, function (res) {
+      var chunks = '';
+      res.on('data', function (c) { chunks += c; });
+      res.on('end', function () {
+        var json = null; try { json = JSON.parse(chunks); } catch (e) {}
+        resolve({ status: res.statusCode, body: json });
+      });
+    });
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+function httpGet(url) {
+  return new Promise(function (resolve, reject) {
+    var urlObj = new URL(url);
+    var req = http.request({ hostname: urlObj.hostname, port: urlObj.port, path: urlObj.pathname, method: 'GET' }, function (res) {
+      var chunks = '';
+      res.on('data', function (c) { chunks += c; });
+      res.on('end', function () {
+        var json = null; try { json = JSON.parse(chunks); } catch (e) {}
+        resolve({ status: res.statusCode, body: json });
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function runHttpTests() {
+  var serverInstance;
+  var origLog = console.log;
+  console.log = function () {};
+  try {
+    serverInstance = registry.createServer({ port: httpPort });
+  } finally {
+    console.log = origLog;
+  }
+
+  await new Promise(function (resolve) { setTimeout(resolve, 300); });
+
+
+  describe('HTTP — POST /register succeeds');
+  var reg1 = await httpPost(httpBase + '/register', {
+    id: 'http-node-1', address: 'http://localhost:9000',
+    capabilities: ['log'], formats: ['html']
+  });
+  eq(reg1.status, 200, 'status 200');
+  eq(reg1.body.registered, true, 'registered: true');
+  eq(reg1.body.nodes, 1, 'one node registered');
+
+
+  describe('HTTP — POST /register rejects bad payload');
+  var regBad = await httpPost(httpBase + '/register', { id: 'incomplete' });
+  eq(regBad.status, 400, 'status 400 for incomplete registration');
+  eq(regBad.body.registered, false, 'registered: false');
+
+
+  describe('HTTP — GET /routes returns node list');
+  var routes = await httpGet(httpBase + '/routes');
+  eq(routes.status, 200, 'status 200');
+  eq(Array.isArray(routes.body), true, 'body is an array');
+  eq(routes.body.length, 1, 'one node in routes');
+  eq(routes.body[0].id, 'http-node-1', 'correct node id');
+
+
+  describe('HTTP — POST /deregister succeeds');
+  var dereg = await httpPost(httpBase + '/deregister', { id: 'http-node-1' });
+  eq(dereg.status, 200, 'status 200');
+  eq(dereg.body.deregistered, true, 'deregistered: true');
+  eq(dereg.body.nodes, 0, 'zero nodes remaining');
+
+
+  describe('HTTP — POST /deregister unknown id returns 400');
+  var deregUnknown = await httpPost(httpBase + '/deregister', { id: 'nobody' });
+  eq(deregUnknown.status, 400, 'status 400');
+  eq(deregUnknown.body.deregistered, false, 'deregistered: false');
+
+
+  describe('HTTP — oversized POST body returns 400');
+  var bigBody = JSON.stringify({ id: 'x', address: 'http://x', capabilities: [], formats: [], data: 'x'.repeat(70000) });
+  var bigRes = await new Promise(function (resolve, reject) {
+    var urlObj = new URL(httpBase + '/register');
+    var opts = {
+      hostname: urlObj.hostname, port: urlObj.port, path: urlObj.pathname,
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bigBody) }
+    };
+    var req = http.request(opts, function (res) {
+      var chunks = '';
+      res.on('data', function (c) { chunks += c; });
+      res.on('end', function () { resolve({ status: res.statusCode }); });
+    });
+    req.on('error', function () { resolve({ status: 0 }); });
+    req.write(bigBody);
+    req.end();
+  });
+  assert(bigRes.status === 400 || bigRes.status === 0, 'oversized body: 400 or connection error');
+
+
+  serverInstance.close();
+
+
+  // ── Summary ─────────────────────────────────────────────────────────
+  console.log('\n' + passed + ' passed, ' + failed + ' failed, ' + (passed + failed) + ' total\n');
+  process.exit(failed > 0 ? 1 : 0);
+}
+
+runHttpTests().catch(function (err) {
+  console.error(err);
+  process.exit(1);
+});

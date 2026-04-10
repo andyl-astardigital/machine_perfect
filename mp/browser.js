@@ -14,61 +14,58 @@
  *     </div>
  *   </div>
  *
- * ── Core ────────────────────────────────────────────────────────────────────
+ * ── Core attributes (bare identifiers only) ──────────────────────────────────
  *   mp="name"                       Machine instance
  *   mp-state="name"                 State (visible when active)
  *   mp-initial="name"               Override initial state
- *   mp-ctx='{"key":"val"}'          Context data
- *   mp-to="state"                   Click → transition (bare name)
- *   mp-to="(expr)"                  Click → s-expression (guards, actions, emits)
- *
- * ── Data binding ────────────────────────────────────────────────────────────
- *   mp-text="expr"                  textContent from expression
+ *   mp-to="name"                    Click → fire event or transition
  *   mp-model="path"                 Two-way input binding
- *   mp-show="expr"                  Show if truthy
- *   mp-class="(when expr 'cls')"    Toggle class via s-expression
- *   mp-bind-ATTR="expr"             Bind any HTML attribute
+ *   mp-ref="name"                   Reference element as $refs.name
+ *   mp-persist="key"                Save/restore context to localStorage
+ *   mp-key="field"                  Key for efficient list reconciliation
+ *   mp-each="field"                 Repeat template for each array item (bare name)
+ *   mp-url="/path"                  Map state to browser URL (static path)
+ *   mp-text="field"                 textContent from bare variable
+ *   mp-show="field"                 Show if bare boolean truthy
+ *   mp-final                        Terminal state marker
+ *   mp-loading="<html>"             Custom loading indicator for mp-where states
  *
- * ── Events ──────────────────────────────────────────────────────────────────
- *   mp-on:EVENT="(sexpr)"           DOM event handler (s-expression only)
- *   mp-on:EVENT.MODIFIER="(sexpr)" Modifiers: prevent, stop, self, once, outside
- *   mp-receive="(on 'name' body)"  Receive machine events ($detail = emit payload)
+ * ── Structural elements (all s-expressions) ─────────────────────────────────
+ *   <mp-ctx>json</mp-ctx>           Context data (JSON)
+ *   <mp-transition event to>        Transition with guards/actions/emits
+ *     <mp-guard>expr</mp-guard>     Guard condition
+ *     <mp-action>expr</mp-action>   Side-effect action
+ *     <mp-emit>name</mp-emit>       Emit inter-machine event
+ *   <mp-text>expr</mp-text>         textContent from s-expression
+ *   <mp-show>expr</mp-show>         Show/hide parent via s-expression
+ *   <mp-class>expr</mp-class>       Toggle CSS class via s-expression
+ *   <mp-bind attr="x">expr</mp-bind> Bind any HTML attribute
+ *   <mp-on event="x">expr</mp-on>  DOM event handler
+ *   <mp-init>expr</mp-init>         Run on state entry
+ *   <mp-exit>expr</mp-exit>         Run before state exit
+ *   <mp-temporal>expr</mp-temporal> CSS animation / timers
+ *   <mp-let name="x">expr</mp-let> Machine-scope computed binding
+ *   <mp-receive event="x">expr</mp-receive>  Receive inter-machine events
+ *   <mp-where>expr</mp-where>       Capability-based routing
+ *   <mp-url>expr</mp-url>           URL routing via s-expression
+ *   <mp-each>expr</mp-each>         List rendering via s-expression
  *
- * ── Lists ───────────────────────────────────────────────────────────────────
- *   mp-each="expr"                  Repeat template for each array item
- *   mp-key="expr"                   Key for efficient reconciliation
- *   In scope: $item, $index         Current item and index
- *
- * ── Temporal ────────────────────────────────────────────────────────────────
- *   mp-temporal="(animate)"         CSS enter/leave animations
- *   mp-temporal="(after ms expr)"   Timed behaviour (delay then action)
- *   mp-temporal="(every ms expr)"   Repeating interval
- *   CSS classes: mp-enter-from, mp-enter-active, mp-enter-to,
- *                mp-leave-from, mp-leave-active, mp-leave-to
+ * ── The rule ────────────────────────────────────────────────────────────────
+ *   Parentheses → element. Bare word → attribute. No exceptions.
  *
  * ── Composition ─────────────────────────────────────────────────────────────
  *   <template mp-define="name">     Reusable machine template
  *   <mp-slot name="x">              Content projection point
  *   <link rel="mp-import" href="">  Import external component
  *
- * ── Lifecycle ───────────────────────────────────────────────────────────────
- *   mp-init="statements"            Run on creation / state entry
- *   mp-exit="statements"            Run before state content is destroyed
- *   mp-ref="name"                   Reference element as $refs.name
- *   mp-persist="key"                Save/restore context to localStorage
- *   mp-let="name expr ..."          Machine-scope computed bindings (derived, not persisted)
- *   mp-where="(requires 'cap')"     Capability-based routing
- *   mp-url="/path"                  Map state to browser URL (or (path '/p/:k' ctxKey))
- *   mp-loading="<html>"             Custom loading indicator for mp-where states
- *
  * ── Global state ────────────────────────────────────────────────────────────
  *   <mp-store name value>           Global shared state ($store.name)
  *
  * ── HTMX integration ───────────────────────────────────────────────────────
  *   Works automatically. A MutationObserver initialises new [mp] elements
- *   when HTMX swaps content. HTMX events work with mp-on: directly:
- *     mp-on:htmx:before-request="(to loading)"
- *     mp-on:htmx:after-swap="(to ready)"
+ *   when HTMX swaps content. HTMX events work with <mp-on> directly:
+ *     <mp-on event="htmx:before-request">(to loading)</mp-on>
+ *     <mp-on event="htmx:after-swap">(to ready)</mp-on>
  *   No bridge. No coupling. Just standard DOM events.
  *
  * @version 0.5.0
@@ -151,6 +148,37 @@
     return out;
   }
 
+
+  // Parse <mp-transition> elements inside a state element.
+  // Returns a map of event name → { target, guard, action, emit }.
+  // Removes the elements from the DOM after parsing (they are structural, not visual).
+  function _parseTransitions(stateEl, machineEl) {
+    var transitions = {};
+    var els = stateEl.querySelectorAll('mp-transition');
+    for (var i = 0; i < els.length; i++) {
+      var tel = els[i];
+      if (tel.closest('[mp]') !== machineEl) continue;
+      var event = tel.getAttribute('event');
+      if (!event) continue;
+      var def = {
+        target: tel.getAttribute('to') || null,
+        guard: null,
+        action: null,
+        emit: null
+      };
+      var guardEl = tel.querySelector('mp-guard');
+      if (guardEl) def.guard = guardEl.textContent.trim();
+      var actionEl = tel.querySelector('mp-action');
+      if (actionEl) def.action = actionEl.textContent.trim();
+      var emitEl = tel.querySelector('mp-emit');
+      if (emitEl) def.emit = emitEl.textContent.trim();
+      if (!transitions[event]) transitions[event] = [];
+      transitions[event].push(def);
+      tel.remove();
+    }
+    return transitions;
+  }
+
   // Build a merged scope for an mp-each item.
   // Uses prototype chain — item properties shadow machine context without copying.
   function _itemCtx(machineCtx, item, index) {
@@ -199,40 +227,26 @@
   //
   // (emit name) in s-expressions dispatches named events. mp-receive listens.
   //
-  // Emit:    <button mp-to="(do (emit saved) (to done))">Save</button>
-  // Receive: <div mp="toast" mp-receive="(on 'saved' (to show))">
+  // Emit:    <mp-transition event="save" to="done"><mp-emit>saved</mp-emit></mp-transition>
+  // Receive: <mp-receive event="saved">(to show)</mp-receive>
   //
-  // The receive attribute contains s-expressions using (on 'name' body).
-  // Multiple (on) forms can be in one attribute. $detail is the emit payload.
-  //
-  // (on) is a special form registered as an event listener at init time.
-  // It does NOT run during normal expression evaluation.
+  // Receive elements are parsed at init time and stored as event listeners.
+  // $detail holds the payload from emit. Events do not bubble cross-machine.
 
   var _events = {};
 
   function _regReceive(inst) {
-    var raw = inst.el.getAttribute('mp-receive');
-    if (!raw) return;
+    // Parse <mp-receive event="x">body</mp-receive> elements directly.
+    // Each element registers one event handler. No attribute synthesis.
+    var recEls = inst.el.querySelectorAll('mp-receive');
+    for (var ri = 0; ri < recEls.length; ri++) {
+      if (recEls[ri].closest('[mp]') !== inst.el) continue;
+      var evName = recEls[ri].getAttribute('event');
+      var bodyText = recEls[ri].textContent.trim();
+      if (!evName || !bodyText) continue;
+      recEls[ri].remove();
 
-    // Parse the mp-receive value. Multiple (on ...) forms are wrapped in implicit (do).
-    var parsed = _parse(raw.trim());
-    // Extract individual (on ...) forms
-    var ons = [];
-    if (Array.isArray(parsed) && parsed[0] && parsed[0].t === 'Y' && parsed[0].v === 'on') {
-      ons.push(parsed);
-    } else if (Array.isArray(parsed) && parsed[0] && parsed[0].t === 'Y' && parsed[0].v === 'do') {
-      for (var i = 1; i < parsed.length; i++) {
-        if (Array.isArray(parsed[i]) && parsed[i][0] && parsed[i][0].t === 'Y' && parsed[i][0].v === 'on') {
-          ons.push(parsed[i]);
-        }
-      }
-    }
-
-    for (var i = 0; i < ons.length; i++) {
-      var onForm = ons[i];
-      // (on 'eventName' body)
-      var evName = onForm[1].t === 'S' ? onForm[1].v : (onForm[1].t === 'Y' ? onForm[1].v : String(_seval(onForm[1], {})));
-      var body = onForm[2];
+      var body = _parse(bodyText);
 
       (function (name, bodyExpr, machine) {
         if (!_events[name]) {
@@ -248,17 +262,16 @@
               scope.__mpInst = entry.inst;
               _seval(entry.body, scope);
               _applyScope(scope, entry.inst.ctx, entry.inst);
+              if (scope.__mpEmit) entry.inst.emit(scope.__mpEmit, scope.__mpEmitPayload);
               if (scope.__mpTo) {
-                var target = scope.__mpTo;
-                entry.inst.to(target);
+                entry.inst.to(scope.__mpTo);
               } else {
                 entry.inst.update();
               }
-              if (scope.__mpEmit) entry.inst.emit(scope.__mpEmit, scope.__mpEmitPayload);
             }
           };
           document.addEventListener('mp-' + name, handler);
-          _events[name]._handler = handler; // stored for cleanup
+          _events[name]._handler = handler;
         }
         _events[name].push({ inst: machine, body: bodyExpr });
       })(evName, body, inst);
@@ -267,10 +280,10 @@
 
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  DOM event binding (mp-on:event)                                        ║
+  // ║  DOM event binding (<mp-on>)                                            ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
-  // Attach DOM event listeners declared with mp-on:EVENT.MODIFIERS="state".
+  // Attach DOM event listeners parsed from <mp-on event="EVENT.MODIFIERS">.
   // Called during machine init and after mp-each cloning.
 
   function _attachDomEvents(container, inst) {
@@ -278,10 +291,9 @@
     var check = function (el) {
       if (el._mpEventsBound) return;
       if (el.closest('[mp]') !== inst.el) return;
-      var attrs = el.attributes;
-      for (var i = 0; i < attrs.length; i++) {
-        if (attrs[i].name.indexOf('mp-on:') === 0) {
-          _bindOneEvent(el, attrs[i].name.slice(6), attrs[i].value, inst);
+      if (el._mpOnHandlers) {
+        for (var i = 0; i < el._mpOnHandlers.length; i++) {
+          _bindOneEvent(el, el._mpOnHandlers[i].event, el._mpOnHandlers[i].expr, inst);
         }
       }
       el._mpEventsBound = true;
@@ -331,28 +343,118 @@
 
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  Attribute binding setup (mp-bind-*)                                    ║
+  // ║  Structural element binding setup                                       ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
-  // Scans elements for mp-bind-ATTR attributes and caches the bindings
-  // on the element for fast processing during update().
+  // Scans for structural binding elements (mp-text, mp-show, mp-class,
+  // mp-bind, mp-on, mp-each, mp-transition) and caches the bindings
+  // on the parent element for fast processing during update().
+
+  // perf: void elements cannot have DOM children — define once, reuse in the loop.
+  var _voidTags = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
 
   function _scanBindAttrs(container, machineEl) {
-    var all = container.querySelectorAll('*');
-    var process = function (el) {
-      if (el.closest('[mp]') !== machineEl) return;
-      var attrs = el.attributes;
-      for (var i = 0; i < attrs.length; i++) {
-        if (attrs[i].name.indexOf('mp-bind-') === 0) {
-          if (!el._mpBindAttrs) el._mpBindAttrs = [];
-          el._mpBindAttrs.push({ attr: attrs[i].name.slice(8), expr: attrs[i].value });
+    // Parse structural binding elements: <mp-text>, <mp-show>, <mp-class>, <mp-bind>
+    // Store parsed data directly on parent element properties — never as attributes.
+    // The structural elements are removed from the DOM after parsing.
+    var bindEls = container.querySelectorAll('mp-text, mp-show, mp-class, mp-bind');
+    var toRemove = [];
+    for (var bi = 0; bi < bindEls.length; bi++) {
+      var bel = bindEls[bi];
+      if (bel.closest('[mp]') !== machineEl) continue;
+      var parent = bel.parentElement;
+      if (!parent) continue;
+      var tag = bel.tagName.toLowerCase();
+      var expr = bel.textContent.trim();
+
+      if (!parent._mpBind) parent._mpBind = {};
+
+      if (tag === 'mp-text') {
+        parent._mpBind.text = expr;
+      } else if (tag === 'mp-show') {
+        if (!parent.hasAttribute('mp-state')) parent._mpBind.show = expr;
+      } else if (tag === 'mp-class') {
+        parent._mpBind.classExpr = expr;
+        var parsed = _parse(expr.trim());
+        parent._mpBind.classParsed = (Array.isArray(parsed) && parsed[0] && parsed[0].t === 'Y' && parsed[0].v === 'do')
+          ? parsed.slice(1) : [parsed];
+      } else if (tag === 'mp-bind') {
+        var bindAttr = bel.getAttribute('attr');
+        if (bindAttr) {
+          // Void elements (img, input, etc.) cannot have DOM children — the HTML parser
+          // re-parents <mp-bind> as a sibling. Detect this via previousElementSibling
+          // and redirect the binding to the intended void element.
+          var prevSib = bel.previousElementSibling;
+          var bindTarget = (prevSib && _voidTags.indexOf(prevSib.tagName.toLowerCase()) !== -1) ? prevSib : parent;
+          if (!bindTarget._mpBind) bindTarget._mpBind = {};
+          if (!bindTarget._mpBindAttrs) bindTarget._mpBindAttrs = [];
+          bindTarget._mpBindAttrs.push({ attr: bindAttr, expr: expr });
+          bindTarget.setAttribute('data-mp-bind', '');
+        }
+        toRemove.push(bel);
+        continue;
+      }
+      parent.setAttribute('data-mp-bind', '');
+      toRemove.push(bel);
+    }
+    for (var ri = 0; ri < toRemove.length; ri++) toRemove[ri].remove();
+
+    // Parse <mp-on event="x"> elements — store handlers on parent for _attachDomEvents
+    var onEls = container.querySelectorAll('mp-on');
+    var onRemove = [];
+    for (var oi = 0; oi < onEls.length; oi++) {
+      var oel = onEls[oi];
+      if (oel.closest('[mp]') !== machineEl) continue;
+      var onEvent = oel.getAttribute('event');
+      var onExpr = oel.textContent.trim();
+      if (onEvent && onExpr) {
+        var onParent = oel.parentElement;
+        if (onParent) {
+          if (!onParent._mpOnHandlers) onParent._mpOnHandlers = [];
+          onParent._mpOnHandlers.push({ event: onEvent, expr: onExpr });
         }
       }
-      // Mark for the combined querySelectorAll in update()
-      if (el._mpBindAttrs) el.setAttribute('mp-bound', '');
-    };
-    for (var i = 0; i < all.length; i++) process(all[i]);
-    process(container);
+      onRemove.push(oel);
+    }
+    for (var ori = 0; ori < onRemove.length; ori++) onRemove[ori].remove();
+
+    // Parse <mp-each>expr</mp-each> inside <template> elements.
+    // Template content is a DocumentFragment, so querySelectorAll from
+    // the container won't find it. Scan template elements directly.
+    var templates = container.querySelectorAll('template[mp-key], template[mp-each]');
+    for (var tmi = 0; tmi < templates.length; tmi++) {
+      var tmpl = templates[tmi];
+      if (tmpl.closest('[mp]') !== machineEl) continue;
+      var eachEl = tmpl.content.querySelector('mp-each');
+      if (eachEl) {
+        tmpl._mpEachExpr = eachEl.textContent.trim();
+        if (!tmpl.hasAttribute('mp-each')) tmpl.setAttribute('mp-each', '');
+        eachEl.remove();
+      }
+      // Parse <mp-transition> from template content — they define transitions
+      // available to mp-to buttons rendered inside each item. Parsed here so
+      // they are removed from the template before cloning and available to the
+      // mp-to click handler via the pre-parsed transitions map.
+      var tplTrans = tmpl.content.querySelectorAll('mp-transition');
+      if (tplTrans.length > 0) {
+        if (!tmpl._mpTransitions) tmpl._mpTransitions = {};
+        for (var tti = 0; tti < tplTrans.length; tti++) {
+          var ttel = tplTrans[tti];
+          var ttEvent = ttel.getAttribute('event');
+          if (!ttEvent) continue;
+          var ttDef = { target: ttel.getAttribute('to') || null, guard: null, action: null, emit: null };
+          var ttg = ttel.querySelector('mp-guard');
+          if (ttg) ttDef.guard = ttg.textContent.trim();
+          var tta = ttel.querySelector('mp-action');
+          if (tta) ttDef.action = tta.textContent.trim();
+          var tte = ttel.querySelector('mp-emit');
+          if (tte) ttDef.emit = tte.textContent.trim();
+          if (!tmpl._mpTransitions[ttEvent]) tmpl._mpTransitions[ttEvent] = [];
+          tmpl._mpTransitions[ttEvent].push(ttDef);
+          ttel.remove();
+        }
+      }
+    }
   }
 
 
@@ -360,7 +462,7 @@
   // ║  CSS transition engine (mp-temporal)                                  ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
-  // When a state element has the mp-temporal attribute, entering and leaving
+  // When a state contains an mp-temporal element, entering and leaving
   // are animated via CSS classes instead of instant show/hide.
   //
   // Enter sequence (state becomes active):
@@ -383,7 +485,6 @@
     el.classList.remove('mp-leave-from', 'mp-leave-active', 'mp-leave-to');
     el.hidden = false;
     el.classList.add('mp-enter-from', 'mp-enter-active');
-    // Force reflow so the browser sees the from-state before transitioning
     el.offsetHeight; // perf: force reflow so browser sees from-state before transitioning
     requestAnimationFrame(function () {
       el.classList.remove('mp-enter-from');
@@ -420,7 +521,10 @@
     var parts = durString.split(',');
     var max = 0;
     for (var i = 0; i < parts.length; i++) {
-      var v = parseFloat(parts[i]) || 0;
+      var trimmed = parts[i].trim();
+      var v = parseFloat(trimmed) || 0;
+      // CSS durations in 's' are the base unit; 'ms' values are converted to seconds
+      if (trimmed.indexOf('ms') !== -1) v = v / 1000;
       if (v > max) max = v;
     }
     return max;
@@ -434,7 +538,21 @@
     if (total === 0) {
       cb();
     } else {
-      setTimeout(cb, total * 1000 + 50);
+      var called = false;
+      var done = function () {
+        if (called) return;
+        called = true;
+        el.removeEventListener('transitionend', done);
+        el.removeEventListener('animationend', done);
+        clearTimeout(fallback);
+        cb();
+      };
+      el.addEventListener('transitionend', done);
+      el.addEventListener('animationend', done);
+      // Safety net: if the event never fires (element hidden, property not animated),
+      // fall back after the computed duration. No fudge factor needed — the native
+      // event handles the normal case; this only fires for edge cases.
+      var fallback = setTimeout(done, total * 1000 + 50);
     }
   }
 
@@ -475,7 +593,7 @@
     var tmpls = _ownElements(machineEl, 'template[mp-each]');
     for (var t = 0; t < tmpls.length; t++) {
       var tmpl = tmpls[t];
-      var expr = tmpl.getAttribute('mp-each');
+      var expr = tmpl._mpEachExpr || tmpl.getAttribute('mp-each');
       var keyExpr = tmpl.getAttribute('mp-key');
       if (!keyExpr && engine.debug) console.warn('[mp] mp-each without mp-key causes full re-render on every update. Add mp-key for efficient reconciliation.');
       var items = _eval(expr, inst.ctx, inst.state, tmpl);
@@ -502,7 +620,10 @@
         for (var i = 0; i < items.length; i++) {
           var scope = _itemCtx(inst.ctx, items[i], i);
           var key = String(_eval(keyExpr, scope, inst.state, tmpl));
-          if (newMap[key]) console.warn('[mp] duplicate mp-key="' + key + '" in mp-each. Only the last item with this key will render. Keys must be unique.');
+          if (newMap[key]) {
+            console.warn('[mp] duplicate mp-key="' + key + '" in mp-each. Only the first item with this key will render. Keys must be unique.');
+            continue;
+          }
           newKeys.push(key);
           newMap[key] = { item: items[i], index: i, scope: scope };
         }
@@ -532,7 +653,7 @@
             el = oldKeyMap[key];
             el._mpItemScope = newMap[key].scope;
             // perf: only call update on child machines whose data actually changed
-            var uItem = items[i];
+            var uItem = newMap[key].item;
             if (uItem && typeof uItem === 'object') {
               if (el._mp) _diffChild(el._mp, uItem);
               var uNested = _querySafe(el, '[mp]');
@@ -543,10 +664,11 @@
             // perf: skip insertBefore when already in position (avoids MutationObserver churn)
             if (el !== cursor) {
               parent.insertBefore(el, cursor || marker);
-            } else {
-              cursor = el.nextSibling;
-              while (cursor && cursor !== marker && cursor.nodeType !== 1) cursor = cursor.nextSibling;
             }
+            // Advance cursor in both branches — after insertBefore the element IS at
+            // the cursor position, so the next expected position is el.nextSibling.
+            cursor = el.nextSibling;
+            while (cursor && cursor !== marker && cursor.nodeType !== 1) cursor = cursor.nextSibling;
           } else {
             // ── New item: clone, stamp context, initialize ──
             var frag = tmpl.content.cloneNode(true);
@@ -554,7 +676,7 @@
             if (!el) { el = frag.firstChild; }
             el._mpItemScope = newMap[key].scope;
             // Nested [mp] elements need mp-ctx so _createInstance reads their initial data
-            var kItemJson = JSON.stringify(items[i]);
+            var kItemJson = JSON.stringify(newMap[key].item);
             if (el.hasAttribute && el.hasAttribute('mp')) {
               el.setAttribute('mp-ctx', kItemJson);
             }
@@ -651,7 +773,9 @@
     for (var i = 0; i < els.length; i++) {
       var name = els[i].getAttribute('name');
       var val = els[i].getAttribute('value');
-      if (name) {
+      // Only initialize if the store key has never been set — re-calling init()
+      // (e.g. after an HTMX swap) must not overwrite runtime-mutated store values.
+      if (name && !_store.hasOwnProperty(name)) {
         try { _store[name] = val ? JSON.parse(val) : {}; }
         catch (err) { console.warn('[mp] mp-store name="' + name + '" has invalid JSON in value attribute. Check your quotes and syntax. Error: ' + err.message); _store[name] = {}; }
       }
@@ -797,8 +921,13 @@
   function _initMachine(el, name) {
     _resolveTemplate(el, name);
 
-    // Context from mp-ctx attribute, with mp-persist overlay
+    // Context from mp-ctx attribute or <mp-ctx> element, with mp-persist overlay
     var ctxAttr = el.getAttribute('mp-ctx');
+    var ctxEl = el.querySelector('mp-ctx');
+    if (ctxEl && ctxEl.closest('[mp]') === el) {
+      ctxAttr = ctxEl.textContent.trim();
+      ctxEl.remove();
+    }
     var ctx = {};
     if (ctxAttr) {
       try { ctx = JSON.parse(ctxAttr); }
@@ -851,6 +980,29 @@
         stateMap[fullPath] = childEl;
         stateNames.push(fullPath);
 
+        // ── Parse lifecycle elements before content is templated ─────
+        // Store on state element properties. The elements are removed so
+        // templates don't contain them — the properties persist on the
+        // state element across enter/exit cycles.
+        var _findOwned = function (tag) {
+          var found = childEl.querySelector(tag);
+          if (found && found.closest('[mp-state]') === childEl && found.closest('[mp]') === el) return found;
+          return null;
+        };
+        var lcEl;
+        lcEl = _findOwned('mp-init');
+        if (lcEl) { childEl._mpInit = lcEl.textContent.trim(); lcEl.remove(); }
+        lcEl = _findOwned('mp-exit');
+        if (lcEl) { childEl._mpExit = lcEl.textContent.trim(); lcEl.remove(); }
+        lcEl = _findOwned('mp-temporal');
+        if (lcEl) { childEl._mpTemporal = lcEl.textContent.trim(); lcEl.remove(); }
+        lcEl = _findOwned('mp-where');
+        if (lcEl) { childEl._mpWhere = lcEl.textContent.trim(); lcEl.remove(); }
+        // mp-url: bare attribute or <mp-url> element
+        if (childEl.hasAttribute('mp-url')) childEl._mpUrlRaw = childEl.getAttribute('mp-url');
+        lcEl = _findOwned('mp-url');
+        if (lcEl) { childEl._mpUrlRaw = lcEl.textContent.trim(); lcEl.remove(); }
+
         // Check for nested mp-state elements (compound state)
         var nestedStates = childEl.querySelectorAll('[mp-state]');
         var hasChildren = false;
@@ -887,7 +1039,7 @@
           childEl.after(tmpl);
           // mp-where states get a loading indicator — shown while the server
           // response is in flight. Customisable via mp-loading attribute.
-          if (childEl.hasAttribute('mp-where')) {
+          if (childEl._mpWhere) {
             childEl.innerHTML = childEl.getAttribute('mp-loading') || _defaultLoading;
           }
           childEl.hidden = true;
@@ -896,6 +1048,13 @@
     }
 
     _discoverStates(el, null);
+
+    // Machine-level <mp-init> — not inside any state
+    var machineInitEl = el.querySelector('mp-init');
+    if (machineInitEl && machineInitEl.closest('[mp]') === el) {
+      el._mpInit = machineInitEl.textContent.trim();
+      machineInitEl.remove();
+    }
 
     // Determine initial state (may need to descend into compound)
     var initial = el.getAttribute('mp-initial') || stateNames[0] || null;
@@ -943,37 +1102,50 @@
     // ── Phase 1: List rendering (may create new DOM) ─────────
     _updateEach(machineEl, inst);
 
+    // ── Phase 1b: Evaluate mp-let computed bindings ─────────
+    // Must run before the binding cache is built so computed values
+    // are in ctx when dep tracking evaluates expressions like (not valid).
+    if (inst._mpLet) {
+      var letScope = _makeScope(ctx, state, machineEl);
+      for (var li = 0; li < inst._mpLet.length; li++) {
+        var lb = inst._mpLet[li];
+        var prev = ctx[lb.name];
+        var val = _sevalPure(lb.ast, letScope);
+        ctx[lb.name] = val;
+        if (val !== prev && dirty) dirty[_depKey(lb.name)] = true;
+      }
+    }
+
     // ── Phase 2: Build or refresh binding cache ─────────────
     // First render (or after DOM structure change): scan for bound
     // elements, evaluate each binding once to discover its deps.
     // perf: subsequent renders skip this entirely.
     if (!inst._mpBindCache) {
-      var all = machineEl.querySelectorAll('[mp-text],[mp-model],[mp-show],[mp-class],[mp-bound]');
+      var all = machineEl.querySelectorAll('[mp-text],[mp-model],[mp-show],[data-mp-bind]');
       inst._mpBindCache = [];
       for (var i = 0; i < all.length; i++) {
         var elem = all[i];
         if (elem.closest('[mp]') !== machineEl) continue;
-        // Build per-element binding descriptor (once per element lifetime)
-        if (!elem._mpBind) {
-          elem._mpBind = {};
-          var attr;
-          attr = elem.getAttribute('mp-text'); if (attr) elem._mpBind.text = attr;
-          attr = elem.getAttribute('mp-model');
-          if (attr) {
+        // Build per-element binding descriptor. _mpBind may already be
+        // populated by the element parser (_scanBindAttrs). Merge in any
+        // bare-word attributes that weren't set by the parser.
+        if (!elem._mpBind) elem._mpBind = {};
+        if (!elem._mpBind.text) {
+          var textAttr = elem.getAttribute('mp-text');
+          if (textAttr) elem._mpBind.text = textAttr;
+        }
+        if (!elem._mpBind.model) {
+          var modelAttr = elem.getAttribute('mp-model');
+          if (modelAttr) {
             var tag = elem.tagName.toLowerCase();
             if (tag !== 'input' && tag !== 'select' && tag !== 'textarea') {
-              console.warn('[mp] mp-model="' + attr + '" on <' + tag + '> — only <input>, <select>, and <textarea> support two-way binding.');
+              console.warn('[mp] mp-model="' + modelAttr + '" on <' + tag + '> — only <input>, <select>, and <textarea> support two-way binding.');
             }
-            elem._mpBind.model = attr;
+            elem._mpBind.model = modelAttr;
           }
-          if (elem.hasAttribute('mp-show') && !elem.hasAttribute('mp-state')) elem._mpBind.show = elem.getAttribute('mp-show');
-          attr = elem.getAttribute('mp-class');
-          if (attr) {
-            elem._mpBind.classExpr = attr;
-            var parsed = _parse(attr.trim());
-            elem._mpBind.classParsed = (Array.isArray(parsed) && parsed[0] && parsed[0].t === 'Y' && parsed[0].v === 'do')
-              ? parsed.slice(1) : [parsed];
-          }
+        }
+        if (!elem._mpBind.show && elem.hasAttribute('mp-show') && !elem.hasAttribute('mp-state')) {
+          elem._mpBind.show = elem.getAttribute('mp-show');
         }
         // Track deps: evaluate with tracking enabled to discover
         // which context keys this element's bindings read.
@@ -995,21 +1167,6 @@
         inst._mpBindCache.push(elem);
       }
       dirty = null; // first build — force full render below
-    }
-
-    // ── Phase 2b: Evaluate mp-let computed bindings ──────────
-    // Computed values are injected into ctx before bindings read them.
-    // They participate in dirty tracking: if a dependency changes,
-    // the let value recomputes and any binding that reads it re-renders.
-    if (inst._mpLet) {
-      var letScope = _makeScope(ctx, state, machineEl);
-      for (var li = 0; li < inst._mpLet.length; li++) {
-        var lb = inst._mpLet[li];
-        var prev = ctx[lb.name];
-        var val = _sevalPure(lb.ast, letScope);
-        ctx[lb.name] = val;
-        if (val !== prev && dirty) dirty[_depKey(lb.name)] = true;
-      }
     }
 
     // ── Phase 3: Apply bindings ──────────────────────────────
@@ -1142,21 +1299,26 @@
     _regReceive(inst);
     _scanBindAttrs(el, el);
     _attachDomEvents(el, inst);
-    if (setup.initial && setup.stateMap[setup.initial]) _initNested(setup.stateMap[setup.initial]);
+    if (setup.initial && setup.stateMap[setup.initial]) {
+      _initNested(setup.stateMap[setup.initial]);
+      var initTransitions = _parseTransitions(setup.stateMap[setup.initial], el);
+      if (!inst._transitions) inst._transitions = {};
+      inst._transitions[setup.initial] = initTransitions;
+    }
     inst.update();
     if (setup.initial && setup.stateMap[setup.initial]) evalTemporal(setup.stateMap[setup.initial], setup.initial);
-    var initExpr = el.getAttribute('mp-init');
+    var initExpr = el._mpInit;
     if (initExpr) {
       setTimeout(function () { _exec(initExpr, setup.ctx, inst.state, el, null, inst); }, 0);
     }
     // Fire mp-init on the initial state (same as when to() enters a state)
-    if (setup.initial && setup.stateMap[setup.initial] && setup.stateMap[setup.initial].hasAttribute('mp-init')) {
-      var stateInitExpr = setup.stateMap[setup.initial].getAttribute('mp-init');
+    if (setup.initial && setup.stateMap[setup.initial] && setup.stateMap[setup.initial]._mpInit) {
+      var stateInitExpr = setup.stateMap[setup.initial]._mpInit;
       setTimeout(function () { _exec(stateInitExpr, setup.ctx, inst.state, el, null, inst); }, 0);
     }
     // If the initial state has mp-where, trigger capability routing.
     // Wait for the route table to be available before routing.
-    if (setup.initial && setup.stateMap[setup.initial] && setup.stateMap[setup.initial].hasAttribute('mp-where')) {
+    if (setup.initial && setup.stateMap[setup.initial] && setup.stateMap[setup.initial]._mpWhere) {
       var triggerRoute = function () {
         if (engine.debug) console.log('[mp-debug] initial mp-where: ' + inst.name + '/' + setup.initial + ' (' + _routeTable.length + ' nodes in route table)');
         inst.to(setup.initial);
@@ -1169,16 +1331,22 @@
     }
 
     // ── URL routing: collect mp-url map, wire popstate, match initial URL ──
-    var urlStates = el.querySelectorAll('[mp-state][mp-url]');
+    // Iterate discovered states and check _mpUrlRaw property (set during
+    // _discoverStates from mp-url attribute or <mp-url> element).
+    var hasUrlStates = false;
+    for (var usi = 0; usi < setup.stateNames.length; usi++) {
+      if (setup.stateMap[setup.stateNames[usi]]._mpUrlRaw) { hasUrlStates = true; break; }
+    }
     // Check if the current URL owner is still alive (in the document)
     if (_urlOwner && !document.contains(_urlOwner.el)) _urlOwner = null;
-    if (urlStates.length > 0 && !_urlOwner) {
+    if (hasUrlStates && !_urlOwner) {
       inst._urlMap = {};
-      for (var ui = 0; ui < urlStates.length; ui++) {
-        if (urlStates[ui].closest('[mp]') !== el) continue;
-        var urlState = urlStates[ui].getAttribute('mp-state');
-        var urlParsed = _parseUrlAttr(urlStates[ui].getAttribute('mp-url'));
-        if (urlParsed) inst._urlMap[urlState] = urlParsed;
+      for (var ui = 0; ui < setup.stateNames.length; ui++) {
+        var urlStateName = setup.stateNames[ui];
+        var urlRaw = setup.stateMap[urlStateName]._mpUrlRaw;
+        if (!urlRaw) continue;
+        var urlParsed = _parseUrlAttr(urlRaw);
+        if (urlParsed) inst._urlMap[urlStateName] = urlParsed;
       }
       _urlOwner = inst;
 
@@ -1255,7 +1423,7 @@
     // Defined here so it closes over afterTimer/stateIntervals/ctx/el/inst.
     // Called from to() on state entry and from post-init for the initial state.
     function _evalTemporal(stateEl, stateName) {
-      var transVal = stateEl.getAttribute('mp-temporal');
+      var transVal = stateEl._mpTemporal;
       if (!transVal) return;
       var tScope = _makeScope(ctx, stateName, el);
       tScope.__mpAfterTimer = function (ms, bodyNode) {
@@ -1265,6 +1433,7 @@
           scope.__mpInst = inst;
           _seval(bodyNode, scope);
           _applyScope(scope, inst.ctx, inst);
+          if (scope.__mpEmit) inst.emit(scope.__mpEmit, scope.__mpEmitPayload);
           if (scope.__mpTo) inst.to(scope.__mpTo);
           else inst.update();
         }, ms);
@@ -1275,7 +1444,9 @@
           scope.__mpInst = inst;
           _seval(bodyNode, scope);
           _applyScope(scope, inst.ctx, inst);
-          inst.update();
+          if (scope.__mpEmit) inst.emit(scope.__mpEmit, scope.__mpEmitPayload);
+          if (scope.__mpTo) inst.to(scope.__mpTo);
+          else inst.update();
         }, ms);
         stateIntervals.push(id);
       };
@@ -1295,7 +1466,7 @@
       // ── to — state transition ──────────────────────────────────
       // Destroys leaving state's content, creates entering state's
       // content from template, runs enter/leave CSS transitions,
-      // rebuilds $refs, calls update(), fires mp-temporal event,
+      // rebuilds $refs, calls update(), fires mp-state-change event,
       // evaluates mp-temporal temporal expressions.
       to: function (target, contentHtml) {
 
@@ -1334,9 +1505,14 @@
           target = firstChild;
         }
 
+        // Clear timers from current state before any routing or transition
+        if (afterTimer) { clearTimeout(afterTimer); afterTimer = null; }
+        for (var ci = 0; ci < stateIntervals.length; ci++) clearInterval(stateIntervals[ci]);
+        stateIntervals = [];
+
         // ── State-level mp-where: capability routing ────────────────
-        if (!contentHtml && stateMap[target] && stateMap[target].hasAttribute('mp-where')) {
-          var whereExpr = stateMap[target].getAttribute('mp-where');
+        if (!contentHtml && stateMap[target] && stateMap[target]._mpWhere) {
+          var whereExpr = stateMap[target]._mpWhere;
           var required = _eval(whereExpr, ctx, inst.state, el);
           if (Array.isArray(required) && required.length > 0) {
             var hasAll = true;
@@ -1370,10 +1546,6 @@
           }
         }
 
-        if (afterTimer) { clearTimeout(afterTimer); afterTimer = null; }
-        for (var ci = 0; ci < stateIntervals.length; ci++) clearInterval(stateIntervals[ci]);
-        stateIntervals = [];
-
         var prev = inst.state;
         inst.state = target;
         if (engine.debug) console.log('[mp-debug] ' + name + ': ' + prev + ' → ' + target);
@@ -1382,7 +1554,7 @@
         // Self-transition with contentHtml: destroy and re-stamp without full exit/enter
         if (prev === target && contentHtml && stateMap[target]) {
           var selfEl = stateMap[target];
-          if (selfEl.hasAttribute('mp-exit')) _exec(selfEl.getAttribute('mp-exit'), ctx, target, el, null, inst);
+          if (selfEl._mpExit) _exec(selfEl._mpExit, ctx, target, el, null, inst);
           var selfNested = selfEl.querySelectorAll('[mp]');
           for (var sni = 0; sni < selfNested.length; sni++) _cleanupInstance(selfNested[sni]);
           selfEl.innerHTML = contentHtml;
@@ -1392,8 +1564,8 @@
           selfEl.hidden = false;
           ctx.$refs = _buildRefs(el);
           inst.update();
-          if (selfEl.hasAttribute('mp-init')) {
-            var siExpr = selfEl.getAttribute('mp-init');
+          if (selfEl._mpInit) {
+            var siExpr = selfEl._mpInit;
             setTimeout(function () { _exec(siExpr, ctx, inst.state, el, null, inst); }, 0);
           }
           el.dispatchEvent(new CustomEvent('mp-state-change', { bubbles: true, detail: { machine: name, prev: prev, next: target, ctx: ctx } }));
@@ -1414,8 +1586,8 @@
           var exitState = exitPath[xi];
           if (!stateMap[exitState]) continue;
           var leaveEl = stateMap[exitState];
-          if (leaveEl.hasAttribute('mp-exit')) {
-            _exec(leaveEl.getAttribute('mp-exit'), ctx, exitState, el, null, inst);
+          if (leaveEl._mpExit) {
+            _exec(leaveEl._mpExit, ctx, exitState, el, null, inst);
           }
           var nested = leaveEl.querySelectorAll('[mp]');
           for (var ni2 = 0; ni2 < nested.length; ni2++) _cleanupInstance(nested[ni2]);
@@ -1456,6 +1628,10 @@
             _scanBindAttrs(enterEl, el);
             _attachDomEvents(enterEl, inst);
             _initNested(enterEl);
+            // Parse <mp-transition> elements and store on instance
+            var parsed = _parseTransitions(enterEl, el);
+            if (!inst._transitions) inst._transitions = {};
+            inst._transitions[enterState] = parsed;
           }
         }
 
@@ -1467,8 +1643,8 @@
         // are evaluated before init runs — ensures $refs and focus targets exist.
         for (var ini = 0; ini < enterPath.length; ini++) {
           var initState = enterPath[ini];
-          if (stateMap[initState] && stateMap[initState].hasAttribute('mp-init') && initState !== prev) {
-            var stateInit = stateMap[initState].getAttribute('mp-init');
+          if (stateMap[initState] && stateMap[initState]._mpInit && initState !== prev) {
+            var stateInit = stateMap[initState]._mpInit;
             (function (expr) {
               setTimeout(function () { _exec(expr, ctx, inst.state, el, null, inst); }, 0);
             })(stateInit);
@@ -1503,18 +1679,17 @@
       }
     };
 
-    // Parse mp-let: alternating name/expression pairs for machine-scope computed values.
-    // parse() wraps multiple top-level forms as (do name1 expr1 name2 expr2 ...).
-    // Store parsed AST nodes directly — evaluated via _seval in _applyBindings.
-    var letAttr = el.getAttribute('mp-let');
-    if (letAttr) {
-      var letParsed = _parse(letAttr);
-      inst._mpLet = [];
-      if (Array.isArray(letParsed) && letParsed[0] && letParsed[0].v === 'do') {
-        for (var li = 1; li < letParsed.length - 1; li += 2) {
-          inst._mpLet.push({ name: letParsed[li].v, ast: letParsed[li + 1] });
-        }
+    // Parse <mp-let name="x">expr</mp-let> elements — computed bindings
+    var letEls = el.querySelectorAll('mp-let');
+    for (var lei = 0; lei < letEls.length; lei++) {
+      if (letEls[lei].closest('[mp]') !== el) continue;
+      var letName = letEls[lei].getAttribute('name');
+      var letExpr = letEls[lei].textContent.trim();
+      if (letName && letExpr) {
+        if (!inst._mpLet) inst._mpLet = [];
+        inst._mpLet.push({ name: letName, ast: _parse(letExpr) });
       }
+      letEls[lei].remove();
     }
 
     el._mp = inst;
@@ -1535,12 +1710,9 @@
 
     // mp-to: click → transition
     //
-    // Two modes, detected by leading '(':
-    //   mp-to="stateName"     — bare state name, simple transition
-    //   mp-to="(expression)"  — s-expression with full compositional power
-    //
-    // In s-expression mode, use (to state), (emit name), (prevent!),
-    // (stop!) as signal forms. Guards are just (when) / (if).
+    // mp-to="name" fires event name. If a <mp-transition event="name">
+    // exists in the current state, it handles the event (guard, action,
+    // emit, target). Otherwise, treated as a direct state transition.
     document.addEventListener('click', function (e) {
       var toEl = e.target.closest('[mp-to]');
       if (!toEl) return;
@@ -1553,44 +1725,83 @@
       var inst = machineEl._mp;
       var value = toEl.getAttribute('mp-to');
 
-      if (value.charAt(0) === '(') {
-        // S-expression mode: decompose into { target, guard, action, emit }
-        var slots = engine.decomposeMpTo(value);
-        var itemScope = _scopeFor(toEl, machineEl, inst.ctx);
-
-        // Evaluate guard
-        if (slots.guard) {
-          var guardResult = _eval(slots.guard, itemScope, inst.state, toEl);
-          if (!guardResult) {
-            if (engine.debug) console.log('[mp-debug] guard blocked: ' + slots.guard);
-            return;
+      {
+        // Find <mp-transition event="value"> — check pre-parsed transitions first,
+        // then template-level transitions (from mp-each), then live DOM fallback.
+        var transDefs = null;
+        var stateTransitions = inst._transitions && inst._transitions[inst.state];
+        if (stateTransitions && stateTransitions[value]) {
+          transDefs = stateTransitions[value];
+        }
+        // Check template-level transitions from mp-each items
+        if (!transDefs) {
+          var tmplEl = toEl.closest('template') || (function () {
+            // The button is a sibling of template, not inside it.
+            // Walk up to find the nearest template[mp-each] with stored transitions.
+            var cur = toEl.parentElement;
+            while (cur && cur !== machineEl) {
+              var tpls = cur.querySelectorAll('template[mp-each]');
+              for (var ti = 0; ti < tpls.length; ti++) {
+                if (tpls[ti]._mpTransitions && tpls[ti]._mpTransitions[value]) return tpls[ti];
+              }
+              cur = cur.parentElement;
+            }
+            return null;
+          })();
+          if (tmplEl && tmplEl._mpTransitions && tmplEl._mpTransitions[value]) {
+            transDefs = tmplEl._mpTransitions[value];
           }
         }
-
-        // Execute action
-        if (slots.action) {
-          if (itemScope !== inst.ctx) {
-            var merged = Object.create(inst.ctx);
-            for (var k in itemScope) { if (itemScope.hasOwnProperty(k)) merged[k] = itemScope[k]; }
-            _exec(slots.action, merged, inst.state, machineEl, e, inst);
-            _applyScope(merged, inst.ctx, inst);
-          } else {
-            _exec(slots.action, inst.ctx, inst.state, machineEl, e, inst);
+        if (!transDefs) {
+          // Live DOM search — find <mp-transition> near the clicked element
+          var container = toEl.closest('[mp-state]') || machineEl;
+          var liveTrans = container.querySelectorAll('mp-transition[event="' + value + '"]');
+          if (liveTrans.length > 0) {
+            transDefs = [];
+            for (var lti = 0; lti < liveTrans.length; lti++) {
+              if (liveTrans[lti].closest('[mp]') !== machineEl) continue;
+              var ltd = { target: liveTrans[lti].getAttribute('to') || null, guard: null, action: null, emit: null };
+              var lg = liveTrans[lti].querySelector('mp-guard');
+              if (lg) ltd.guard = lg.textContent.trim();
+              var la = liveTrans[lti].querySelector('mp-action');
+              if (la) ltd.action = la.textContent.trim();
+              var le = liveTrans[lti].querySelector('mp-emit');
+              if (le) ltd.emit = le.textContent.trim();
+              transDefs.push(ltd);
+            }
           }
         }
-
-        // Emit — evaluate payload in the element's scope (includes mp-each item data)
-        if (slots.emit) {
-          var emitPayload = slots.emitPayload ? _eval(slots.emitPayload, itemScope, inst.state, toEl) : undefined;
-          inst.emit(slots.emit, emitPayload);
+        if (transDefs && transDefs.length > 0) {
+          var itemScope = _scopeFor(toEl, machineEl, inst.ctx);
+          for (var ti = 0; ti < transDefs.length; ti++) {
+            var td = transDefs[ti];
+            // Evaluate guard
+            if (td.guard) {
+              var guardResult = _eval(td.guard, itemScope, inst.state, toEl);
+              if (!guardResult) continue;
+            }
+            // Execute action — merge item scope so $item/$index are available
+            if (td.action) {
+              var actionCtx = itemScope;
+              if (itemScope !== inst.ctx) {
+                actionCtx = Object.create(inst.ctx);
+                for (var ak in itemScope) { if (itemScope.hasOwnProperty(ak)) actionCtx[ak] = itemScope[ak]; }
+              }
+              var actionResult = _exec(td.action, actionCtx, inst.state, machineEl, e, inst);
+              if (itemScope !== inst.ctx) _applyScope(actionCtx, inst.ctx, inst);
+              if (actionResult && actionResult.emit) inst.emit(actionResult.emit, actionResult.emitPayload);
+            }
+            // Explicit <mp-emit> element
+            if (td.emit) inst.emit(td.emit);
+            // Transition
+            if (td.target) inst.to(td.target);
+            else inst.update();
+            break;
+          }
+        } else {
+          // No mp-transition found — treat as direct state transition
+          inst.to(value);
         }
-
-        // Transition
-        if (slots.target) inst.to(slots.target);
-        else inst.update();
-      } else {
-        // Bare state name mode: simple transition
-        inst.to(value);
       }
     });
 
@@ -1644,7 +1855,7 @@
     var styleEl = document.createElement('style');
     styleEl.id = 'mp-css';
     styleEl.textContent =
-      '[mp-state][hidden],[mp-show][hidden]{display:none!important}';
+      '[mp-state][hidden],[mp-show][hidden],[data-mp-bind][hidden]{display:none!important}';
     document.head.appendChild(styleEl);
   }
 
@@ -1906,7 +2117,10 @@
       method: 'POST',
       headers: headers,
       body: body
-    }).then(function (res) { return res.text(); });
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status + ' from ' + targetUrl);
+      return res.text();
+    });
   }
 
   return {

@@ -93,69 +93,101 @@
     });
 
     test('(+ a b) arithmetic', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"a":2,"b":3}\'><span mp-text="(+ a b)" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":2,"b":3}\'><span id="o"><mp-text>(+ a b)</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '5');
     });
 
     test('(str a b) concatenation', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":5}\'><span mp-text="(str n \' items\')" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":5}\'><span id="o"><mp-text>(str n \' items\')</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '5 items');
     });
 
     test('(> a b) comparison', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":10}\'><div mp-show="(> n 5)" id="a">Y</div><div mp-show="(> n 20)" id="b">N</div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":10}\'><div id="a"><mp-show>(> n 5)</mp-show>Y</div><div id="b"><mp-show>(> n 20)</mp-show>N</div></div>');
       assert(!el.querySelector('#a').hidden, '>5 should show');
       assert(el.querySelector('#b').hidden, '>20 should hide');
     });
 
     test('(and) (or) (not) logic', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"a":true,"b":false}\'><div mp-show="(and a (not b))" id="o">Y</div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":true,"b":false}\'><div id="o"><mp-show>(and a (not b))</mp-show>Y</div></div>');
       assert(!el.querySelector('#o').hidden);
     });
 
     test('(if cond then else)', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"on":true}\'><span mp-text="(if on \'YES\' \'NO\')" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"on":true}\'><span id="o"><mp-text>(if on \'YES\' \'NO\')</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, 'YES');
     });
 
     test('(when cond value)', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"ok":true}\'><span mp-text="(when ok \'good\')" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"ok":true}\'><span id="o"><mp-text>(when ok \'good\')</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, 'good');
     });
 
     test('(count items) collection length', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><span mp-text="(count items)" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><span id="o"><mp-text>(count items)</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '3');
     });
 
     test('(set! x val) mutation', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="a"><button mp-to="(set! x 99)" id="btn">Go</button><span mp-text="x" id="o"></span></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"x":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="set-x" to="a"><mp-action>(set! x 99)</mp-action></mp-transition>' +
+        '<button mp-to="set-x" id="btn">Go</button>' +
+        '<span mp-text="x" id="o"></span>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '99');
     });
 
     test('(inc! x) mutation', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><button mp-to="(inc! n)" id="btn">+</button><span mp-text="n" id="o"></span></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"n":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="increment" to="a"><mp-action>(inc! n)</mp-action></mp-transition>' +
+        '<button mp-to="increment" id="btn">+</button>' +
+        '<span mp-text="n" id="o"></span>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '2');
     });
 
     test('(do expr1 expr2) sequences', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"a":0,"b":0}\'><div mp-state="s"><button mp-to="(do (set! a 1) (set! b 2))" id="btn">Go</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"a":0,"b":0}\'>' +
+        '<div mp-state="s">' +
+        '<mp-transition event="set-ab" to="s"><mp-action>(do (set! a 1) (set! b 2))</mp-action></mp-transition>' +
+        '<button mp-to="set-ab" id="btn">Go</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.ctx.a, 1);
       eq(el.querySelector('[mp]')._mp.ctx.b, 2);
     });
 
     test('(push! arr val) array mutation', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[]}\'><div mp-state="a"><button mp-to="(push! items 1)" id="btn">+</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"items":[]}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="add-item" to="a"><mp-action>(push! items 1)</mp-action></mp-transition>' +
+        '<button mp-to="add-item" id="btn">+</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn')); click(el.querySelector('#btn')); click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.ctx.items.length, 3);
     });
 
     test('(toggle! flag) boolean flip', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"on":false}\'><div mp-state="a"><button mp-to="(toggle! on)" id="btn">T</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"on":false}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="toggle-on" to="a"><mp-action>(toggle! on)</mp-action></mp-transition>' +
+        '<button mp-to="toggle-on" id="btn">T</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.ctx.on, true);
       click(el.querySelector('#btn'));
@@ -163,24 +195,36 @@
     });
 
     test('(fn [x] body) lambda with filter — Clojure arg order', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4,5]}\'><span mp-text="(count (filter (fn [x] (> x 3)) items))" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4,5]}\'><span id="o"><mp-text>(count (filter (fn [x] (> x 3)) items))</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '2');
     });
 
     test('(let [x 1 y 2] (+ x y)) local bindings — Clojure-style', function () {
-      var el = fixture('<div mp="t"><span mp-text="(let [x 10 y 20] (+ x y))" id="o"></span></div>');
+      var el = fixture('<div mp="t"><span id="o"><mp-text>(let [x 10 y 20] (+ x y))</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '30');
     });
 
     test('keyword :name resolves to string', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"id":1},{"id":2}]}\'><div mp-state="a"><button mp-to="(remove-where! items :id 1)" id="btn">-</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"items":[{"id":1},{"id":2}]}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="remove-one" to="a"><mp-action>(remove-where! items :id 1)</mp-action></mp-transition>' +
+        '<button mp-to="remove-one" id="btn">-</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.ctx.items.length, 1);
       eq(el.querySelector('[mp]')._mp.ctx.items[0].id, 2);
     });
 
     test('(obj :key val) creates object', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[]}\'><div mp-state="a"><button mp-to="(push! items (obj :name \'test\' :done false))" id="btn">+</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"items":[]}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="add-obj" to="a"><mp-action>(push! items (obj :name \'test\' :done false))</mp-action></mp-transition>' +
+        '<button mp-to="add-obj" id="btn">+</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       var item = el.querySelector('[mp]')._mp.ctx.items[0];
       eq(item.name, 'test');
@@ -188,32 +232,32 @@
     });
 
     test('nested expressions compose', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><span mp-text="(str (count items) \' of \' (+ (count items) 2))" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><span id="o"><mp-text>(str (count items) \' of \' (+ (count items) 2))</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '3 of 5');
     });
 
     test('#() anonymous function shorthand', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4,5]}\'><span mp-text="(count (filter #(> % 3) items))" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4,5]}\'><span id="o"><mp-text>(count (filter #(> % 3) items))</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '2');
     });
 
     test('(->> x (f) (g)) thread-last macro', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4,5]}\'><span mp-text="(->> items (filter #(> % 2)) (count))" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4,5]}\'><span id="o"><mp-text>(->> items (filter #(> % 2)) (count))</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '3');
     });
 
     test('(-> x (f a) (g b)) thread-first macro', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"s":"hello world"}\'><span mp-text="(-> s (upper) (trim))" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"s":"hello world"}\'><span id="o"><mp-text>(-> s (upper) (trim))</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, 'HELLO WORLD');
     });
 
     test('[x y z] vector creates array', function () {
-      var el = fixture('<div mp="t"><span mp-text="(count [1 2 3])" id="o"></span></div>');
+      var el = fixture('<div mp="t"><span id="o"><mp-text>(count [1 2 3])</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '3');
     });
 
     test('sort-by with key function', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"n":3},{"n":1},{"n":2}]}\'><span mp-text="(get (first (sort-by #(get % :n) items)) :n)" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"n":3},{"n":1},{"n":2}]}\'><span id="o"><mp-text>(get (first (sort-by #(get % :n) items)) :n)</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '1');
     });
 
@@ -243,12 +287,18 @@
     });
 
     test('stateless machine with bindings', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":5}\'><span mp-text="(* n 2)" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":5}\'><span id="o"><mp-text>(* n 2)</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '10');
     });
 
     test('mp-ctx attribute syncs with live context after action', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"count":0}\'><div mp-state="a"><button mp-to="(inc! count)" id="btn">+</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"count":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="increment" to="a"><mp-action>(inc! count)</mp-action></mp-transition>' +
+        '<button mp-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
       var machine = el.querySelector('[mp]');
       eq(JSON.parse(machine.getAttribute('mp-ctx')).count, 0, 'initial');
       click(el.querySelector('#btn'));
@@ -267,7 +317,13 @@
     });
 
     test('mp-ctx attribute syncs arrays after push!', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[]}\'><div mp-state="a"><button mp-to="(push! items (obj :name \'Pen\'))" id="btn">Add</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"items":[]}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="add-pen" to="a"><mp-action>(push! items (obj :name \'Pen\'))</mp-action></mp-transition>' +
+        '<button mp-to="add-pen" id="btn">Add</button>' +
+        '</div></div>'
+      );
       var machine = el.querySelector('[mp]');
       click(el.querySelector('#btn'));
       var ctx = JSON.parse(machine.getAttribute('mp-ctx'));
@@ -294,7 +350,13 @@
     });
 
     test('mp-ctx sync excludes $ properties', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"x":1}\'><div mp-state="a"><button mp-to="(inc! x)" id="btn">+</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"x":1}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="inc-x" to="a"><mp-action>(inc! x)</mp-action></mp-transition>' +
+        '<button mp-to="inc-x" id="btn">+</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       var raw = el.querySelector('[mp]').getAttribute('mp-ctx');
       assert(raw.indexOf('$state') === -1, 'no $state in mp-ctx');
@@ -317,25 +379,50 @@
     });
 
     test('self-transition with action', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><button mp-to="(inc! n)" id="btn">+</button><span mp-text="n" id="o"></span></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"n":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="increment" to="a"><mp-action>(inc! n)</mp-action></mp-transition>' +
+        '<button mp-to="increment" id="btn">+</button>' +
+        '<span mp-text="n" id="o"></span>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '1');
     });
 
     test('guard blocks when falsy', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"ok":false}\'><div mp-state="a"><button mp-to="(when ok (to b))" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"ok":false}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="go" to="b"><mp-guard>(when ok true)</mp-guard></mp-transition>' +
+        '<button mp-to="go" id="btn">Go</button>' +
+        '</div><div mp-state="b">B</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.state, 'a');
     });
 
     test('guard s-expression in mp-to', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><div mp-state="a"><button mp-to="(when (> (count items) 2) (to b))" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="go" to="b"><mp-guard>(> (count items) 2)</mp-guard></mp-transition>' +
+        '<button mp-to="go" id="btn">Go</button>' +
+        '</div><div mp-state="b">B</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.state, 'b');
     });
 
     test('action s-expression in mp-to runs', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="a"><button mp-to="(do (set! x 99) (to b))" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"x":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="go" to="b"><mp-action>(set! x 99)</mp-action></mp-transition>' +
+        '<button mp-to="go" id="btn">Go</button>' +
+        '</div><div mp-state="b">B</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.ctx.x, 99);
     });
@@ -364,12 +451,19 @@
     group('Binding');
 
     test('mp-text with s-expression', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"a":2,"b":3}\'><span mp-text="(+ a b)" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":2,"b":3}\'><span id="o"><mp-text>(+ a b)</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '5');
     });
 
     test('mp-text updates after action', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><span mp-text="n" id="o"></span><button mp-to="(inc! n)" id="btn">+</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"n":0}\'>' +
+        '<div mp-state="a">' +
+        '<span mp-text="n" id="o"></span>' +
+        '<mp-transition event="increment" to="a"><mp-action>(inc! n)</mp-action></mp-transition>' +
+        '<button mp-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '1');
     });
@@ -410,12 +504,12 @@
     });
 
     test('mp-show s-expression', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":10}\'><div mp-show="(> n 5)" id="o">Y</div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":10}\'><div id="o"><mp-show>(> n 5)</mp-show>Y</div></div>');
       assert(!el.querySelector('#o').hidden);
     });
 
     test('mp-show with negation (replaces mp-hide)', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"gone":true}\'><div mp-show="(not gone)" id="o">X</div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"gone":true}\'><div id="o"><mp-show>(not gone)</mp-show>X</div></div>');
       assert(el.querySelector('#o').hidden);
     });
 
@@ -427,46 +521,53 @@
     group('mp-class');
 
     test('(when expr cls) adds class', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"done":true}\'><div mp-state="a"><span mp-class="(when done \'line-through\')" id="o">X</span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"done":true}\'><div mp-state="a"><span id="o"><mp-class>(when done \'line-through\')</mp-class>X</span></div></div>');
       assert(el.querySelector('#o').classList.contains('line-through'));
     });
 
     test('(when false cls) does not add class', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"done":false}\'><div mp-state="a"><span mp-class="(when done \'line-through\')" id="o">X</span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"done":false}\'><div mp-state="a"><span id="o"><mp-class>(when done \'line-through\')</mp-class>X</span></div></div>');
       assert(!el.querySelector('#o').classList.contains('line-through'));
     });
 
     test('(when-state name cls) adds class in matching state', function () {
-      var el = fixture('<div mp="t"><div mp-state="active"><span mp-class="(when-state active \'ring\')" id="o">X</span></div></div>');
+      var el = fixture('<div mp="t"><div mp-state="active"><span id="o"><mp-class>(when-state active \'ring\')</mp-class>X</span></div></div>');
       assert(el.querySelector('#o').classList.contains('ring'));
     });
 
     test('multiple class expressions', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"done":true,"urgent":false}\'><div mp-state="a"><span mp-class="(when done \'line-through\') (when urgent \'text-red\')" id="o">X</span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"done":true,"urgent":false}\'><div mp-state="a"><span id="o"><mp-class>(when done \'line-through\') (when urgent \'text-red\')</mp-class>X</span></div></div>');
       assert(el.querySelector('#o').classList.contains('line-through'));
       assert(!el.querySelector('#o').classList.contains('text-red'));
     });
 
     test('(if cond cls1 cls2) conditional class', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"active":true}\'><div mp-state="a"><span mp-class="(if active \'bg-green\' \'bg-gray\')" id="o">X</span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"active":true}\'><div mp-state="a"><span id="o"><mp-class>(if active \'bg-green\' \'bg-gray\')</mp-class>X</span></div></div>');
       assert(el.querySelector('#o').classList.contains('bg-green'));
       assert(!el.querySelector('#o').classList.contains('bg-gray'));
     });
 
     test('class removed when expression becomes falsy', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"on":true}\'><div mp-state="a"><span mp-class="(when on \'active\')" id="o">X</span><button mp-to="(set! on false)" id="btn">Off</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"on":true}\'>' +
+        '<div mp-state="a">' +
+        '<span id="o"><mp-class>(when on \'active\')</mp-class>X</span>' +
+        '<mp-transition event="turn-off" to="a"><mp-action>(set! on false)</mp-action></mp-transition>' +
+        '<button mp-to="turn-off" id="btn">Off</button>' +
+        '</div></div>'
+      );
       assert(el.querySelector('#o').classList.contains('active'));
       click(el.querySelector('#btn'));
       assert(!el.querySelector('#o').classList.contains('active'));
     });
 
     test('complex expression in mp-class', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><div mp-state="a"><span mp-class="(when (> (count items) 2) \'has-many\')" id="o">X</span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><div mp-state="a"><span id="o"><mp-class>(when (> (count items) 2) \'has-many\')</mp-class>X</span></div></div>');
       assert(el.querySelector('#o').classList.contains('has-many'));
     });
 
     test('mp-class with space-separated classes in result string', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"ok":true}\'><div mp-state="a"><span mp-class="(if ok \'bg-green text-white border-2\' \'bg-gray\')" id="o">X</span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"ok":true}\'><div mp-state="a"><span id="o"><mp-class>(if ok \'bg-green text-white border-2\' \'bg-gray\')</mp-class>X</span></div></div>');
       assert(el.querySelector('#o').classList.contains('bg-green'), 'has bg-green');
       assert(el.querySelector('#o').classList.contains('text-white'), 'has text-white');
       assert(el.querySelector('#o').classList.contains('border-2'), 'has border-2');
@@ -474,7 +575,14 @@
     });
 
     test('mp-class multi-class string removed on state change', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"on":true}\'><div mp-state="a"><span mp-class="(if on \'ring ring-2 ring-blue\' \'opacity-50\')" id="o">X</span><button mp-to="(set! on false)" id="btn">Off</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"on":true}\'>' +
+        '<div mp-state="a">' +
+        '<span id="o"><mp-class>(if on \'ring ring-2 ring-blue\' \'opacity-50\')</mp-class>X</span>' +
+        '<mp-transition event="turn-off" to="a"><mp-action>(set! on false)</mp-action></mp-transition>' +
+        '<button mp-to="turn-off" id="btn">Off</button>' +
+        '</div></div>'
+      );
       assert(el.querySelector('#o').classList.contains('ring'), 'has ring');
       assert(el.querySelector('#o').classList.contains('ring-2'), 'has ring-2');
       assert(el.querySelector('#o').classList.contains('ring-blue'), 'has ring-blue');
@@ -491,24 +599,29 @@
 
     group('Bind');
 
-    test('mp-bind-disabled boolean', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"locked":true}\'><div mp-state="a"><button mp-bind-disabled="locked" id="btn">Go</button></div></div>');
+    test('mp-bind disabled boolean', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"locked":true}\'><div mp-state="a"><button id="btn"><mp-bind attr="disabled">locked</mp-bind>Go</button></div></div>');
       assert(el.querySelector('#btn').hasAttribute('disabled'));
     });
 
-    test('mp-bind-disabled with s-expression', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"ok":false}\'><div mp-state="a"><button mp-bind-disabled="(not ok)" id="btn">Go</button></div></div>');
+    test('mp-bind disabled with s-expression', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"ok":false}\'><div mp-state="a"><button id="btn"><mp-bind attr="disabled">(not ok)</mp-bind>Go</button></div></div>');
       assert(el.querySelector('#btn').hasAttribute('disabled'));
     });
 
-    test('mp-bind-href', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"url":"/page"}\'><div mp-state="a"><a mp-bind-href="url" id="l">L</a></div></div>');
+    test('mp-bind href', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"url":"/page"}\'><div mp-state="a"><a id="l"><mp-bind attr="href">url</mp-bind>L</a></div></div>');
       eq(el.querySelector('#l').getAttribute('href'), '/page');
     });
 
     test('mp-bind on machine element', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"t":"dark"}\' mp-bind-data-theme="t"><div mp-state="a">A</div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"t":"dark"}\'><mp-bind attr="data-theme">t</mp-bind><div mp-state="a">A</div></div>');
       eq(el.querySelector('[mp]').getAttribute('data-theme'), 'dark');
+    });
+
+    test('mp-bind attr on void element via sibling placement', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"src":"photo.jpg"}\'><div mp-state="a"><div class="wrap"><img class="photo" /><mp-bind attr="src">src</mp-bind></div></div></div>');
+      eq(el.querySelector('.photo').getAttribute('src'), 'photo.jpg');
     });
 
 
@@ -518,32 +631,53 @@
 
     group('Events');
 
-    test('mp-on:keydown s-expression with (to)', function () {
-      var el = fixture('<div mp="t"><div mp-state="a"><input mp-on:keydown="(when (= (get $event :key) \'Enter\') (to b))" id="i" /></div><div mp-state="b">B</div></div>');
+    test('mp-on keydown s-expression with (to)', function () {
+      var el = fixture(
+        '<div mp="t"><div mp-state="a">' +
+        '<input id="i"><mp-on event="keydown">(when (= (get $event :key) \'Enter\') (to b))</mp-on></input>' +
+        '</div><div mp-state="b">B</div></div>'
+      );
       keydown(el.querySelector('#i'), 'Enter');
       eq(el.querySelector('[mp]')._mp.state, 'b');
     });
 
     test('s-expression event handler filters non-matching keys', function () {
-      var el = fixture('<div mp="t"><div mp-state="a"><input mp-on:keydown="(when (= (get $event :key) \'Enter\') (to b))" id="i" /></div><div mp-state="b">B</div></div>');
+      var el = fixture(
+        '<div mp="t"><div mp-state="a">' +
+        '<input id="i"><mp-on event="keydown">(when (= (get $event :key) \'Enter\') (to b))</mp-on></input>' +
+        '</div><div mp-state="b">B</div></div>'
+      );
       keydown(el.querySelector('#i'), 'a');
       eq(el.querySelector('[mp]')._mp.state, 'a');
     });
 
     test('s-expression event with Escape', function () {
-      var el = fixture('<div mp="t"><div mp-state="open"><input mp-on:keydown="(when (= (get $event :key) \'Escape\') (to closed))" id="i" /></div><div mp-state="closed">X</div></div>');
+      var el = fixture(
+        '<div mp="t"><div mp-state="open">' +
+        '<input id="i"><mp-on event="keydown">(when (= (get $event :key) \'Escape\') (to closed))</mp-on></input>' +
+        '</div><div mp-state="closed">X</div></div>'
+      );
       keydown(el.querySelector('#i'), 'Escape');
       eq(el.querySelector('[mp]')._mp.state, 'closed');
     });
 
-    test('mp-on:submit.prevent', function () {
-      var el = fixture('<div mp="t"><div mp-state="e"><form mp-on:submit.prevent="(to done)" id="f"><button type="submit">Go</button></form></div><div mp-state="done">D</div></div>');
+    test('mp-on submit.prevent', function () {
+      var el = fixture(
+        '<div mp="t"><div mp-state="e">' +
+        '<form id="f"><mp-on event="submit.prevent">(to done)</mp-on><button type="submit">Go</button></form>' +
+        '</div><div mp-state="done">D</div></div>'
+      );
       submit(el.querySelector('#f'));
       eq(el.querySelector('[mp]')._mp.state, 'done');
     });
 
     test('mp-on: with guard s-expression', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"v":""}\'><div mp-state="a"><input mp-model="v" id="i" /><input mp-on:keydown="(when (and (= (get $event :key) \'Enter\') (> (count v) 0)) (to b))" id="tr" /></div><div mp-state="b">B</div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"v":""}\'><div mp-state="a">' +
+        '<input mp-model="v" id="i" />' +
+        '<input id="tr"><mp-on event="keydown">(when (and (= (get $event :key) \'Enter\') (> (count v) 0)) (to b))</mp-on></input>' +
+        '</div><div mp-state="b">B</div></div>'
+      );
       keydown(el.querySelector('#tr'), 'Enter');
       eq(el.querySelector('[mp]')._mp.state, 'a', 'Guard blocks empty');
       type(el.querySelector('#i'), 'hi');
@@ -552,7 +686,12 @@
     });
 
     test('mp-on: with action s-expression', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><button mp-on:click="(inc! n)" id="btn">+</button><span mp-text="n" id="o"></span></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a">' +
+        '<button id="btn"><mp-on event="click">(inc! n)</mp-on>+</button>' +
+        '<span mp-text="n" id="o"></span>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '1');
     });
@@ -566,23 +705,44 @@
 
     test('emit + mp-receive with (on)', function () {
       var el = fixture(
-        '<div><div mp="s"><div mp-state="a"><button mp-to="(emit ping)" id="btn">P</button></div></div>' +
-        '<div mp="r" mp-receive="(on \'ping\' (to active))"><div mp-state="idle">I</div><div mp-state="active">A</div></div></div>'
+        '<div>' +
+        '<div mp="s"><div mp-state="a">' +
+        '<mp-transition event="fire-ping" to="a"><mp-emit>ping</mp-emit></mp-transition>' +
+        '<button mp-to="fire-ping" id="btn">P</button>' +
+        '</div></div>' +
+        '<div mp="r">' +
+        '<mp-receive event="ping">(to active)</mp-receive>' +
+        '<div mp-state="idle">I</div><div mp-state="active">A</div>' +
+        '</div></div>'
       );
       click(el.querySelector('#btn'));
       eq(el.querySelectorAll('[mp]')[1]._mp.state, 'active');
     });
 
     test('mp-receive does not react to own emit', function () {
-      var el = fixture('<div mp="self" mp-receive="(on \'x\' (to b))"><div mp-state="a"><button mp-to="(emit x)" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      var el = fixture(
+        '<div mp="self">' +
+        '<mp-receive event="x">(to b)</mp-receive>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="fire-x" to="a"><mp-emit>x</mp-emit></mp-transition>' +
+        '<button mp-to="fire-x" id="btn">Go</button>' +
+        '</div><div mp-state="b">B</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.state, 'a');
     });
 
     test('mp-receive s-expression with mutation', function () {
       var el = fixture(
-        '<div><div mp="a"><div mp-state="s"><button mp-to="(emit data)" id="btn">S</button></div></div>' +
-        '<div mp="b" mp-ctx=\'{"msg":""}\' mp-receive="(on \'data\' (do (set! msg \'got it\') (to s)))"><div mp-state="s"><span mp-text="msg" id="o"></span></div></div></div>'
+        '<div>' +
+        '<div mp="a"><div mp-state="s">' +
+        '<mp-transition event="fire-data" to="s"><mp-emit>data</mp-emit></mp-transition>' +
+        '<button mp-to="fire-data" id="btn">S</button>' +
+        '</div></div>' +
+        '<div mp="b" mp-ctx=\'{"msg":""}\'>' +
+        '<mp-receive event="data">(do (set! msg \'got it\') (to s))</mp-receive>' +
+        '<div mp-state="s"><span mp-text="msg" id="o"></span></div>' +
+        '</div></div>'
       );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, 'got it');
@@ -590,8 +750,15 @@
 
     test('mp-receive accesses $detail payload', function () {
       var el = fixture(
-        '<div><div mp="sender" mp-ctx=\'{"val":42}\'><div mp-state="s"><button mp-to="(emit info (obj :val val))" id="btn">S</button></div></div>' +
-        '<div mp="listener" mp-ctx=\'{"got":0}\' mp-receive="(on \'info\' (do (set! got (get $detail :val)) (to s)))"><div mp-state="s"><span mp-text="got" id="o"></span></div></div></div>'
+        '<div>' +
+        '<div mp="sender" mp-ctx=\'{"val":42}\'><div mp-state="s">' +
+        '<mp-transition event="fire-info" to="s"><mp-action>(emit info (obj :val val))</mp-action></mp-transition>' +
+        '<button mp-to="fire-info" id="btn">S</button>' +
+        '</div></div>' +
+        '<div mp="listener" mp-ctx=\'{"got":0}\'>' +
+        '<mp-receive event="info">(do (set! got (get $detail :val)) (to s))</mp-receive>' +
+        '<div mp-state="s"><span mp-text="got" id="o"></span></div>' +
+        '</div></div>'
       );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '42');
@@ -599,8 +766,15 @@
 
     test('emit without payload — $detail is nil', function () {
       var el = fixture(
-        '<div><div mp="sender2"><div mp-state="s"><button mp-to="(emit ping)" id="btn">P</button></div></div>' +
-        '<div mp="listener2" mp-ctx=\'{"received":false}\' mp-receive="(on \'ping\' (do (set! received (nil? $detail)) (to s)))"><div mp-state="s"><span mp-text="received" id="o"></span></div></div></div>'
+        '<div>' +
+        '<div mp="sender2"><div mp-state="s">' +
+        '<mp-transition event="fire-ping" to="s"><mp-emit>ping</mp-emit></mp-transition>' +
+        '<button mp-to="fire-ping" id="btn">P</button>' +
+        '</div></div>' +
+        '<div mp="listener2" mp-ctx=\'{"received":false}\'>' +
+        '<mp-receive event="ping">(do (set! received (nil? $detail)) (to s))</mp-receive>' +
+        '<div mp-state="s"><span mp-text="received" id="o"></span></div>' +
+        '</div></div>'
       );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, 'true', '$detail is nil when no payload');
@@ -608,8 +782,18 @@
 
     test('mp-receive multiple (on) forms', function () {
       var el = fixture(
-        '<div><div mp="a"><div mp-state="s"><button mp-to="(emit ev1)" id="b1">1</button><button mp-to="(emit ev2)" id="b2">2</button></div></div>' +
-        '<div mp="b" mp-ctx=\'{"last":""}\' mp-receive="(on \'ev1\' (do (set! last \'one\') (to s))) (on \'ev2\' (do (set! last \'two\') (to s)))"><div mp-state="s"><span mp-text="last" id="o"></span></div></div></div>'
+        '<div>' +
+        '<div mp="a"><div mp-state="s">' +
+        '<mp-transition event="fire-ev1" to="s"><mp-emit>ev1</mp-emit></mp-transition>' +
+        '<mp-transition event="fire-ev2" to="s"><mp-emit>ev2</mp-emit></mp-transition>' +
+        '<button mp-to="fire-ev1" id="b1">1</button>' +
+        '<button mp-to="fire-ev2" id="b2">2</button>' +
+        '</div></div>' +
+        '<div mp="b" mp-ctx=\'{"last":""}\'>' +
+        '<mp-receive event="ev1">(do (set! last \'one\') (to s))</mp-receive>' +
+        '<mp-receive event="ev2">(do (set! last \'two\') (to s))</mp-receive>' +
+        '<div mp-state="s"><span mp-text="last" id="o"></span></div>' +
+        '</div></div>'
       );
       click(el.querySelector('#b1'));
       eq(el.querySelector('#o').textContent, 'one');
@@ -675,7 +859,14 @@
     });
 
     test('mp-each updates on push', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":["a"]}\'><div mp-state="s"><button mp-to="(push! items \'b\')" id="btn">+</button><template mp-each="items"><span class="v"></span></template></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"items":["a"]}\'>' +
+        '<div mp-state="s">' +
+        '<mp-transition event="push-b" to="s"><mp-action>(push! items \'b\')</mp-action></mp-transition>' +
+        '<button mp-to="push-b" id="btn">+</button>' +
+        '<template mp-each="items"><span class="v"></span></template>' +
+        '</div></div>'
+      );
       eq(el.querySelectorAll('.v').length, 1);
       click(el.querySelector('#btn'));
       eq(el.querySelectorAll('.v').length, 2);
@@ -684,7 +875,9 @@
     test('mp-each keyed preserves DOM', function () {
       var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"id":1,"n":"A"},{"id":2,"n":"B"}]}\'><div mp-state="s"><template mp-each="items" mp-key="id"><div mp-text="n"></div></template></div></div>');
       var first = el.querySelectorAll('[mp-text]')[0];
-      el.querySelector('[mp]')._mp.to('.');
+      // Trigger update without changing items — keyed reconciliation should reuse DOM nodes
+      var inst = el.querySelector('[mp]')._mp;
+      inst.update();
       assert(first === el.querySelectorAll('[mp-text]')[0], 'Reuse element');
     });
 
@@ -701,7 +894,15 @@
     });
 
     test('mp-to action inside mp-each writes to machine context', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[{"id":1,"name":"A"},{"id":2,"name":"B"}], "selected": null}\'><div mp-state="s"><template mp-each="items" mp-key="id"><button mp-to="(set! selected $item)" class="pick"></button></template></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"items":[{"id":1,"name":"A"},{"id":2,"name":"B"}], "selected": null}\'>' +
+        '<div mp-state="s">' +
+        '<template mp-each="items" mp-key="id">' +
+        '<mp-transition event="pick" to="s"><mp-action>(set! selected $item)</mp-action></mp-transition>' +
+        '<button mp-to="pick" class="pick"></button>' +
+        '</template>' +
+        '</div></div>'
+      );
       click(el.querySelectorAll('.pick')[1]);
       var sel = el.querySelector('[mp]')._mp.ctx.selected;
       assert(sel, 'selected should be set on machine context');
@@ -709,7 +910,16 @@
     });
 
     test('mp-to inside mp-each transitions machine state', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":["a","b"], "picked": null}\'><div mp-state="list"><template mp-each="items"><button mp-to="(do (set! picked $item) (to detail))" class="go"></button></template></div><div mp-state="detail">Detail</div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"items":["a","b"], "picked": null}\'>' +
+        '<div mp-state="list">' +
+        '<template mp-each="items">' +
+        '<mp-transition event="pick-and-go" to="detail"><mp-action>(set! picked $item)</mp-action></mp-transition>' +
+        '<button mp-to="pick-and-go" class="go"></button>' +
+        '</template>' +
+        '</div><div mp-state="detail">Detail</div>' +
+        '</div>'
+      );
       click(el.querySelectorAll('.go')[0]);
       eq(el.querySelector('[mp]')._mp.state, 'detail');
       eq(el.querySelector('[mp]')._mp.ctx.picked, 'a');
@@ -728,7 +938,7 @@
     });
 
     test('mp-init runs', async function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"ready":false}\' mp-init="(set! ready true)"><div mp-state="a"></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"ready":false}\'><mp-init>(set! ready true)</mp-init><div mp-state="a"></div></div>');
       await sleep(15);
       eq(el.querySelector('[mp]')._mp.ctx.ready, true);
     });
@@ -736,34 +946,55 @@
     test('(focus!) is a valid special form', function () {
       // focus! calls element.focus() via setTimeout — verified manually in real apps.
       // Here we verify the engine accepts it without error.
-      var el = fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="a"><input mp-ref="inp" /><button mp-to="(do (focus! $refs.inp) (inc! x))" id="btn">F</button><span mp-text="x" id="o"></span></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"x":0}\'>' +
+        '<div mp-state="a">' +
+        '<input mp-ref="inp" />' +
+        '<mp-transition event="focus-and-inc" to="a"><mp-action>(do (focus! $refs.inp) (inc! x))</mp-action></mp-transition>' +
+        '<button mp-to="focus-and-inc" id="btn">F</button>' +
+        '<span mp-text="x" id="o"></span>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '1', 'action ran — focus! did not error');
     });
 
     test('mp-temporal (after) auto-transitions', async function () {
-      var el = fixture('<div mp="t"><div mp-state="a" mp-temporal="(after 30 (to b))">A</div><div mp-state="b">B</div></div>');
+      var el = fixture('<div mp="t"><div mp-state="a"><mp-temporal>(after 30 (to b))</mp-temporal></div><div mp-state="b">B</div></div>');
       eq(el.querySelector('[mp]')._mp.state, 'a');
       await sleep(60);
       eq(el.querySelector('[mp]')._mp.state, 'b');
     });
 
     test('mp-temporal (after) cancelled by manual transition', async function () {
-      var el = fixture('<div mp="t"><div mp-state="a" mp-temporal="(after 80 (to c))"><button mp-to="b" id="btn">B</button></div><div mp-state="b">B</div><div mp-state="c">C</div></div>');
+      var el = fixture('<div mp="t"><div mp-state="a"><mp-temporal>(after 80 (to c))</mp-temporal><button mp-to="b" id="btn">B</button></div><div mp-state="b">B</div><div mp-state="c">C</div></div>');
       click(el.querySelector('#btn'));
       await sleep(120);
       eq(el.querySelector('[mp]')._mp.state, 'b');
     });
 
     test('mp-temporal (every) runs repeatedly', async function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"ticks":0}\'><div mp-state="a" mp-temporal="(every 20 (inc! ticks))"><span mp-text="ticks" id="o"></span></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"ticks":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-temporal>(every 20 (inc! ticks))</mp-temporal>' +
+        '<span mp-text="ticks" id="o"></span>' +
+        '</div></div>'
+      );
       await sleep(75);
       var ticks = el.querySelector('[mp]')._mp.ctx.ticks;
       assert(ticks >= 2, 'Should have ticked at least twice, got ' + ticks);
     });
 
     test('mp-temporal (every) cleared on state exit', async function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"ticks":0}\'><div mp-state="a" mp-temporal="(every 20 (inc! ticks))"><button mp-to="b" id="btn">B</button></div><div mp-state="b">B</div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"ticks":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-temporal>(every 20 (inc! ticks))</mp-temporal>' +
+        '<button mp-to="b" id="btn">B</button>' +
+        '</div><div mp-state="b">B</div>' +
+        '</div>'
+      );
       await sleep(55);
       click(el.querySelector('#btn'));
       var ticksAtExit = el.querySelector('[mp]')._mp.ctx.ticks;
@@ -772,7 +1003,14 @@
     });
 
     test('(after) and (every) together', async function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"ticks":0}\'><div mp-state="a" mp-temporal="(do (every 15 (inc! ticks)) (after 60 (to b)))"><span mp-text="ticks" id="o"></span></div><div mp-state="b">B</div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"ticks":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-temporal>(do (every 15 (inc! ticks)) (after 60 (to b)))</mp-temporal>' +
+        '<span mp-text="ticks" id="o"></span>' +
+        '</div><div mp-state="b">B</div>' +
+        '</div>'
+      );
       await sleep(80);
       eq(el.querySelector('[mp]')._mp.state, 'b', 'Should have transitioned');
       var ticks = el.querySelector('[mp]')._mp.ctx.ticks;
@@ -846,7 +1084,7 @@
     group('Misc');
 
     test('mp-temporal (animate) adds enter classes', async function () {
-      var el = fixture('<div mp="t"><div mp-state="a"><button mp-to="b" id="btn">B</button></div><div mp-state="b" mp-temporal="(animate)" id="b">B!</div></div>');
+      var el = fixture('<div mp="t"><div mp-state="a"><button mp-to="b" id="btn">B</button></div><div mp-state="b" id="b"><mp-temporal>(animate)</mp-temporal>B!</div></div>');
       click(el.querySelector('#btn'));
       assert(el.querySelector('#b').classList.contains('mp-enter-active') || el.querySelector('#b').classList.contains('mp-enter-to'));
     });
@@ -870,7 +1108,12 @@
     });
 
     test('cleanup on removal', async function () {
-      var el = fixture('<div><div mp="rm" mp-receive="(on \'rmtest\' (to b))"><div mp-state="a">A</div><div mp-state="b">B</div></div></div>');
+      var el = fixture(
+        '<div><div mp="rm">' +
+        '<mp-receive event="rmtest">(to b)</mp-receive>' +
+        '<div mp-state="a">A</div><div mp-state="b">B</div>' +
+        '</div></div>'
+      );
       var m = el.querySelector('[mp="rm"]');
       assert(m._mp);
       m.remove();
@@ -918,7 +1161,14 @@
     });
 
     test('self-transition does NOT destroy/recreate', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><span id="target">X</span><button mp-to="(inc! n)" id="btn">+</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"n":0}\'>' +
+        '<div mp-state="a">' +
+        '<span id="target">X</span>' +
+        '<mp-transition event="increment" to="a"><mp-action>(inc! n)</mp-action></mp-transition>' +
+        '<button mp-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
       var original = el.querySelector('#target');
       click(el.querySelector('#btn'));
       assert(original === el.querySelector('#target'), 'Same DOM node on self-transition');
@@ -943,7 +1193,7 @@
     test('nested machines are cleaned up on state exit', function () {
       var el = fixture(
         '<div mp="t"><div mp-state="a">' +
-        '<div mp="inner" mp-receive="(on \'testevt\' (to y))"><div mp-state="x">X</div><div mp-state="y">Y</div></div>' +
+        '<div mp="inner"><mp-receive event="testevt">(to y)</mp-receive><div mp-state="x">X</div><div mp-state="y">Y</div></div>' +
         '<button mp-to="b" id="btn">Go</button></div><div mp-state="b">B</div></div>'
       );
       var inner = el.querySelector('[mp="inner"]');
@@ -974,7 +1224,7 @@
         '<div mp="list-machine" mp-ctx=\'{"items":[{"name":"X"},{"name":"Y"}]}\'>' +
         '<div mp-state="show"><ul>' +
         '<template mp-each="items" mp-key="name"><li><span mp-text="name" class="item-name"></span>' +
-        '<span mp-text="(str (+ $index 1) \'.\')" class="item-idx"></span></li></template>' +
+        '<span class="item-idx"><mp-text>(str (+ $index 1) \'.\')</mp-text></span></li></template>' +
         '</ul></div></div>' +
         '</div></div>'
       );
@@ -1022,7 +1272,12 @@
     });
 
     test('mp-init on mp-state runs on entry', async function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"entered":false}\'><div mp-state="a"><button mp-to="b" id="btn">Go</button></div><div mp-state="b" mp-init="(set! entered true)">B</div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"entered":false}\'>' +
+        '<div mp-state="a"><button mp-to="b" id="btn">Go</button></div>' +
+        '<div mp-state="b"><mp-init>(set! entered true)</mp-init>B</div>' +
+        '</div>'
+      );
       eq(el.querySelector('[mp]')._mp.ctx.entered, false);
       click(el.querySelector('#btn'));
       await sleep(15);
@@ -1030,7 +1285,11 @@
     });
 
     test('mp-init on mp-state does NOT run on self-transition', async function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"count":0}\'><div mp-state="a" mp-init="(inc! count)"><button mp-to="a" id="btn">Self</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"count":0}\'>' +
+        '<div mp-state="a"><mp-init>(inc! count)</mp-init><button mp-to="a" id="btn">Self</button></div>' +
+        '</div>'
+      );
       await sleep(15); // initial mp-init on the machine element (not state)
       var before = el.querySelector('[mp]')._mp.ctx.count;
       click(el.querySelector('#btn'));
@@ -1047,33 +1306,46 @@
 
     test('sync function callable from s-expression', function () {
       MachinePerfect.fn('double', function(x) { return x * 2; });
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":21}\'><span mp-text="(double n)" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"n":21}\'><span id="o"><mp-text>(double n)</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '42');
     });
 
     test('function with multiple args', function () {
       MachinePerfect.fn('add3', function(a, b, c) { return a + b + c; });
-      var el = fixture('<div mp="t"><span mp-text="(add3 10 20 12)" id="o"></span></div>');
+      var el = fixture('<div mp="t"><span id="o"><mp-text>(add3 10 20 12)</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '42');
     });
 
     test('function usable in guard', function () {
       MachinePerfect.fn('is-even', function(n) { return n % 2 === 0; });
-      var el = fixture('<div mp="t" mp-ctx=\'{"n":4}\'><div mp-state="a"><button mp-to="(when (is-even n) (to b))" id="btn">Go</button></div><div mp-state="b">B</div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"n":4}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="go" to="b"><mp-guard>(is-even n)</mp-guard></mp-transition>' +
+        '<button mp-to="go" id="btn">Go</button>' +
+        '</div><div mp-state="b">B</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.state, 'b');
     });
 
     test('function usable in mp-to action', function () {
       MachinePerfect.fn('make-greeting', function(name) { return 'Hello ' + name; });
-      var el = fixture('<div mp="t" mp-ctx=\'{"msg":""}\'><div mp-state="a"><button mp-to="(set! msg (make-greeting \'World\'))" id="btn">Go</button><span mp-text="msg" id="o"></span></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"msg":""}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="greet" to="a"><mp-action>(set! msg (make-greeting \'World\'))</mp-action></mp-transition>' +
+        '<button mp-to="greet" id="btn">Go</button>' +
+        '<span mp-text="msg" id="o"></span>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, 'Hello World');
     });
 
     test('function usable inside ->> pipeline', function () {
       MachinePerfect.fn('square', function(x) { return x * x; });
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><span mp-text="(->> items (map #(square %)) (reduce + 0))" id="o"></span></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><span id="o"><mp-text>(->> items (map #(square %)) (reduce + 0))</mp-text></span></div>');
       eq(el.querySelector('#o').textContent, '14'); // 1+4+9
     });
 
@@ -1081,7 +1353,7 @@
       MachinePerfect.fn('async-value', function() {
         return new Promise(function(resolve) { setTimeout(function() { resolve(42); }, 20); });
       });
-      var el = fixture('<div mp="t" mp-ctx=\'{"result":0}\' mp-init="(then! (async-value) :result)"><div mp-state="a"><span mp-text="result" id="o"></span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"result":0}\'><mp-init>(then! (async-value) :result)</mp-init><div mp-state="a"><span mp-text="result" id="o"></span></div></div>');
       await sleep(15); // mp-init fires
       await sleep(50); // promise resolves
       el.querySelector('[mp]')._mp.update(); // refresh bindings
@@ -1092,7 +1364,7 @@
       MachinePerfect.fn('async-data', function() {
         return new Promise(function(resolve) { setTimeout(function() { resolve(['a','b']); }, 20); });
       });
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[]}\' mp-init="(then! (async-data) :items \'loaded\')"><div mp-state="loading">Loading</div><div mp-state="loaded"><span mp-text="(count items)" id="o"></span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[]}\'><mp-init>(then! (async-data) :items \'loaded\')</mp-init><div mp-state="loading">Loading</div><div mp-state="loaded"><span id="o"><mp-text>(count items)</mp-text></span></div></div>');
       eq(el.querySelector('[mp]')._mp.state, 'loading');
       await sleep(15); // mp-init fires
       await sleep(50); // promise resolves + transition
@@ -1113,19 +1385,26 @@
     });
 
     test('(set! $store.name.field val) writes to store', function () {
-      var el = fixture('<div><mp-store name="st2" value=\'{"count":0}\'></mp-store><div mp="t"><div mp-state="a"><button mp-to="(set! $store.st2.count 42)" id="btn">Go</button><span mp-text="$store.st2.count" id="o"></span></div></div></div>');
+      var el = fixture(
+        '<div><mp-store name="st2" value=\'{"count":0}\'></mp-store>' +
+        '<div mp="t"><div mp-state="a">' +
+        '<mp-transition event="set-count" to="a"><mp-action>(set! $store.st2.count 42)</mp-action></mp-transition>' +
+        '<button mp-to="set-count" id="btn">Go</button>' +
+        '<span mp-text="$store.st2.count" id="o"></span>' +
+        '</div></div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '42');
       eq(MachinePerfect.store.st2.count, 42);
     });
 
     test('store readable inside (let) binding', function () {
-      var el = fixture('<div><mp-store name="st3" value=\'{"items":[1,2,3]}\'></mp-store><div mp="t"><div mp-state="a"><span mp-text="(let [data $store.st3.items] (count data))" id="o"></span></div></div></div>');
+      var el = fixture('<div><mp-store name="st3" value=\'{"items":[1,2,3]}\'></mp-store><div mp="t"><div mp-state="a"><span id="o"><mp-text>(let [data $store.st3.items] (count data))</mp-text></span></div></div></div>');
       eq(el.querySelector('#o').textContent, '3');
     });
 
     test('store readable inside (->> pipeline)', function () {
-      var el = fixture('<div><mp-store name="st4" value=\'[{"name":"A","v":1},{"name":"B","v":2},{"name":"C","v":3}]\'></mp-store><div mp="t"><div mp-state="a"><span mp-text="(->> $store.st4 (filter #(> (get % :v) 1)) (count))" id="o"></span></div></div></div>');
+      var el = fixture('<div><mp-store name="st4" value=\'[{"name":"A","v":1},{"name":"B","v":2},{"name":"C","v":3}]\'></mp-store><div mp="t"><div mp-state="a"><span id="o"><mp-text>(->> $store.st4 (filter #(> (get % :v) 1)) (count))</mp-text></span></div></div></div>');
       eq(el.querySelector('#o').textContent, '2');
     });
 
@@ -1154,12 +1433,12 @@
     });
 
     test('(let [f $store.x] (get f :field)) works', function () {
-      var el = fixture('<div><mp-store name="st8" value=\'{"country":"France","min":50}\'></mp-store><div mp="t"><div mp-state="a"><span mp-text="(let [f $store.st8] (get f :country))" id="o"></span></div></div></div>');
+      var el = fixture('<div><mp-store name="st8" value=\'{"country":"France","min":50}\'></mp-store><div mp="t"><div mp-state="a"><span id="o"><mp-text>(let [f $store.st8] (get f :country))</mp-text></span></div></div></div>');
       eq(el.querySelector('#o').textContent, 'France');
     });
 
     test('mp-each with (let) over store + filter', function () {
-      var el = fixture('<div><mp-store name="st9" value=\'[{"name":"A","v":10},{"name":"B","v":20},{"name":"C","v":5}]\'></mp-store><div mp="t"><div mp-state="a"><template mp-each="(let [data $store.st9] (->> data (filter #(> (get % :v) 8)) (sort-by #(get % :v))))" mp-key="name"><span mp-text="name" class="r"></span></template></div></div></div>');
+      var el = fixture('<div><mp-store name="st9" value=\'[{"name":"A","v":10},{"name":"B","v":20},{"name":"C","v":5}]\'></mp-store><div mp="t"><div mp-state="a"><template mp-key="name"><mp-each>(let [data $store.st9] (->> data (filter #(> (get % :v) 8)) (sort-by #(get % :v))))</mp-each><span mp-text="name" class="r"></span></template></div></div></div>');
       var r = el.querySelectorAll('.r');
       eq(r.length, 2);
       eq(r[0].textContent, 'A');
@@ -1173,7 +1452,7 @@
         '<mp-store name="fr" value=\'{"country":"All","minSnow":0,"sortBy":"name","weatherReady":true}\'></mp-store>' +
         '<mp-store name="rd" value=\'[{"name":"A","country":"France","snow":100},{"name":"B","country":"Italy","snow":50},{"name":"C","country":"France","snow":0}]\'></mp-store>' +
         '<div mp="app"><div mp-state="browse">' +
-        '<template mp-each="(let [f $store.fr] (->> $store.rd (filter #(or (= (get f :country) \'All\') (= (get % :country) (get f :country)))) (filter #(>= (get % :snow) (get f :minSnow)))))" mp-key="name"><span mp-text="name" class="r"></span></template>' +
+        '<template mp-key="name"><mp-each>(let [f $store.fr] (->> $store.rd (filter #(or (= (get f :country) \'All\') (= (get % :country) (get f :country)))) (filter #(>= (get % :snow) (get f :minSnow)))))</mp-each><span mp-text="name" class="r"></span></template>' +
         '</div></div></div>'
       );
       eq(el.querySelectorAll('.r').length, 3, 'All 3 with country=All minSnow=0');
@@ -1234,7 +1513,8 @@
         '<div>' +
         '<template mp-define="mcard"><div mp-state="d"><span mp-text="v" class="cv"></span></div></template>' +
         '<mp-store name="mresorts" value=\'[]\'></mp-store>' +
-        '<div mp="mapp" mp-initial="loading" mp-init="(then! (mock-load) :_x \'browse\')" mp-ctx=\'{}\'>' +
+        '<div mp="mapp" mp-initial="loading" mp-ctx=\'{}\'>' +
+        '<mp-init>(then! (mock-load) :_x \'browse\')</mp-init>' +
         '<div mp-state="loading">Loading</div>' +
         '<div mp-state="browse">' +
         '<template mp-each="$store.mresorts" mp-key="name"><div mp="mcard"></div></template>' +
@@ -1254,7 +1534,7 @@
         '<mp-store name="ef" value=\'{"country":"All","minSnow":0,"sortBy":"snow","query":"","weatherReady":false}\'></mp-store>' +
         '<mp-store name="er" value=\'[{"name":"A","country":"France","snow":100,"alt":1000,"temp":-5},{"name":"B","country":"Italy","snow":50,"alt":2000,"temp":-2},{"name":"C","country":"France","snow":0,"alt":500,"temp":3}]\'></mp-store>' +
         '<div mp="e"><div mp-state="s">' +
-        '<template mp-each="(let [f $store.ef base (->> $store.er (filter #(or (= (get f :country) \'All\') (= (get % :country) (get f :country)))) (filter #(contains? (lower (get % :name)) (lower (get f :query)))) (filter #(or (not (get f :weatherReady)) (>= (get % :snow) (get f :minSnow))))) sorted (if (get f :weatherReady) (sort-by #(get % (get f :sortBy)) base) (sort-by #(get % :name) base))] (if (and (get f :weatherReady) (or (= (get f :sortBy) \'snow\') (= (get f :sortBy) \'alt\'))) (reverse sorted) sorted))" mp-key="name"><span mp-text="name" class="en"></span></template>' +
+        '<template mp-key="name"><mp-each>(let [f $store.ef base (->> $store.er (filter #(or (= (get f :country) \'All\') (= (get % :country) (get f :country)))) (filter #(contains? (lower (get % :name)) (lower (get f :query)))) (filter #(or (not (get f :weatherReady)) (>= (get % :snow) (get f :minSnow))))) sorted (if (get f :weatherReady) (sort-by #(get % (get f :sortBy)) base) (sort-by #(get % :name) base))] (if (and (get f :weatherReady) (or (= (get f :sortBy) \'snow\') (= (get f :sortBy) \'alt\'))) (reverse sorted) sorted))</mp-each><span mp-text="name" class="en"></span></template>' +
         '</div></div></div>'
       );
       var names = el.querySelectorAll('.en');
@@ -1267,7 +1547,7 @@
       // Each mutation + parent update should propagate to nested machine
       var el = fixture(
         '<div>' +
-        '<template mp-define="card3"><div mp-state="d"><span mp-text="name" class="cn3"></span> <span mp-text="(or img \'none\')" class="ci3"></span> <span mp-text="(or temp \'--\')" class="ct3"></span></div></template>' +
+        '<template mp-define="card3"><div mp-state="d"><span mp-text="name" class="cn3"></span> <span class="ci3"><mp-text>(or img \'none\')</mp-text></span> <span class="ct3"><mp-text>(or temp \'--\')</mp-text></span></div></template>' +
         '<mp-store name="wr3" value=\'[{"name":"A","img":"","temp":null},{"name":"B","img":"","temp":null}]\'></mp-store>' +
         '<div mp="w3"><div mp-state="s">' +
         '<template mp-each="$store.wr3" mp-key="name"><div class="wrap3"><div mp="card3"></div></div></template>' +
@@ -1298,7 +1578,7 @@
       // nodes that are still connected (moved, not removed).
       var el = fixture(
         '<div>' +
-        '<template mp-define="async-card2"><div mp-state="d"><span mp-text="name" class="an"></span><span mp-text="(or img \'no\')" class="ai"></span></div></template>' +
+        '<template mp-define="async-card2"><div mp-state="d"><span mp-text="name" class="an"></span><span class="ai"><mp-text>(or img \'no\')</mp-text></span></div></template>' +
         '<mp-store name="async-r" value=\'[{"name":"X","img":""},{"name":"Y","img":""}]\'></mp-store>' +
         '<div mp="aapp"><div mp-state="s">' +
         '<template mp-each="$store.async-r" mp-key="name"><div class="aw"><div mp="async-card2"></div></div></template>' +
@@ -1317,7 +1597,17 @@
     });
 
     test('cross-machine event triggers re-render with updated store', function () {
-      var el = fixture('<div><mp-store name="st10" value=\'{"n":0}\'></mp-store><div mp="writer"><div mp-state="a"><button mp-to="(do (set! $store.st10.n 42) (emit wrote))" id="btn">Write</button></div></div><div mp="reader" mp-receive="(on \'wrote\' (to a))"><div mp-state="a"><span mp-text="$store.st10.n" id="o"></span></div></div></div>');
+      var el = fixture(
+        '<div><mp-store name="st10" value=\'{"n":0}\'></mp-store>' +
+        '<div mp="writer"><div mp-state="a">' +
+        '<mp-transition event="write-and-emit" to="a"><mp-action>(set! $store.st10.n 42)</mp-action><mp-emit>wrote</mp-emit></mp-transition>' +
+        '<button mp-to="write-and-emit" id="btn">Write</button>' +
+        '</div></div>' +
+        '<div mp="reader">' +
+        '<mp-receive event="wrote">(to a)</mp-receive>' +
+        '<div mp-state="a"><span mp-text="$store.st10.n" id="o"></span></div>' +
+        '</div></div>'
+      );
       eq(el.querySelector('#o').textContent, '0');
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '42');
@@ -1332,7 +1622,7 @@
       eq(el.querySelector('#sa').textContent, '1');
       eq(el.querySelector('#sb').textContent, '2');
       // Mutate only 'a' via internal path
-      inst._dirty = { a: true };
+      inst._mpDirty = { a: true };
       inst.ctx.a = 99;
       inst.update();
       eq(el.querySelector('#sa').textContent, '99', 'a should update');
@@ -1340,14 +1630,30 @@
     });
 
     test('deps tracked: set! marks dirty and updates only affected binding', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"x":0,"y":0}\'><div mp-state="s"><span mp-text="x" id="ox"></span><span mp-text="y" id="oy"></span><button mp-to="(set! x 42)" id="btn">Go</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"x":0,"y":0}\'>' +
+        '<div mp-state="s">' +
+        '<span mp-text="x" id="ox"></span>' +
+        '<span mp-text="y" id="oy"></span>' +
+        '<mp-transition event="set-x" to="s"><mp-action>(set! x 42)</mp-action></mp-transition>' +
+        '<button mp-to="set-x" id="btn">Go</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#ox').textContent, '42', 'x should update after set!');
       eq(el.querySelector('#oy').textContent, '0', 'y unchanged');
     });
 
     test('deps tracked: inc! marks dirty', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"count":0,"label":"hi"}\'><div mp-state="s"><span mp-text="count" id="oc"></span><span mp-text="label" id="ol"></span><button mp-to="(inc! count)" id="btn">+</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"count":0,"label":"hi"}\'>' +
+        '<div mp-state="s">' +
+        '<span mp-text="count" id="oc"></span>' +
+        '<span mp-text="label" id="ol"></span>' +
+        '<mp-transition event="increment" to="s"><mp-action>(inc! count)</mp-action></mp-transition>' +
+        '<button mp-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       click(el.querySelector('#btn'));
       eq(el.querySelector('#oc').textContent, '2', 'count incremented twice');
@@ -1374,16 +1680,16 @@
     });
 
     test('deps tracked: s-expression with multiple deps updates on either', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"a":"x","b":"y"}\'><div mp-state="s"><span mp-text="(str a b)" id="o"></span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"a":"x","b":"y"}\'><div mp-state="s"><span id="o"><mp-text>(str a b)</mp-text></span></div></div>');
       var inst = el.querySelector('[mp]')._mp;
       eq(el.querySelector('#o').textContent, 'xy');
       // Change only a
-      inst._dirty = { a: true };
+      inst._mpDirty = { a: true };
       inst.ctx.a = 'A';
       inst.update();
       eq(el.querySelector('#o').textContent, 'Ay', 'Should re-eval when a changes');
       // Change only b
-      inst._dirty = { b: true };
+      inst._mpDirty = { b: true };
       inst.ctx.b = 'B';
       inst.update();
       eq(el.querySelector('#o').textContent, 'AB', 'Should re-eval when b changes');
@@ -1394,7 +1700,7 @@
       var inst = el.querySelector('[mp]')._mp;
       assert(!el.querySelector('#d').hidden, 'Should be visible');
       // Change only n
-      inst._dirty = { n: true };
+      inst._mpDirty = { n: true };
       inst.ctx.n = 2;
       inst.update();
       eq(el.querySelector('#o').textContent, '2');
@@ -1402,23 +1708,23 @@
     });
 
     test('deps tracked: mp-class binding skipped when dep unchanged', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"active":true,"n":0}\'><div mp-state="s"><div mp-class="(when active \'ring\')" id="d"></div><span mp-text="n" id="o"></span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"active":true,"n":0}\'><div mp-state="s"><div id="d"><mp-class>(when active \'ring\')</mp-class></div><span mp-text="n" id="o"></span></div></div>');
       var inst = el.querySelector('[mp]')._mp;
       assert(el.querySelector('#d').classList.contains('ring'));
       // Change only n — class binding should be skipped
-      inst._dirty = { n: true };
+      inst._mpDirty = { n: true };
       inst.ctx.n = 5;
       inst.update();
       eq(el.querySelector('#o').textContent, '5');
       assert(el.querySelector('#d').classList.contains('ring'), 'Class unchanged');
     });
 
-    test('deps tracked: mp-bind-* skipped when dep unchanged', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"url":"a.html","n":0}\'><div mp-state="s"><a mp-bind-href="url" id="lnk">Link</a><span mp-text="n" id="o"></span></div></div>');
+    test('deps tracked: mp-bind skipped when dep unchanged', function () {
+      var el = fixture('<div mp="t" mp-ctx=\'{"url":"a.html","n":0}\'><div mp-state="s"><a id="lnk"><mp-bind attr="href">url</mp-bind>Link</a><span mp-text="n" id="o"></span></div></div>');
       var inst = el.querySelector('[mp]')._mp;
       eq(el.querySelector('#lnk').getAttribute('href'), 'a.html');
       // Change only n
-      inst._dirty = { n: true };
+      inst._mpDirty = { n: true };
       inst.ctx.n = 9;
       inst.update();
       eq(el.querySelector('#o').textContent, '9');
@@ -1476,21 +1782,35 @@
       // Mark only $store.da dirty
       var inst = el.querySelector('[mp]')._mp;
       MachinePerfect.store.da.x = 99;
-      inst._dirty = { '$store.da': true };
+      inst._mpDirty = { '$store.da': true };
       inst.update();
       eq(el.querySelector('#oa').textContent, '99', 'store.da binding should update');
       eq(el.querySelector('#ob').textContent, '2', 'store.db binding should be skipped');
     });
 
     test('deps tracked: mp-on s-expression handler sets dirty via _applyScope', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"a":0,"b":0}\'><div mp-state="s"><span mp-text="a" id="oa"></span><span mp-text="b" id="ob"></span><button id="btn" mp-on:click="(set! a 10)">Go</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"a":0,"b":0}\'><div mp-state="s">' +
+        '<span mp-text="a" id="oa"></span>' +
+        '<span mp-text="b" id="ob"></span>' +
+        '<button id="btn"><mp-on event="click">(set! a 10)</mp-on>Go</button>' +
+        '</div></div>'
+      );
       eq(el.querySelector('#oa').textContent, '0');
       click(el.querySelector('#btn'));
       eq(el.querySelector('#oa').textContent, '10', 'a should update from event handler');
     });
 
     test('deps tracked: self-transition with action only updates affected bindings', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"x":0,"y":"fixed"}\'><div mp-state="s"><span mp-text="x" id="ox"></span><span mp-text="y" id="oy"></span><button mp-to="(inc! x)" id="btn">+</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"x":0,"y":"fixed"}\'>' +
+        '<div mp-state="s">' +
+        '<span mp-text="x" id="ox"></span>' +
+        '<span mp-text="y" id="oy"></span>' +
+        '<mp-transition event="increment" to="s"><mp-action>(inc! x)</mp-action></mp-transition>' +
+        '<button mp-to="increment" id="btn">+</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#ox').textContent, '1', 'x incremented');
       eq(el.querySelector('#oy').textContent, 'fixed', 'y unchanged');
@@ -1504,7 +1824,7 @@
       var origWarn = console.warn;
       console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
       MachinePerfect.debug = true;
-      var el = fixture('<div mp="t" mp-ctx=\'{"x":1}\'><div mp-state="s"><span mp-text="(str x nonexistent)" id="o"></span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"x":1}\'><div mp-state="s"><span id="o"><mp-text>(str x nonexistent)</mp-text></span></div></div>');
       MachinePerfect.debug = false;
       console.warn = origWarn;
       assert(warnings.some(function (w) { return w.indexOf('nonexistent') !== -1; }), 'Should warn about undefined "nonexistent"');
@@ -1546,7 +1866,7 @@
     test('mutation in mp-text throws', function () {
       var threw = false;
       try {
-        fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="(set! x 5)"></span></div></div>');
+        fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span><mp-text>(set! x 5)</mp-text></span></div></div>');
       } catch (e) {
         threw = true;
         has(e.message, 'set!');
@@ -1558,7 +1878,7 @@
     test('mutation in mp-show throws', function () {
       var threw = false;
       try {
-        fixture('<div mp="t" mp-ctx=\'{"x":true}\'><div mp-state="s"><div mp-show="(toggle! x)">hi</div></div></div>');
+        fixture('<div mp="t" mp-ctx=\'{"x":true}\'><div mp-state="s"><div id="d"><mp-show>(toggle! x)</mp-show>hi</div></div></div>');
       } catch (e) {
         threw = true;
         has(e.message, 'toggle!');
@@ -1569,7 +1889,7 @@
     test('nested mutation in binding throws', function () {
       var threw = false;
       try {
-        fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="(do (inc! x) x)"></span></div></div>');
+        fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span><mp-text>(do (inc! x) x)</mp-text></span></div></div>');
       } catch (e) {
         threw = true;
         has(e.message, 'inc!');
@@ -1578,20 +1898,32 @@
     });
 
     test('mutation in mp-to s-expression', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="x" id="o"></span><button mp-to="(set! x 42)" id="btn">Go</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"x":0}\'>' +
+        '<div mp-state="s">' +
+        '<span mp-text="x" id="o"></span>' +
+        '<mp-transition event="set-x" to="s"><mp-action>(set! x 42)</mp-action></mp-transition>' +
+        '<button mp-to="set-x" id="btn">Go</button>' +
+        '</div></div>'
+      );
       eq(el.querySelector('#o').textContent, '0');
       click(el.querySelector('#btn'));
-      eq(el.querySelector('#o').textContent, '42', 'set! runs via mp-to s-expression');
+      eq(el.querySelector('#o').textContent, '42', 'set! runs via mp-to');
     });
 
     test('mutation in mp-on: still works', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="x" id="o"></span><button mp-on:click="(do (inc! x) (to s))" id="btn">+</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s">' +
+        '<span mp-text="x" id="o"></span>' +
+        '<button id="btn"><mp-on event="click">(do (inc! x) (to s))</mp-on>+</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '1', 'inc! should work in mp-on:');
     });
 
     test('pure functions work in bindings', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3],"name":"world"}\'><div mp-state="s"><span mp-text="(str (count items) \' – \' (upper name))" id="o"></span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3],"name":"world"}\'><div mp-state="s"><span id="o"><mp-text>(str (count items) \' – \' (upper name))</mp-text></span></div></div>');
       eq(el.querySelector('#o').textContent, '3 – WORLD');
     });
 
@@ -1599,7 +1931,13 @@
     group('Security');
 
     test('set! rejects __proto__ path traversal', function () {
-      var el = fixture('<div mp="t" mp-ctx=\'{"obj":{}}\'><div mp-state="s"><button mp-to="(set! obj.__proto__.polluted true)" id="btn">X</button></div></div>');
+      var el = fixture(
+        '<div mp="t" mp-ctx=\'{"obj":{}}\'>' +
+        '<div mp-state="s">' +
+        '<mp-transition event="pollute" to="s"><mp-action>(set! obj.__proto__.polluted true)</mp-action></mp-transition>' +
+        '<button mp-to="pollute" id="btn">X</button>' +
+        '</div></div>'
+      );
       click(el.querySelector('#btn'));
       assert(!({}).polluted, 'Object.prototype should not be polluted');
     });
@@ -1671,22 +2009,22 @@
 
     test('stdlib dispatch: all function categories work', function () {
       // Math
-      var el = fixture('<div mp="t" mp-ctx=\'{"v":0}\'><div mp-state="s"><span mp-text="(+ 2 3)" id="o"></span></div></div>');
+      var el = fixture('<div mp="t" mp-ctx=\'{"v":0}\'><div mp-state="s"><span id="o"><mp-text>(+ 2 3)</mp-text></span></div></div>');
       eq(el.querySelector('#o').textContent, '5');
       // String
-      el = fixture('<div mp="t"><div mp-state="s"><span mp-text="(upper \'hello\')" id="o"></span></div></div>');
+      el = fixture('<div mp="t"><div mp-state="s"><span id="o"><mp-text>(upper \'hello\')</mp-text></span></div></div>');
       eq(el.querySelector('#o').textContent, 'HELLO');
       // Collection
-      el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><div mp-state="s"><span mp-text="(count items)" id="o"></span></div></div>');
+      el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3]}\'><div mp-state="s"><span id="o"><mp-text>(count items)</mp-text></span></div></div>');
       eq(el.querySelector('#o').textContent, '3');
       // Higher-order
-      el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4]}\'><div mp-state="s"><span mp-text="(count (filter #(> % 2) items))" id="o"></span></div></div>');
+      el = fixture('<div mp="t" mp-ctx=\'{"items":[1,2,3,4]}\'><div mp-state="s"><span id="o"><mp-text>(count (filter #(> % 2) items))</mp-text></span></div></div>');
       eq(el.querySelector('#o').textContent, '2');
       // Object
-      el = fixture('<div mp="t"><div mp-state="s"><span mp-text="(get (obj :a 1 :b 2) :b)" id="o"></span></div></div>');
+      el = fixture('<div mp="t"><div mp-state="s"><span id="o"><mp-text>(get (obj :a 1 :b 2) :b)</mp-text></span></div></div>');
       eq(el.querySelector('#o').textContent, '2');
       // Type
-      el = fixture('<div mp="t"><div mp-state="s"><span mp-text="(type nil)" id="o"></span></div></div>');
+      el = fixture('<div mp="t"><div mp-state="s"><span id="o"><mp-text>(type nil)</mp-text></span></div></div>');
       eq(el.querySelector('#o').textContent, 'nil');
     });
 
@@ -1709,7 +2047,8 @@
         return Promise.reject(new Error('network down'));
       });
       var el = fixture(
-        '<div mp="t" mp-initial="loading" mp-init="(then! (fail-async) :result \'done\' \'error\')" mp-ctx=\'{"result":null}\'>' +
+        '<div mp="t" mp-initial="loading" mp-ctx=\'{"result":null}\'>' +
+        '<mp-init>(then! (fail-async) :result \'done\' \'error\')</mp-init>' +
         '<div mp-state="loading">Loading</div>' +
         '<div mp-state="done">OK</div>' +
         '<div mp-state="error"><span mp-text="result" id="o"></span></div></div>'
@@ -1723,7 +2062,8 @@
         return Promise.reject('oops');
       });
       var el = fixture(
-        '<div mp="t" mp-initial="loading" mp-init="(then! (fail-with-msg) :err \'done\' \'failed\')" mp-ctx=\'{"err":null}\'>' +
+        '<div mp="t" mp-initial="loading" mp-ctx=\'{"err":null}\'>' +
+        '<mp-init>(then! (fail-with-msg) :err \'done\' \'failed\')</mp-init>' +
         '<div mp-state="loading">Loading</div><div mp-state="done">OK</div><div mp-state="failed">F</div></div>'
       );
       await sleep(30);
@@ -1739,7 +2079,8 @@
       var origWarn = console.warn;
       console.warn = function () { warnings.push(Array.prototype.slice.call(arguments).join(' ')); };
       var el = fixture(
-        '<div mp="t" mp-initial="go" mp-init="(then! (fail-no-catch) :x \'done\')" mp-ctx=\'{"x":null}\'>' +
+        '<div mp="t" mp-initial="go" mp-ctx=\'{"x":null}\'>' +
+        '<mp-init>(then! (fail-no-catch) :x \'done\')</mp-init>' +
         '<div mp-state="go">Go</div><div mp-state="done">OK</div></div>'
       );
       await sleep(30);
@@ -1754,7 +2095,7 @@
     test('mp-exit runs before state content is destroyed', function () {
       var el = fixture(
         '<div mp="t" mp-ctx=\'{"cleaned":false}\'>' +
-        '<div mp-state="a" mp-exit="(set! cleaned true)"><button mp-to="b" id="btn">Go</button></div>' +
+        '<div mp-state="a"><mp-exit>(set! cleaned true)</mp-exit><button mp-to="b" id="btn">Go</button></div>' +
         '<div mp-state="b"><span mp-text="cleaned" id="o"></span></div></div>'
       );
       eq(el.querySelector('[mp]')._mp.ctx.cleaned, false);
@@ -1765,7 +2106,7 @@
     test('mp-exit does not run on self-transition', function () {
       var el = fixture(
         '<div mp="t" mp-ctx=\'{"exits":0}\'>' +
-        '<div mp-state="a" mp-exit="(inc! exits)"><button mp-to="a" id="btn">Self</button><span mp-text="exits" id="o"></span></div></div>'
+        '<div mp-state="a"><mp-exit>(inc! exits)</mp-exit><button mp-to="a" id="btn">Self</button><span mp-text="exits" id="o"></span></div></div>'
       );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '0', 'mp-exit should not run on self-transition');
@@ -1777,7 +2118,7 @@
     test('purity error includes function name and guidance', function () {
       var threw = false;
       try {
-        fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span mp-text="(inc! x)"></span></div></div>');
+        fixture('<div mp="t" mp-ctx=\'{"x":0}\'><div mp-state="s"><span><mp-text>(inc! x)</mp-text></span></div></div>');
       } catch (err) {
         threw = true;
         has(err.message, 'inc!');
@@ -1791,7 +2132,7 @@
       MachinePerfect.fn('blow-up', function () { throw new Error('kaboom'); });
       var threw = false;
       try {
-        fixture('<div mp="t"><div mp-state="s"><span mp-text="(blow-up)"></span></div></div>');
+        fixture('<div mp="t"><div mp-state="s"><span><mp-text>(blow-up)</mp-text></span></div></div>');
       } catch (err) {
         threw = true;
         has(err.message, '<span>');
@@ -1804,7 +2145,7 @@
     group('Cleanup');
 
     test('outside listener removed on DOM removal', async function () {
-      var el = fixture('<div mp="t"><div mp-state="a"><button mp-on:click.outside="(to a)" id="btn">X</button></div></div>');
+      var el = fixture('<div mp="t"><div mp-state="a"><button id="btn"><mp-on event="click.outside">(to a)</mp-on>X</button></div></div>');
       var machineEl = el.querySelector('[mp]');
       assert(machineEl._mpCleanups && machineEl._mpCleanups.length > 0, 'Should have tracked cleanup');
       machineEl.remove();
@@ -1819,7 +2160,8 @@
         '<div mp="t" mp-ctx=\'{"count":0}\'><div mp-state="s">' +
         '<span mp-text="$store.dp.color" id="oc"></span>' +
         '<span mp-text="count" id="on"></span>' +
-        '<button mp-to="(do (inc! count) (set! $store.dp.color \'blue\'))" id="btn">Go</button>' +
+        '<mp-transition event="update-both" to="s"><mp-action>(do (inc! count) (set! $store.dp.color \'blue\'))</mp-action></mp-transition>' +
+        '<button mp-to="update-both" id="btn">Go</button>' +
         '</div></div></div>'
       );
       eq(el.querySelector('#oc').textContent, 'red');
@@ -1860,7 +2202,7 @@
     test('mp-init on initial state fires at boot', async function () {
       var el = fixture(
         '<div mp="t" mp-ctx=\'{"stateEntered":false}\'>' +
-        '<div mp-state="a" mp-init="(set! stateEntered true)">A</div>' +
+        '<div mp-state="a"><mp-init>(set! stateEntered true)</mp-init>A</div>' +
         '<div mp-state="b">B</div></div>'
       );
       await sleep(15);
@@ -1869,8 +2211,9 @@
 
     test('mp-init on machine AND initial state both fire', async function () {
       var el = fixture(
-        '<div mp="t" mp-ctx=\'{"machineReady":false,"stateReady":false}\' mp-init="(set! machineReady true)">' +
-        '<div mp-state="a" mp-init="(set! stateReady true)">A</div></div>'
+        '<div mp="t" mp-ctx=\'{"machineReady":false,"stateReady":false}\'>' +
+        '<mp-init>(set! machineReady true)</mp-init>' +
+        '<div mp-state="a"><mp-init>(set! stateReady true)</mp-init>A</div></div>'
       );
       await sleep(15);
       eq(el.querySelector('[mp]')._mp.ctx.machineReady, true, 'machine mp-init fired');
@@ -1908,7 +2251,7 @@
       var el = fixture(
         '<div mp="t"><div mp-state="a">' +
         '<button mp-to="b" id="btn">Go</button></div>' +
-        '<div mp-state="b" mp-where="(requires \'dom\')">B content</div></div>'
+        '<div mp-state="b"><mp-where>(requires \'dom\')</mp-where>B content</div></div>'
       );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.state, 'b', 'transitions to b — browser has dom capability');
@@ -1918,7 +2261,7 @@
       var el = fixture(
         '<div mp="t"><div mp-state="a">' +
         '<button mp-to="b" id="btn">Go</button></div>' +
-        '<div mp-state="b" mp-where="(requires \'persist\')">B content</div></div>'
+        '<div mp-state="b"><mp-where>(requires \'persist\')</mp-where>B content</div></div>'
       );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp]')._mp.state, 'a', 'stays in a — target state needs persist, browser cannot satisfy');
@@ -1926,7 +2269,7 @@
 
     test('initial state with mp-where=(requires dom) renders content locally', function () {
       var el = fixture(
-        '<div mp="t" mp-initial="a"><div mp-state="a" mp-where="(requires \'dom\')"><span id="content">Loaded</span></div></div>'
+        '<div mp="t" mp-initial="a"><div mp-state="a"><mp-where>(requires \'dom\')</mp-where><span id="content">Loaded</span></div></div>'
       );
       // Browser has 'dom' — initial state should render locally, content visible
       assert(!el.querySelector('[mp-state="a"]').hidden, 'state a is visible');
@@ -1946,7 +2289,12 @@
 
     test('self-transition without contentHtml does NOT destroy content', function () {
       var el = fixture(
-        '<div mp="t" mp-ctx=\'{"n":0}\'><div mp-state="a"><span mp-text="n" id="o"></span><button mp-to="(inc! n)" id="btn">+</button></div></div>'
+        '<div mp="t" mp-ctx=\'{"n":0}\'>' +
+        '<div mp-state="a">' +
+        '<span mp-text="n" id="o"></span>' +
+        '<mp-transition event="increment" to="a"><mp-action>(inc! n)</mp-action></mp-transition>' +
+        '<button mp-to="increment" id="btn">+</button>' +
+        '</div></div>'
       );
       click(el.querySelector('#btn'));
       eq(el.querySelector('#o').textContent, '1', 'content survived self-transition');
@@ -1964,7 +2312,7 @@
 
     test('initial state mp-where with unsatisfiable cap shows spinner, does not destroy', async function () {
       var el = fixture(
-        '<div mp="t" mp-initial="a"><div mp-state="a" mp-where="(requires \'persist\')"><span id="spin">Loading</span></div><div mp-state="b">B</div></div>'
+        '<div mp="t" mp-initial="a"><div mp-state="a"><mp-where>(requires \'persist\')</mp-where><span id="spin">Loading</span></div><div mp-state="b">B</div></div>'
       );
       await sleep(30);
       // No capable node exists — spinner should stay visible, not get cleared
@@ -1976,7 +2324,7 @@
     test('boot does not destroy sibling machines when initial state has mp-where', async function () {
       var el = fixture(
         '<div>' +
-        '<div mp="main" mp-initial="home"><div mp-state="home" mp-where="(requires \'persist\')"><span>Loading</span></div></div>' +
+        '<div mp="main" mp-initial="home"><div mp-state="home"><mp-where>(requires \'persist\')</mp-where><span>Loading</span></div></div>' +
         '<div mp="sibling" mp-ctx=\'{"x":1}\'><div mp-state="s"><span mp-text="x" id="sib">0</span></div></div>' +
         '</div>'
       );
@@ -1994,7 +2342,7 @@
       // This test can only verify the timing logic exists by checking
       // that unsatisfiable mp-where doesn't crash or clear content
       var el = fixture(
-        '<div mp="t" mp-initial="a"><div mp-state="a" mp-where="(requires \'ui-render\')"><span id="wait">Waiting</span></div></div>'
+        '<div mp="t" mp-initial="a"><div mp-state="a"><mp-where>(requires \'ui-render\')</mp-where><span id="wait">Waiting</span></div></div>'
       );
       await sleep(50);
       assert(el.querySelector('#wait'), 'content survives while waiting for route table');
@@ -2004,7 +2352,7 @@
     test('self-transition with contentHtml on state with mp-temporal stays visible (fast)', async function () {
       // Default test CSS has 0.05s transition — fast enough that leave finishes before check
       var el = fixture(
-        '<div mp="t"><div mp-state="a" mp-temporal="(animate)"><span id="orig">Original</span></div></div>'
+        '<div mp="t"><div mp-state="a"><mp-temporal>(animate)</mp-temporal><span id="orig">Original</span></div></div>'
       );
       var inst = el.querySelector('[mp]')._mp;
       inst.to('a', '<span id="replaced">Replaced</span>');
@@ -2017,7 +2365,7 @@
       // Simulate the PO app: 250ms transition. The leave callback fires AFTER
       // the content stamp, which would overwrite it if not handled.
       var el = fixture(
-        '<div mp="t"><div mp-state="a" mp-temporal="(animate)" style="transition:all .25s ease"><span id="orig">Original</span></div></div>'
+        '<div mp="t"><div mp-state="a" style="transition:all .25s ease"><mp-temporal>(animate)</mp-temporal><span id="orig">Original</span></div></div>'
       );
       var inst = el.querySelector('[mp]')._mp;
       inst.to('a', '<span id="replaced">Replaced</span>');
@@ -2033,12 +2381,18 @@
 
     test('emit from content stamped via to(target, html) reaches parent mp-receive', function () {
       var el = fixture(
-        '<div mp="parent" mp-ctx=\'{"got":false}\' mp-receive="(on \'child-event\' (set! got true))">' +
+        '<div mp="parent" mp-ctx=\'{"got":false}\'>' +
+        '<mp-receive event="child-event">(set! got true)</mp-receive>' +
         '<div mp-state="a"><span>placeholder</span></div></div>'
       );
       var inst = el.querySelector('[mp]')._mp;
-      // Stamp content that has a button with (emit)
-      inst.to('a', '<div mp="child"><div mp-state="s"><button mp-to="(emit child-event)" id="emitbtn">Emit</button></div></div>');
+      // Stamp content that has a button with emit
+      inst.to('a',
+        '<div mp="child"><div mp-state="s">' +
+        '<mp-transition event="fire-child" to="s"><mp-emit>child-event</mp-emit></mp-transition>' +
+        '<button mp-to="fire-child" id="emitbtn">Emit</button>' +
+        '</div></div>'
+      );
       // Click the button in stamped content
       click(el.querySelector('#emitbtn'));
       eq(inst.ctx.got, true, 'emit from stamped content reached parent mp-receive');
@@ -2051,7 +2405,7 @@
       var el = fixture(
         '<div mp="t" mp-initial="a">' +
         '<div mp-state="a"><span>Placeholder</span></div>' +
-        '<div mp-state="b" mp-where="(requires \'dom\')"><span id="b">B</span></div></div>'
+        '<div mp-state="b"><mp-where>(requires \'dom\')</mp-where><span id="b">B</span></div></div>'
       );
       var inst = el.querySelector('[mp]')._mp;
       eq(inst.state, 'a', 'starts in a');
@@ -2067,10 +2421,11 @@
       // Nested machine: emit crosses the boundary.
       // Parent machine: mp-receive catches it and transitions.
       var el = fixture(
-        '<div mp="parent" mp-initial="a" mp-ctx=\'{"got":false}\'' +
-        ' mp-receive="(on \'child-nav\' (do (set! got true) (to b)))">' +
+        '<div mp="parent" mp-initial="a" mp-ctx=\'{"got":false}\'>' +
+        '<mp-receive event="child-nav">(do (set! got true) (to b))</mp-receive>' +
         '<div mp-state="a"><div mp="child"><div mp-state="s">' +
-        '<button mp-to="(emit child-nav)" id="btn">Nav</button>' +
+        '<mp-transition event="fire-nav" to="s"><mp-emit>child-nav</mp-emit></mp-transition>' +
+        '<button mp-to="fire-nav" id="btn">Nav</button>' +
         '</div></div></div>' +
         '<div mp-state="b"><span id="b">B</span></div></div>'
       );
@@ -2083,10 +2438,15 @@
     test('mp-receive transition respects state-level mp-where', function () {
       var el = fixture(
         '<div>' +
-        '<div mp="sender"><div mp-state="s"><button mp-to="(emit go)" id="btn">Go</button></div></div>' +
-        '<div mp="receiver" mp-receive="(on \'go\' (to b))">' +
+        '<div mp="sender"><div mp-state="s">' +
+        '<mp-transition event="fire-go" to="s"><mp-emit>go</mp-emit></mp-transition>' +
+        '<button mp-to="fire-go" id="btn">Go</button>' +
+        '</div></div>' +
+        '<div mp="receiver">' +
+        '<mp-receive event="go">(to b)</mp-receive>' +
         '<div mp-state="a">A</div>' +
-        '<div mp-state="b" mp-where="(requires \'dom\')">B</div></div></div>'
+        '<div mp-state="b"><mp-where>(requires \'dom\')</mp-where>B</div>' +
+        '</div></div>'
       );
       click(el.querySelector('#btn'));
       eq(el.querySelector('[mp="receiver"]')._mp.state, 'b', 'mp-receive transition goes through to() which checks state mp-where');
@@ -2137,9 +2497,9 @@
     test('compound state: exit hook fires on leaving compound, not on child transitions', function () {
       var el = fixture(
         '<div mp="h3" mp-ctx=\'{"compoundExits":0,"childExits":0}\'>' +
-        '<div mp-state="running" mp-exit="(inc! compoundExits)">' +
+        '<div mp-state="running"><mp-exit>(inc! compoundExits)</mp-exit>' +
           '<span id="chrome3">C</span>' +
-          '<div mp-state="a" mp-exit="(inc! childExits)"><button mp-to="b" id="ab">B</button><button mp-to="stopped" id="abort">Stop</button></div>' +
+          '<div mp-state="a"><mp-exit>(inc! childExits)</mp-exit><button mp-to="b" id="ab">B</button><button mp-to="stopped" id="abort">Stop</button></div>' +
           '<div mp-state="b"><button mp-to="stopped" id="abort2">Stop</button></div>' +
         '</div>' +
         '<div mp-state="stopped"><span id="stopped">Done</span></div></div>'
@@ -2156,8 +2516,8 @@
       var el = fixture(
         '<div mp="h4" mp-ctx=\'{"log":""}\'>' +
         '<div mp-state="idle"><button mp-to="running" id="go">Go</button></div>' +
-        '<div mp-state="running" mp-init="(set! log (str log \'R\'))">' +
-          '<div mp-state="a" mp-init="(set! log (str log \'A\'))">In A</div>' +
+        '<div mp-state="running"><mp-init>(set! log (str log \'R\'))</mp-init>' +
+          '<div mp-state="a"><mp-init>(set! log (str log \'A\'))</mp-init>In A</div>' +
         '</div></div>'
       );
       el.querySelector('#go').click();
@@ -2185,7 +2545,8 @@
       var el = fixture(
         '<div mp="h6" mp-ctx=\'{"x":0}\'>' +
         '<div mp-state="running">' +
-          '<button mp-to="(do (set! x 99) (to stopped))" id="act">Act</button>' +
+          '<mp-transition event="act" to="stopped"><mp-action>(set! x 99)</mp-action></mp-transition>' +
+          '<button mp-to="act" id="act">Act</button>' +
           '<div mp-state="a">A</div>' +
         '</div>' +
         '<div mp-state="stopped">Done</div></div>'
@@ -2389,11 +2750,11 @@
 
     test('mp-let computed value available in mp-show', function () {
       var el = fixture(
-        '<div mp="let1" mp-ctx=\'{"title":"abc","amount":100,"items":[1]}\' ' +
-        'mp-let="valid (and (>= (count title) 3) (> amount 0) (> (count items) 0))">' +
+        '<div mp="let1" mp-ctx=\'{"title":"abc","amount":100,"items":[1]}\'>' +
+        '<mp-let name="valid">(and (>= (count title) 3) (> amount 0) (> (count items) 0))</mp-let>' +
         '<div mp-state="s">' +
         '<span mp-show="valid" id="yes">Ready</span>' +
-        '<span mp-show="(not valid)" id="no">Not ready</span>' +
+        '<span id="no"><mp-show>(not valid)</mp-show>Not ready</span>' +
         '</div></div>'
       );
       eq(el.querySelector('#yes').hidden, false, 'valid = true: Ready shown');
@@ -2402,10 +2763,11 @@
 
     test('mp-let recomputes when dependencies change', function () {
       var el = fixture(
-        '<div mp="let2" mp-ctx=\'{"x":5}\' mp-let="big (> x 10)">' +
+        '<div mp="let2" mp-ctx=\'{"x":5}\'><mp-let name="big">(> x 10)</mp-let>' +
         '<div mp-state="s">' +
         '<span mp-show="big" id="flag">Big</span>' +
-        '<button mp-to="(set! x 20)" id="btn">Go</button>' +
+        '<mp-transition event="set-x" to="s"><mp-action>(set! x 20)</mp-action></mp-transition>' +
+        '<button mp-to="set-x" id="btn">Go</button>' +
         '</div></div>'
       );
       eq(el.querySelector('#flag').hidden, true, 'x=5: big is false');
@@ -2415,7 +2777,7 @@
 
     test('mp-let multiple bindings', function () {
       var el = fixture(
-        '<div mp="let3" mp-ctx=\'{"a":3,"b":4}\' mp-let="sum (+ a b) product (* a b)">' +
+        '<div mp="let3" mp-ctx=\'{"a":3,"b":4}\'><mp-let name="sum">(+ a b)</mp-let><mp-let name="product">(* a b)</mp-let>' +
         '<div mp-state="s">' +
         '<span mp-text="sum" id="s"></span>' +
         '<span mp-text="product" id="p"></span>' +
@@ -2427,8 +2789,11 @@
 
     test('mp-let in mp-to guard', function () {
       var el = fixture(
-        '<div mp="let4" mp-ctx=\'{"count":0}\' mp-let="ready (> count 0)">' +
-        '<div mp-state="a"><button mp-to="(when ready (to b))" id="btn">Go</button></div>' +
+        '<div mp="let4" mp-ctx=\'{"count":0}\'><mp-let name="ready">(> count 0)</mp-let>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="go" to="b"><mp-guard>ready</mp-guard></mp-transition>' +
+        '<button mp-to="go" id="btn">Go</button>' +
+        '</div>' +
         '<div mp-state="b"><span id="done">Done</span></div>' +
         '</div>'
       );
@@ -2445,7 +2810,7 @@
     test('mp-let not persisted', function () {
       localStorage.removeItem('mp-let-persist-test');
       var el = fixture(
-        '<div mp="let5" mp-ctx=\'{"x":1}\' mp-persist="let-persist-test" mp-let="derived (+ x 10)">' +
+        '<div mp="let5" mp-ctx=\'{"x":1}\' mp-persist="let-persist-test"><mp-let name="derived">(+ x 10)</mp-let>' +
         '<div mp-state="s"><span mp-text="derived" id="d"></span></div></div>'
       );
       eq(el.querySelector('#d').textContent, '11', 'derived computed');
@@ -2462,7 +2827,7 @@
       var el = fixture(
         '<div mp="load1" mp-ctx=\'{}\'>' +
         '<div mp-state="local"><span>Home</span></div>' +
-        '<div mp-state="remote" mp-where="(list \'ui-render\')"></div>' +
+        '<div mp-state="remote"><mp-where>(list \'ui-render\')</mp-where></div>' +
         '</div>'
       );
       var remote = el.querySelector('[mp-state="remote"]');
@@ -2475,7 +2840,7 @@
       var el = fixture(
         '<div mp="load2" mp-ctx=\'{}\'>' +
         '<div mp-state="local"><span>Home</span></div>' +
-        '<div mp-state="remote" mp-where="(list \'gpu\')" mp-loading="<p id=\'custom\'>Please wait...</p>"></div>' +
+        '<div mp-state="remote" mp-loading="<p id=\'custom\'>Please wait...</p>"><mp-where>(list \'gpu\')</mp-where></div>' +
         '</div>'
       );
       var remote = el.querySelector('[mp-state="remote"]');
@@ -2499,7 +2864,7 @@
       var el = fixture(
         '<div mp="load4" mp-ctx=\'{}\'>' +
         '<div mp-state="local"><button mp-to="remote" id="go">Go</button></div>' +
-        '<div mp-state="remote" mp-where="(list \'ui-render\')"></div>' +
+        '<div mp-state="remote"><mp-where>(list \'ui-render\')</mp-where></div>' +
         '</div>'
       );
       var remote = el.querySelector('[mp-state="remote"]');
@@ -2573,6 +2938,373 @@
       );
       eq(window.location.pathname, '/home', 'initial state URL set via replaceState');
       history.replaceState(null, '', origPath);
+    });
+
+
+    group('Structural elements');
+
+    test('mp-transition with mp-guard: guard blocks when false', function () {
+      var el = fixture(
+        '<div mp="se1" mp-ctx=\'{"x":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="go" to="b"><mp-guard>(> x 0)</mp-guard></mp-transition>' +
+        '<button mp-to="go" id="btn">Go</button>' +
+        '</div>' +
+        '<div mp-state="b"><span id="arrived">B</span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'a', 'guard blocks when x=0');
+    });
+
+    test('mp-transition with mp-guard: guard passes when true', function () {
+      var el = fixture(
+        '<div mp="se2" mp-ctx=\'{"x":5}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="go" to="b"><mp-guard>(> x 0)</mp-guard></mp-transition>' +
+        '<button mp-to="go" id="btn">Go</button>' +
+        '</div>' +
+        '<div mp-state="b"><span id="arrived">B</span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'b', 'guard passes when x=5');
+    });
+
+    test('mp-transition with mp-action: action mutates context', function () {
+      var el = fixture(
+        '<div mp="se3" mp-ctx=\'{"x":0}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="go" to="b"><mp-action>(set! x 42)</mp-action></mp-transition>' +
+        '<button mp-to="go" id="btn">Go</button>' +
+        '</div>' +
+        '<div mp-state="b"><span mp-text="x" id="val"></span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'b', 'transitioned to b');
+      eq(el.querySelector('#val').textContent, '42', 'action set x to 42');
+    });
+
+    test('mp-transition with mp-guard + mp-action + mp-emit', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mp="se4" mp-ctx=\'{"x":1}\'>' +
+        '<div mp-state="a">' +
+        '<mp-transition event="go" to="b">' +
+        '<mp-guard>(> x 0)</mp-guard>' +
+        '<mp-action>(set! x 99)</mp-action>' +
+        '<mp-emit>went</mp-emit>' +
+        '</mp-transition>' +
+        '<button mp-to="go" id="btn">Go</button>' +
+        '</div>' +
+        '<div mp-state="b"></div></div>' +
+        '<div mp="se4-listener" mp-ctx=\'{"heard":false}\'>' +
+        '<mp-receive event="went">(set! heard true)</mp-receive>' +
+        '<div mp-state="s"></div></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp="se4"]')._mp.state, 'b', 'transitioned');
+      eq(el.querySelector('[mp="se4"]')._mp.ctx.x, 99, 'action ran');
+      eq(el.querySelector('[mp="se4-listener"]')._mp.ctx.heard, true, 'emit received');
+    });
+
+    test('mp-text element renders expression', function () {
+      var el = fixture(
+        '<div mp="se6" mp-ctx=\'{"count":3,"label":"items"}\'>' +
+        '<div mp-state="s"><p id="out"><mp-text>(str count \' \' label)</mp-text></p></div></div>'
+      );
+      eq(el.querySelector('#out').textContent, '3 items', 'mp-text element renders expression');
+    });
+
+    test('mp-text element with bare variable', function () {
+      var el = fixture(
+        '<div mp="se7" mp-ctx=\'{"name":"Ada"}\'>' +
+        '<div mp-state="s"><span id="out"><mp-text>name</mp-text></span></div></div>'
+      );
+      eq(el.querySelector('#out').textContent, 'Ada', 'mp-text bare variable renders');
+    });
+
+    test('mp-show element hides parent when false', function () {
+      var el = fixture(
+        '<div mp="se8" mp-ctx=\'{"active":false}\'>' +
+        '<div mp-state="s"><div id="target"><mp-show>active</mp-show>Content</div></div></div>'
+      );
+      eq(el.querySelector('#target').hidden, true, 'parent hidden when active=false');
+    });
+
+    test('mp-show element shows parent when true', function () {
+      var el = fixture(
+        '<div mp="se9" mp-ctx=\'{"count":5}\'>' +
+        '<div mp-state="s"><div id="target"><mp-show>(> count 0)</mp-show>Has items</div></div></div>'
+      );
+      eq(el.querySelector('#target').hidden, false, 'parent visible when count>0');
+    });
+
+    test('mp-class element applies conditional class', function () {
+      var el = fixture(
+        '<div mp="se10" mp-ctx=\'{"status":"active"}\'>' +
+        '<div mp-state="s"><span id="badge"><mp-class>(when (= status \'active\') \'badge-success\')</mp-class>Status</span></div></div>'
+      );
+      eq(el.querySelector('#badge').classList.contains('badge-success'), true, 'class applied when condition true');
+    });
+
+    test('mp-bind element sets attribute', function () {
+      var el = fixture(
+        '<div mp="se11" mp-ctx=\'{"valid":false}\'>' +
+        '<div mp-state="s"><button id="btn"><mp-bind attr="disabled">(not valid)</mp-bind>Go</button></div></div>'
+      );
+      eq(el.querySelector('#btn').disabled, true, 'button disabled when valid=false');
+    });
+
+    test('mp-text element is hidden from rendering', function () {
+      var el = fixture(
+        '<div mp="se12" mp-ctx=\'{"x":1}\'>' +
+        '<div mp-state="s"><p id="out"><mp-text>(+ x 1)</mp-text></p></div></div>'
+      );
+      var mpText = el.querySelector('mp-text');
+      eq(mpText, null, 'mp-text element removed from DOM after parsing');
+      eq(el.querySelector('#out').textContent, '2', 'value rendered correctly');
+    });
+
+    test('mp-on element handles DOM event', function () {
+      var el = fixture(
+        '<div mp="se13" mp-ctx=\'{"typed":""}\'>' +
+        '<div mp-state="s"><input mp-model="typed" id="inp">' +
+        '<mp-on event="keydown">(when (= (get $event :key) \'Enter\') (set! typed \'entered\'))</mp-on>' +
+        '</input><span mp-text="typed" id="out"></span></div></div>'
+      );
+      var inp = el.querySelector('#inp');
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      // Need to trigger update
+      el.querySelector('[mp]')._mp.update();
+      eq(el.querySelector('#out').textContent, 'entered', 'mp-on keydown handler ran');
+    });
+
+    test('mp-init element runs on state entry', async function () {
+      var el = fixture(
+        '<div mp="se14" mp-ctx=\'{"loaded":false}\'>' +
+        '<div mp-state="a"><button mp-to="b" id="btn">Go</button></div>' +
+        '<div mp-state="b"><mp-init>(set! loaded true)</mp-init><span mp-text="loaded" id="out"></span></div></div>'
+      );
+      eq(el.querySelector('[mp]')._mp.ctx.loaded, false, 'not loaded before transition');
+      click(el.querySelector('#btn'));
+      await sleep(20);
+      eq(el.querySelector('[mp]')._mp.ctx.loaded, true, 'mp-init ran on state entry');
+    });
+
+    test('mp-exit element runs on state exit', function () {
+      var el = fixture(
+        '<div mp="se15" mp-ctx=\'{"exited":false}\'>' +
+        '<div mp-state="a"><mp-exit>(set! exited true)</mp-exit><button mp-to="b" id="btn">Go</button></div>' +
+        '<div mp-state="b"><span mp-text="exited" id="out"></span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.ctx.exited, true, 'mp-exit ran on state exit');
+    });
+
+    test('mp-ctx element initialises context', function () {
+      var el = fixture(
+        '<div mp="se16"><mp-ctx>{"x":42,"name":"test"}</mp-ctx>' +
+        '<div mp-state="s"><span mp-text="x" id="val"></span><span mp-text="name" id="name"></span></div></div>'
+      );
+      eq(el.querySelector('#val').textContent, '42', 'x from mp-ctx element');
+      eq(el.querySelector('#name').textContent, 'test', 'name from mp-ctx element');
+    });
+
+    test('mp-let element creates computed binding', function () {
+      var el = fixture(
+        '<div mp="se17" mp-ctx=\'{"a":3,"b":4}\'>' +
+        '<mp-let name="sum">(+ a b)</mp-let>' +
+        '<div mp-state="s"><span mp-text="sum" id="out"></span></div></div>'
+      );
+      eq(el.querySelector('#out').textContent, '7', 'mp-let element computes sum');
+    });
+
+    test('mp-receive element handles events', function () {
+      var el = fixture(
+        '<div>' +
+        '<div mp="se18-sender"><div mp-state="s">' +
+        '<mp-transition event="fire-ping" to="s"><mp-emit>ping</mp-emit></mp-transition>' +
+        '<button mp-to="fire-ping" id="btn">Ping</button>' +
+        '</div></div>' +
+        '<div mp="se18-receiver" mp-ctx=\'{"got":false}\'>' +
+        '<mp-receive event="ping">(set! got true)</mp-receive>' +
+        '<div mp-state="s"><span mp-text="got" id="out"></span></div></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('#out').textContent, 'true', 'mp-receive element handled event');
+    });
+
+    test('mp-where element sets capability requirement', function () {
+      var el = fixture(
+        '<div mp="se19" mp-ctx=\'{}\'>' +
+        '<div mp-state="a"><button mp-to="b" id="btn">Go</button></div>' +
+        '<div mp-state="b"><mp-where>(requires \'magic\')</mp-where><span>B</span></div></div>'
+      );
+      // Transition should be blocked — browser lacks 'magic' capability
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'a', 'mp-where blocks transition to b');
+    });
+
+    test('mp-each element with computed expression', function () {
+      var el = fixture(
+        '<div mp="se20" mp-ctx=\'{"items":[{"name":"A","val":1},{"name":"B","val":5},{"name":"C","val":3}]}\'>' +
+        '<div mp-state="s">' +
+        '<template mp-key="name"><mp-each>(filter #(> (get % :val) 2) items)</mp-each>' +
+        '<div class="filtered"><span><mp-text>name</mp-text></span></div></template>' +
+        '</div></div>'
+      );
+      var filtered = el.querySelectorAll('.filtered');
+      eq(filtered.length, 2, 'filtered to 2 items (B and C)');
+    });
+
+    test('mp-transition without event: bare mp-to still works for simple transitions', function () {
+      var el = fixture(
+        '<div mp="se5">' +
+        '<div mp-state="a"><button mp-to="b" id="btn">Go</button></div>' +
+        '<div mp-state="b"><span id="arrived">B</span></div></div>'
+      );
+      click(el.querySelector('#btn'));
+      eq(el.querySelector('[mp]')._mp.state, 'b', 'bare mp-to transitions directly');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  BUG FIXES — M10, M11
+    // ══════════════════════════════════════════════════════════════════
+
+    group('Bug fixes');
+
+    test('M10 — init() re-invocation does not reset already-live store values', function () {
+      // Simulate what happens when HTMX swaps in new content and init() is called again.
+      // The store was mutated at runtime; the re-init must not restore it to initial value.
+      var root = document.createElement('div');
+      root.innerHTML = '<mp-store name="m10test" value=\'{"count":0}\'></mp-store>';
+      _fa.appendChild(root);
+      MachinePerfect.init(root);
+      // Store is initialised to {count:0}
+      eq(MachinePerfect.store.m10test.count, 0, 'M10: store initialised to 0');
+      // Simulate runtime mutation
+      MachinePerfect.store.m10test.count = 99;
+      eq(MachinePerfect.store.m10test.count, 99, 'M10: store mutated to 99');
+      // Call init() again (as HTMX would after a swap)
+      MachinePerfect.init(root);
+      eq(MachinePerfect.store.m10test.count, 99, 'M10: re-init does not reset store to 0');
+    });
+
+    test('M11 — mp-each keyed reorder produces correct DOM order', function () {
+      // Create a list [A, B, C], then reorder to [C, A, B].
+      // The DOM elements must appear in the new order.
+      var el = fixture(
+        '<div mp="m11" mp-ctx=\'{"items":[{"k":"A"},{"k":"B"},{"k":"C"}]}\'>' +
+        '<div mp-state="s">' +
+        '<template mp-key="k"><mp-each>items</mp-each>' +
+        '<div class="item"><mp-text>k</mp-text></div></template>' +
+        '</div></div>'
+      );
+      // Verify initial order
+      var items = el.querySelectorAll('.item');
+      eq(items[0].textContent, 'A', 'M11: initial order A');
+      eq(items[1].textContent, 'B', 'M11: initial order B');
+      eq(items[2].textContent, 'C', 'M11: initial order C');
+
+      // Reorder: [C, A, B]
+      var inst = el.querySelector('[mp]')._mp;
+      inst.ctx.items = [{ k: 'C' }, { k: 'A' }, { k: 'B' }];
+      inst.update();
+
+      var reordered = el.querySelectorAll('.item');
+      eq(reordered[0].textContent, 'C', 'M11: reordered — C first');
+      eq(reordered[1].textContent, 'A', 'M11: reordered — A second');
+      eq(reordered[2].textContent, 'B', 'M11: reordered — B third');
+    });
+
+
+    test('Bug 21 — mp-each with duplicate key: items after the duplicate get correct data', function () {
+      // If items = [A, A_dup, B] and A_dup is skipped (duplicate key),
+      // the update loop must use newMap[key].item not items[i].
+      // With items[i], after skipping A_dup, i=1 maps to B but items[1]=A_dup — wrong data.
+      var el = fixture(
+        '<div mp="bug21" mp-ctx=\'{"items":[{"k":"x","v":"A"},{"k":"y","v":"B"},{"k":"z","v":"C"}]}\'>' +
+        '<div mp-state="s">' +
+        '<template mp-key="k"><mp-each>items</mp-each>' +
+        '<div class="item"><mp-text>v</mp-text></div></template>' +
+        '</div></div>'
+      );
+      var initial = el.querySelectorAll('.item');
+      eq(initial[0].textContent, 'A', 'Bug21: initial A');
+      eq(initial[1].textContent, 'B', 'Bug21: initial B');
+      eq(initial[2].textContent, 'C', 'Bug21: initial C');
+
+      // Update with a duplicate key in the middle: [A, A_dup, B updated, C updated]
+      // A_dup (k=x) is a duplicate — skipped. y and z items get new values.
+      var inst = el.querySelector('[mp]')._mp;
+      inst.ctx.items = [
+        { k: 'x', v: 'A' },
+        { k: 'x', v: 'A_DUP' }, // duplicate — skipped
+        { k: 'y', v: 'B2' },
+        { k: 'z', v: 'C2' }
+      ];
+      inst.update();
+
+      // Three rendered items (duplicate skipped): A, B2, C2
+      var updated = el.querySelectorAll('.item');
+      eq(updated.length, 3, 'Bug21: 3 items rendered (duplicate skipped)');
+      eq(updated[0].textContent, 'A', 'Bug21: first item still A');
+      eq(updated[1].textContent, 'B2', 'Bug21: second item is B2 (not corrupted)');
+      eq(updated[2].textContent, 'C2', 'Bug21: third item is C2 (not corrupted)');
+    });
+
+
+    test('mp-let computed value triggers mp-bind disabled update on dependency change', function () {
+      var el = fixture(
+        '<div mp="let-bind" mp-ctx=\'{"email":"","password":"","agree":false}\'>' +
+        '<mp-let name="valid">(and (>= (count email) 5) (>= (count password) 8) agree)</mp-let>' +
+        '<div mp-state="form">' +
+        '<input mp-model="email" type="text" class="em" />' +
+        '<input mp-model="password" type="password" class="pw" />' +
+        '<input mp-model="agree" type="checkbox" class="ag" />' +
+        '<button class="btn"><mp-bind attr="disabled">(not valid)</mp-bind>Go</button>' +
+        '</div></div>'
+      );
+      var btn = el.querySelector('.btn');
+      eq(btn.disabled, true, 'button starts disabled');
+
+      // Fill valid data
+      type(el.querySelector('.em'), 'hello@test.com');
+      type(el.querySelector('.pw'), 'longpassword');
+      var cb = el.querySelector('.ag');
+      cb.checked = true;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+
+      eq(btn.disabled, false, 'button enabled after all fields valid');
+    });
+
+
+    test('mp-temporal (animate) leave completes via transitionend event, not just timeout', async function () {
+      var el = fixture(
+        '<div mp="anim-test" mp-ctx=\'{}\'>' +
+        '<div mp-state="a" style="transition: opacity 0.05s">' +
+        '<mp-temporal>(animate)</mp-temporal>' +
+        '<mp-transition event="go" to="b"></mp-transition>' +
+        '<span id="a-content">A</span>' +
+        '</div>' +
+        '<div mp-state="b"><span id="b-content">B</span></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mp]')._mp;
+      eq(inst.state, 'a', 'starts in a');
+
+      inst.to('b');
+
+      // The leave animation adds mp-leave-from, mp-leave-active classes.
+      // After the transition completes (via transitionend event), the old
+      // state is hidden. Wait for the animation to finish.
+      await new Promise(function (resolve) { setTimeout(resolve, 150); });
+
+      eq(inst.state, 'b', 'transitioned to b');
+      var aEl = el.querySelector('[mp-state="a"]');
+      // After leave animation, the old state should be hidden
+      eq(aEl.hidden, true, 'state a hidden after leave animation');
+      assert(!aEl.classList.contains('mp-leave-active'), 'leave-active class removed after transition');
     });
 
 

@@ -11,16 +11,26 @@ An application platform where state machines are the unit of definition, executi
 <script src="mp/browser.js"></script>
 
 <div mp="door">
+  <mp-ctx>{"code":""}</mp-ctx>
+
   <div mp-state="locked">
+    <mp-transition event="unlock" to="unlocked">
+      <mp-guard>(= code '1234')</mp-guard>
+    </mp-transition>
     <p>The door is locked.</p>
     <input mp-model="code" placeholder="Enter code" />
-    <button mp-to="(when (= code '1234') (to unlocked))">Unlock</button>
+    <button mp-to="unlock">Unlock</button>
   </div>
+
   <div mp-state="unlocked">
+    <mp-transition event="lock" to="locked">
+      <mp-action>(set! code '')</mp-action>
+    </mp-transition>
     <p>The door is unlocked.</p>
     <button mp-to="open">Open</button>
-    <button mp-to="(do (set! code '') (to locked))">Lock</button>
+    <button mp-to="lock">Lock</button>
   </div>
+
   <div mp-state="open">
     <p>The door is open.</p>
     <button mp-to="unlocked">Close</button>
@@ -30,7 +40,7 @@ An application platform where state machines are the unit of definition, executi
 
 That's a complete interactive state machine. No JavaScript. The HTML is the application.
 
-There is no `mp-to="open"` in the locked state. That transition does not exist in the markup, so it cannot happen. Not prevented by validation or caught by a linter. Structurally impossible.
+Transitions are structural elements — `<mp-transition>` defines what can happen, `<mp-guard>` controls when, `<mp-action>` controls what changes. The button's `mp-to` fires an event by name. No s-expressions in attributes. Parentheses belong in elements.
 
 ---
 
@@ -62,7 +72,8 @@ POST /register
 The registry (itself a machine running on the engine) maintains a route table. States declare what they need. The runtime routes automatically.
 
 ```html
-<div mp-state="orders" mp-where="(requires 'ui-render')">
+<div mp-state="orders">
+  <mp-where>(requires 'ui-render')</mp-where>
   <span class="loading-spinner"></span>
 </div>
 ```
@@ -78,12 +89,15 @@ On the server, machines are SCXML:
     <data id="items" expr="[]"/>
   </datamodel>
   <state id="draft">
-    <transition event="submit"
-                mp-to="(when (and (> amount 0) (> (count items) 0)) (to submitted))"/>
+    <transition event="submit" target="submitted">
+      <mp-guard>(and (> amount 0) (> (count items) 0))</mp-guard>
+    </transition>
   </state>
   <state id="submitted">
-    <transition event="approve"
-                mp-to="(when (some? approver) (do (set! approved-at (now)) (to approved)))"/>
+    <transition event="approve" target="approved">
+      <mp-guard>(<= amount 100000)</mp-guard>
+      <mp-action>(set! approved_at (now))</mp-action>
+    </transition>
     <transition event="reject" target="rejected"/>
   </state>
   <final id="approved"/>
@@ -106,15 +120,26 @@ REST and gRPC separate the contract from the implementation. AWS Step Functions 
 **2. Logic is s-expressions.** One syntax for all logic: `(function arg1 arg2)`. Not a style choice. S-expressions are data: they serialize as strings, cross host boundaries without translation, and parse to an AST in one pass. The evaluator enforces a hard split between a pure read path (`eval`) and a mutating write path (`exec`). Guards cannot cause side effects. There is no `eval()`, no `new Function()`, no access to the outer scope. The expression language is closed, sandboxed, and the same on every host.
 
 ```html
-<div mp="counter" mp-ctx='{"count": 0}'>
+<div mp="counter">
+  <mp-ctx>{"count": 0}</mp-ctx>
+
   <div mp-state="counting">
-    <p mp-text="(str count ' items')"></p>
-    <button mp-to="(inc! count)">+1</button>
-    <button mp-to="(when (> count 0) (to confirm))">Reset</button>
+    <mp-transition event="increment" to="counting">
+      <mp-action>(inc! count)</mp-action>
+    </mp-transition>
+    <mp-transition event="reset" to="confirm">
+      <mp-guard>(> count 0)</mp-guard>
+    </mp-transition>
+    <p><mp-text>(str count ' items')</mp-text></p>
+    <button mp-to="increment">+1</button>
+    <button mp-to="reset">Reset</button>
   </div>
   <div mp-state="confirm">
+    <mp-transition event="yes" to="counting">
+      <mp-action>(set! count 0)</mp-action>
+    </mp-transition>
     <p>Reset to zero?</p>
-    <button mp-to="(do (set! count 0) (to counting))">Yes</button>
+    <button mp-to="yes">Yes</button>
     <button mp-to="counting">No</button>
   </div>
 </div>
@@ -141,60 +166,83 @@ Conventions:
 
 ---
 
-## Attributes
+## Attributes and elements
 
-### Structure
+**The rule:** attributes carry bare identifiers and static values. S-expressions go in elements.
+
+### Attributes (bare values only)
 
 | Attribute | Purpose |
 |-----------|---------|
 | `mp="name"` | Declare a machine instance |
 | `mp-state="name"` | Declare a state (content created on entry, destroyed on exit) |
-| `mp-to="state"` | Click transitions to state (bare name) |
-| `mp-to="(expr)"` | Click with s-expression: guards, actions, emits |
-| `mp-ctx='{"key":"val"}'` | Initial context data |
+| `mp-to="state"` | Click transitions to named state |
+| `mp-ctx='{"key":"val"}'` | Initial context data (JSON) |
 | `mp-initial="state"` | Override initial state (default: first mp-state) |
-| `mp-where="(requires 'cap')"` | Route to a node with the required capabilities |
 | `mp-final` | Mark state as terminal (no further transitions) |
-
-### Data binding
-
-| Attribute | Purpose |
-|-----------|---------|
-| `mp-text="expr"` | Set textContent from expression |
+| `mp-text="field"` | Set textContent from bare variable (shorthand) |
 | `mp-model="path"` | Two-way input binding |
-| `mp-show="expr"` | Visible when truthy, use `(not expr)` to invert |
-| `mp-class="sexpr"` | Toggle CSS classes: `(when done 'line-through')` |
-| `mp-bind-ATTR="expr"` | Bind any HTML attribute: `mp-bind-disabled`, `mp-bind-src` |
+| `mp-each="items"` | Repeat template for each item in bare array name |
+| `mp-key="field"` | Keyed reconciliation |
+| `mp-ref="name"` | Reference element as `$refs.name` |
+| `mp-persist="key"` | Save/restore context to localStorage |
+| `mp-url="/path"` | Map state to browser URL (static path) |
 
-### Events
+### Elements (all logic)
 
-| Attribute | Purpose |
-|-----------|---------|
-| `mp-on:EVENT="(sexpr)"` | Handle any DOM event with s-expression |
-| `mp-receive="(on 'name' body)"` | React to events from other machines |
-
+Transitions with guards and actions:
 ```html
-<input mp-on:keydown="(when (= (get $event :key) 'Escape') (to closed))" />
-
-<body mp-on:keydown="(when (and (get $event :ctrlKey) (= (get $event :key) 'k'))
-                    (do (prevent!) (emit open-palette)))">
-
-<form mp-on:submit="(do (prevent!) (push! items (obj :name newName)) (to idle))">
+<mp-transition event="submit" to="done">
+  <mp-guard>(and (> (count title) 0) (> amount 0))</mp-guard>
+  <mp-action>(set! submitted_at (now))</mp-action>
+  <mp-emit>order-created</mp-emit>
+</mp-transition>
 ```
 
-### Lists
-
-| Attribute | Purpose |
-|-----------|---------|
-| `mp-each="expr"` | Repeat template for each array item |
-| `mp-key="expr"` | Key for efficient reconciliation |
-
+Bindings (textContent, visibility, classes, attributes):
 ```html
-<template mp-each="(->> items (filter #(> (get % :score) 80)) (sort-by :name) (take 10))"
-          mp-key="id">
+<p><mp-text>(str count ' items')</mp-text></p>
+<div><mp-show>(> count 0)</mp-show>visible content</div>
+<div class="badge"><mp-class>(when done 'badge-success')</mp-class>Status</div>
+<button><mp-bind attr="disabled">(not valid)</mp-bind>Submit</button>
+```
+
+> **Shorthand:** `mp-text="field"` is valid for bare variables (no parentheses). The element form `<mp-text>expr</mp-text>` is required for s-expressions and is the primary syntax.
+
+DOM events with modifiers (`.prevent`, `.stop`, `.self`, `.once`, `.outside`):
+```html
+<div>
+  <mp-on event="keydown">(when (= (get $event :key) 'Escape') (to closed))</mp-on>
+  <input mp-model="title" />
+</div>
+<form>
+  <mp-on event="submit.prevent">(do (push! items (obj :name newName)) (to idle))</mp-on>
+  ...
+</form>
+```
+
+Inter-machine events:
+```html
+<!-- Sender -->
+<mp-transition event="save" to="done"><mp-emit>saved</mp-emit></mp-transition>
+
+<!-- Receiver -->
+<mp-receive event="saved">(to show)</mp-receive>
+```
+
+Lists with filtering and sorting:
+```html
+<!-- Bare array name -->
+<template mp-each="items" mp-key="name">
+  <div><span><mp-text>name</mp-text></span></div>
+</template>
+
+<!-- Expression inside element -->
+<template mp-key="id">
+  <mp-each>(->> items (filter #(> (get % :score) 80)) (sort-by :name) (take 10))</mp-each>
   <div>
-    <span mp-text="name"></span>
-    <span mp-text="(str 'Score: ' score)"></span>
+    <span><mp-text>name</mp-text></span>
+    <span><mp-text>(str 'Score: ' score)</mp-text></span>
   </div>
 </template>
 ```
@@ -227,20 +275,28 @@ Conventions:
 
 ### Temporal behaviour
 
-`mp-temporal` scopes temporal activities to the state lifecycle. When the state is entered, temporal behaviours start. When the state is exited, they are cleaned up automatically. The value is an s-expression using `(animate)`, `(after)`, and `(every)`.
+`<mp-temporal>` scopes temporal activities to the state lifecycle. When the state is entered, temporal behaviours start. When the state is exited, they are cleaned up automatically. Content is an s-expression using `(animate)`, `(after)`, and `(every)`.
 
 ```html
 <!-- CSS enter/leave animation -->
-<div mp-state="detail" mp-temporal="(animate)">
+<div mp-state="detail">
+  <mp-temporal>(animate)</mp-temporal>
+</div>
 
 <!-- Auto-transition after delay -->
-<div mp-state="toast" mp-temporal="(after 2000 (to idle))">
+<div mp-state="toast">
+  <mp-temporal>(after 2000 (to idle))</mp-temporal>
+</div>
 
 <!-- Repeating interval (polling, clock, animation) -->
-<div mp-state="monitoring" mp-temporal="(every 5000 (then! (fetch-status) :data))">
+<div mp-state="monitoring">
+  <mp-temporal>(every 5000 (then! (fetch-status) :data))</mp-temporal>
+</div>
 
 <!-- Combined -->
-<div mp-state="countdown" mp-temporal="(do (animate) (every 1000 (dec! remaining)) (after 10000 (to expired)))">
+<div mp-state="countdown">
+  <mp-temporal>(do (animate) (every 1000 (dec! remaining)) (after 10000 (to expired)))</mp-temporal>
+</div>
 ```
 
 ```css
@@ -248,15 +304,15 @@ Conventions:
 .mp-enter-from, .mp-leave-to { opacity: 0; transform: translateY(8px); }
 ```
 
-### Lifecycle
+### Lifecycle elements
 
-| Attribute | Purpose |
-|-----------|---------|
-| `mp-init="expr"` | Run on machine creation or state entry |
-| `mp-exit="expr"` | Run before state content is destroyed |
-| `mp-ref="name"` | Reference element as `$refs.name` |
-| `mp-persist="key"` | Save/restore context to localStorage |
-| `mp-let="name expr ..."` | Machine-scope computed bindings (derived, not persisted) |
+| Element | Purpose |
+|---------|---------|
+| `<mp-init>expr</mp-init>` | Run on machine creation or state entry |
+| `<mp-exit>expr</mp-exit>` | Run before state content is destroyed |
+| `<mp-let name="x">expr</mp-let>` | Machine-scope computed binding (derived, not persisted) |
+| `mp-ref="name"` | Reference element as `$refs.name` (attribute) |
+| `mp-persist="key"` | Save/restore context to localStorage (attribute) |
 | `mp-url="/path"` | Map state to browser URL (static or `(path '/p/:k' ctxKey)`) |
 
 ### Global state
@@ -265,7 +321,7 @@ Conventions:
 <mp-store name="user" value='{"name": "Andrew", "role": "engineer"}'></mp-store>
 
 <!-- Any machine can read it -->
-<span mp-text="$store.user.name"></span>
+<span><mp-text>$store.user.name</mp-text></span>
 ```
 
 ---
@@ -348,7 +404,7 @@ Conventions:
 ### Special variables
 ```
 $state    Current state name
-$event    DOM event (inside mp-on:)
+$event    DOM event (inside <mp-on>)
 $item     Current item (inside mp-each)
 $index    Current index (inside mp-each)
 $detail   Emit payload (inside mp-receive)
@@ -370,7 +426,9 @@ MachinePerfect.fn('fetch-json', function(url) {
 ```
 
 ```html
-<div mp-init="(then! (fetch-json '/api/data') :items 'ready')">
+<div mp-state="loading">
+  <mp-init>(then! (fetch-json '/api/data') :items 'ready')</mp-init>
+</div>
 ```
 
 Application logic lives in s-expressions. JavaScript is the escape hatch for platform APIs that require it.
@@ -412,7 +470,7 @@ Zero dependencies. Eight files. One folder. No build step.
 - **[Interactive Tutorial](examples/learn.html)** - learn the concepts step by step
 - **[Snow Check SPA](examples/spa/)** - ski resort finder with reusable components, command palette, and live weather via JS escape hatch
 - **[Sticky Notes](examples/sticky-notes.html)** - CRUD app with zero JavaScript
-- **[Purchase Order](examples/purchase-order/)** - full-stack: browser form, server-side SCXML pipeline, capability registry. The entire server-side execution model is 93 lines (`services.js`): four effect adapters and a call to `executePipeline`
+- **[Purchase Order](examples/purchase-order/)** - full-stack: browser form, server-side SCXML pipeline, capability registry. The entire server-side execution model is 94 lines (`services.js`): four effect adapters and a call to `executePipeline`
 - **[Batch Reactor](examples/batch-reactor/)** - ISA-88 industrial process control with hierarchical compound states
 
 ---

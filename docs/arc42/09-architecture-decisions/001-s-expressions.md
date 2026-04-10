@@ -10,11 +10,11 @@ The framework needs an expression language for guards, actions, bindings, and ev
 Use s-expressions (Clojure-inspired) as the single expression language everywhere.
 
 ## Rationale
-- **One syntax** — the same language in `mp-text`, `mp-to`, `mp-class`, `mp-on:`, `mp-receive`. Guards, actions, and emits are s-expressions inside `mp-to`. No context switching.
+- **One syntax** — the same language in `<mp-text>`, `<mp-on>`, `<mp-class>`, `<mp-receive>`, `<mp-guard>`, `<mp-action>`. Guards, actions, and bindings are s-expressions inside structural child elements. No context switching.
 - **Safe** — no `eval()`, no `new Function()`. The tokenizer/parser/evaluator is a closed system. Expressions can't escape the sandbox.
 - **Portable** — s-expressions are trivially parseable in any language. The same expression evaluates identically in browser and Node.
 - **Inspectable** — the evaluator is a tree-walker. Dependencies are observable. The AST is data.
-- **Dependency trackable** — because all data access goes through `_seval`, the evaluator can instrument reads and writes without Proxies or a compiler.
+- **Dependency trackable** — because all data access goes through `seval`, the evaluator can instrument reads and writes without Proxies or a compiler.
 
 ## Consequences
 - Developers must learn s-expression syntax. The `(function arg1 arg2)` form is unfamiliar to most web developers.

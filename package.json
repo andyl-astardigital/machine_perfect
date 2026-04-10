@@ -2,7 +2,7 @@
   "name": "machine-perfect",
   "version": "0.5.0",
   "description": "Application platform where state machines are the unit of definition, execution, and exchange. S-expressions for logic. Markup as substrate.",
-  "main": "mp/machine.js",
+  "main": "mp/engine.js",
   "browser": "mp/browser.js",
   "exports": {
     ".": "./mp/engine.js",

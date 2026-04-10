@@ -14,10 +14,14 @@ How should machines cross host boundaries? The conventional answer is APIs: desi
 Distribution is expressed as a property of transition execution. A transition can declare WHERE it executes via `mp-where`, expressed as an s-expression evaluated by the same engine:
 
 ```html
-<button mp-to="(when (and (> (count items) 0) (> amount 0)) (do (set! submitted_at (now)) (invoke! :type 'log' :input title) (to submitted)))"
-        mp-where="(requires 'log')">
-  Submit
-</button>
+<button mp-to="submit">Submit</button>
+
+<mp-transition event="submit" to="submitted">
+  <mp-guard>(and (> (count items) 0) (> amount 0))</mp-guard>
+  <mp-action>(set! submitted_at (now))</mp-action>
+  <mp-action>(invoke! :type 'log' :input title)</mp-action>
+  <mp-where>(requires 'log')</mp-where>
+</mp-transition>
 ```
 
 Hosting is capability-based:

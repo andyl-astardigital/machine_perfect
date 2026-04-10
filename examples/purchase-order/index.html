@@ -42,31 +42,44 @@
        States = views. mp-where on states routes to capable hosts.
        mp-receive handles navigation events from server-rendered views.
        ═════════════════════════════════════════════════════════════════ -->
-  <div mp="app" mp-initial="orders"
-       mp-ctx='{"_action":null,"_actionId":null}'
-       mp-receive="(on 'navigate-detail' (do (set! _actionId (get $detail :id)) (to detail)))
-                   (on 'delete-order' (do (set! _action 'delete') (set! _actionId (get $detail :id)) (to orders)))
-                   (on 'order-approved' (do (set! _action nil) (to orders)))
-                   (on 'order-rejected' (do (set! _action nil) (to orders)))">
+  <div mp="app" mp-initial="orders">
+    <mp-ctx>{"_action":null,"_actionId":null}</mp-ctx>
+    <mp-receive event="navigate-orders">(do (set! _action nil) (set! _actionId nil) (to orders))</mp-receive>
+    <mp-receive event="navigate-detail">(do (set! _actionId (get $detail :id)) (to detail))</mp-receive>
+    <mp-receive event="delete-order">(do (set! _action 'delete') (set! _actionId (get $detail :id)) (emit order-deleted) (to orders))</mp-receive>
+    <mp-receive event="order-approved">(do (set! _action nil) (to orders))</mp-receive>
+    <mp-receive event="order-rejected">(do (set! _action nil) (to orders))</mp-receive>
 
-    <!-- Navbar — always visible -->
+    <!-- Navbar -->
     <div class="navbar bg-base-100 shadow-md px-4 gap-2 sticky top-0 z-40">
-      <button mp-to="(do (set! _action nil) (set! _actionId nil) (to orders))"
-              class="btn btn-ghost text-lg font-bold gap-2 normal-case">
+      <button class="btn btn-ghost text-lg font-bold gap-2 normal-case">
+        <mp-on event="click">(do (set! _action nil) (set! _actionId nil) (to orders))</mp-on>
         <img src="../../logo.svg" alt="" class="w-7 h-7 rounded" /> Purchase Orders
       </button>
       <div class="flex-1"></div>
-      <button mp-to="(do (set! _action nil) (set! _actionId nil) (to orders))"
-              class="btn btn-ghost btn-sm">Orders</button>
+      <button id="btn-nav-orders" class="btn btn-ghost btn-sm">
+        <mp-on event="click">(do (set! _action nil) (set! _actionId nil) (to orders))</mp-on>
+        Orders
+      </button>
       <button mp-to="create" class="btn btn-ghost btn-sm">+ New</button>
       <span class="badge bg-mp-dark text-mp-lavender border-mp-purple text-xs">full-stack</span>
     </div>
 
     <!-- Server-rendered states. mp-where routes to capable host.
          mp-url maps state to browser URL. Loading spinner set globally via init(). -->
-    <div mp-state="orders" mp-url="/orders" mp-temporal="(animate)" mp-where="(requires 'ui-render')"></div>
-    <div mp-state="create" mp-url="/orders/new" mp-temporal="(animate)" mp-where="(requires 'ui-render')"></div>
-    <div mp-state="detail" mp-url="(path '/orders/:id' _actionId)" mp-temporal="(animate)" mp-where="(requires 'ui-render')"></div>
+    <div mp-state="orders" mp-url="/orders">
+      <mp-temporal>(animate)</mp-temporal>
+      <mp-where>(requires 'ui-render')</mp-where>
+    </div>
+    <div mp-state="create" mp-url="/orders/new">
+      <mp-temporal>(animate)</mp-temporal>
+      <mp-where>(requires 'ui-render')</mp-where>
+    </div>
+    <div mp-state="detail">
+      <mp-temporal>(animate)</mp-temporal>
+      <mp-where>(requires 'ui-render')</mp-where>
+      <mp-url>(path '/orders/:id' _actionId)</mp-url>
+    </div>
   </div>
 
   <!-- ═══ TOAST ═════════════════════════════════════════════════════════
@@ -74,10 +87,11 @@
        Auto-dismisses via (after 3000 idle).
        ═════════════════════════════════════════════════════════════════ -->
   <div class="toast toast-end toast-bottom z-50">
-    <div mp="po-toast" mp-ctx='{"message":"","type":"info"}'
-         mp-receive="(on 'order-approved' (do (set! message 'Order fulfilled!') (set! type 'success') (to show)))
-                     (on 'order-rejected' (do (set! message 'Order rejected') (set! type 'error') (to show)))
-                     (on 'order-deleted' (do (set! message 'Deleted') (set! type 'warning') (to show)))"></div>
+    <div mp="po-toast" mp-ctx='{"message":"","type":"info"}'>
+      <mp-receive event="order-approved">(do (set! message 'Order fulfilled!') (set! type 'success') (to show))</mp-receive>
+      <mp-receive event="order-rejected">(do (set! message 'Order rejected') (set! type 'error') (to show))</mp-receive>
+      <mp-receive event="order-deleted">(do (set! message 'Deleted') (set! type 'warning') (to show))</mp-receive>
+    </div>
   </div>
 
   <!-- Info -->

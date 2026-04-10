@@ -4,7 +4,7 @@
  * The shared heart of machine_perfect. Zero DOM dependencies.
  * Used by the frontend (browser) and backend (Node/SCXML) runtimes.
  *
- * Contains: tokenizer, parser, evaluator, standard library (~80 functions),
+ * Contains: tokenizer, parser, evaluator, standard library (~120 functions),
  * dependency tracking, scope management, path utilities, purity enforcement.
  *
  * @version 0.5.0
@@ -83,21 +83,25 @@
       while (tokens.length > 0 && tokens[0] !== ')') body.push(parseOne(tokens));
       if (tokens.length === 0) throw new Error('[mp] unexpected end of expression — missing ")" in #()');
       tokens.shift();
-      return [{ t: 'Y', v: 'fn' }, { t: 'V', v: [{ t: 'Y', v: '%' }] }, body.length === 1 ? body[0] : body];
+      // %1/%2/%3 are positional; % is an alias for %1 (first arg).
+      // The fn case binds % = %1 when the first param is named %1.
+      return [{ t: 'Y', v: 'fn' }, { t: 'V', v: [
+        { t: 'Y', v: '%1' }, { t: 'Y', v: '%2' }, { t: 'Y', v: '%3' }
+      ] }, body.length === 1 ? body[0] : body];
     }
     return tok;
   }
 
-  var parseCache = {};
+  var parseCache = Object.create(null);
   var parseCacheSize = 0;
 
   function parse(str) {
-    if (parseCache[str]) return parseCache[str];
+    if (str in parseCache) return parseCache[str];
     var tokens = tokenize(str.trim());
     var exprs = [];
     while (tokens.length > 0) exprs.push(parseOne(tokens));
     var result = exprs.length === 1 ? exprs[0] : [{ t: 'Y', v: 'do' }].concat(exprs);
-    if (parseCacheSize > 2000) { parseCache = {}; parseCacheSize = 0; }
+    if (parseCacheSize >= 2000) { parseCache = Object.create(null); parseCacheSize = 0; }
     parseCache[str] = result;
     parseCacheSize++;
     return result;
@@ -118,6 +122,17 @@
     if (node === null || node === undefined) return null;
     if (++evalDepth > 512) { evalDepth--; throw new Error('[mp] expression too deeply nested (max depth 512)'); }
     try { return sevalInner(node, ctx); } finally { evalDepth--; }
+  }
+
+  // Find the scope that owns a key — walk the prototype chain.
+  // Mutations inside let/fn must write to the original scope, not the child.
+  function _owner(ctx, key) {
+    var scope = ctx;
+    while (scope) {
+      if (scope.hasOwnProperty(key)) return scope;
+      scope = Object.getPrototypeOf(scope);
+    }
+    return ctx;
   }
 
   function _markDirty(ctx, key) {
@@ -159,7 +174,7 @@
           if (firstClass[name]) return firstClass[name];
           if (userFns[name]) return userFns[name];
           if (debug) console.warn('[mp-debug] undefined variable "' + name + '"');
-          return undefined;
+          return null;
       }
       return node;
     }
@@ -175,10 +190,10 @@
         return seval(n1, ctx) ? seval(n2, ctx) : (n3 != null ? seval(n3, ctx) : null);
       case 'when':
         if (!seval(n1, ctx)) return null;
-        var result; for (var i = 2; i < node.length; i++) result = seval(node[i], ctx); return result;
+        var result = null; for (var i = 2; i < node.length; i++) result = seval(node[i], ctx); return result;
       case 'unless':
         if (seval(n1, ctx)) return null;
-        var result; for (var i = 2; i < node.length; i++) result = seval(node[i], ctx); return result;
+        var result = null; for (var i = 2; i < node.length; i++) result = seval(node[i], ctx); return result;
       case 'when-state':
         return ctx.$state === (n1.v || String(n1)) ? seval(n2, ctx) : null;
       case 'cond':
@@ -191,7 +206,7 @@
       case 'or':
         var val = false; for (var i = 1; i < node.length; i++) { val = seval(node[i], ctx); if (val) return val; } return val;
       case 'do':
-        var result; for (var i = 1; i < node.length; i++) result = seval(node[i], ctx); return result;
+        var result = null; for (var i = 1; i < node.length; i++) result = seval(node[i], ctx); return result;
       case 'let':
         var bindings = n1;
         var blist = bindings.t === 'V' ? bindings.v : (Array.isArray(bindings) ? bindings : []);
@@ -200,7 +215,7 @@
           local[blist[i].v] = seval(blist[i + 1], local);
         }
         // Implicit do: evaluate all body forms, return last
-        var result; for (var i = 2; i < node.length; i++) result = seval(node[i], local);
+        var result = null; for (var i = 2; i < node.length; i++) result = seval(node[i], local);
         return result;
       case 'fn':
         var params = n1;
@@ -209,8 +224,10 @@
         return function () {
           var local = Object.create(ctx);
           for (var i = 0; i < plist.length; i++) local[plist[i].v] = arguments[i];
+          // #() lambdas use %1/%2/%3 for positional args; % is an alias for %1.
+          if (plist.length > 0 && plist[0].v === '%1') local['%'] = arguments[0];
           // Implicit do: evaluate all body forms, return last
-          var result; for (var i = 2; i < fnNode.length; i++) result = seval(fnNode[i], local);
+          var result = null; for (var i = 2; i < fnNode.length; i++) result = seval(fnNode[i], local);
           return result;
         };
       case '->':
@@ -240,21 +257,21 @@
           set(ctx, n1.v, val);
           _markDirty(ctx, n1.v);
         }
-        else { if (unsafePaths[n1.v]) return val; ctx[n1.v] = val; _markDirty(ctx, n1.v); }
+        else { if (unsafePaths[n1.v]) return val; _owner(ctx, n1.v)[n1.v] = val; _markDirty(ctx, n1.v); }
         return val;
       case 'inc!':
         if (n1.v.indexOf('.') !== -1) { var cur = get(ctx, n1.v); set(ctx, n1.v, (cur || 0) + 1); }
-        else { if (unsafePaths[n1.v]) return 0; ctx[n1.v] = (ctx[n1.v] || 0) + 1; }
+        else { if (unsafePaths[n1.v]) return 0; var ownInc = _owner(ctx, n1.v); ownInc[n1.v] = (ownInc[n1.v] || 0) + 1; }
         _markDirty(ctx, n1.v);
         return n1.v.indexOf('.') !== -1 ? get(ctx, n1.v) : ctx[n1.v];
       case 'dec!':
         if (n1.v.indexOf('.') !== -1) { var cur = get(ctx, n1.v); set(ctx, n1.v, (cur || 0) - 1); }
-        else { if (unsafePaths[n1.v]) return 0; ctx[n1.v] = (ctx[n1.v] || 0) - 1; }
+        else { if (unsafePaths[n1.v]) return 0; var ownDec = _owner(ctx, n1.v); ownDec[n1.v] = (ownDec[n1.v] || 0) - 1; }
         _markDirty(ctx, n1.v);
         return n1.v.indexOf('.') !== -1 ? get(ctx, n1.v) : ctx[n1.v];
       case 'toggle!':
         if (n1.v.indexOf('.') !== -1) { set(ctx, n1.v, !get(ctx, n1.v)); }
-        else { if (unsafePaths[n1.v]) return false; ctx[n1.v] = !ctx[n1.v]; }
+        else { if (unsafePaths[n1.v]) return false; var ownTog = _owner(ctx, n1.v); ownTog[n1.v] = !ownTog[n1.v]; }
         _markDirty(ctx, n1.v);
         return n1.v.indexOf('.') !== -1 ? get(ctx, n1.v) : ctx[n1.v];
       case 'swap!':
@@ -267,7 +284,7 @@
         for (var si = 3; si < node.length; si++) swapArgs.push(seval(node[si], ctx));
         var swapResult = swapFn.apply(null, swapArgs);
         if (swapKey.indexOf('.') !== -1) set(ctx, swapKey, swapResult);
-        else ctx[swapKey] = swapResult;
+        else _owner(ctx, swapKey)[swapKey] = swapResult;
         _markDirty(ctx, swapKey);
         return swapResult;
       case 'push!':
@@ -304,6 +321,7 @@
         return assocObj;
       case 'in-state?':
         var checkState = seval(n1, ctx);
+        if (checkState == null) return false;
         var curState = ctx.$state || '';
         if (curState === checkState) return true;
         var curParts = curState.split('.');
@@ -397,8 +415,7 @@
       var applyArgs = seval(n2, ctx);
       // stdlib functions take (array) — pass args directly
       if (fnName && stdlib[fnName]) return stdlib[fnName](applyArgs);
-      // firstClass and user functions take (...args) — spread
-      if (fnName && firstClass[fnName]) return firstClass[fnName].apply(null, applyArgs);
+      // user functions take (...args) — spread
       if (fnName && userFns[fnName]) return userFns[fnName].apply(null, applyArgs);
       // Evaluated function (lambda)
       var applyFn = seval(n1, ctx);
@@ -447,8 +464,8 @@
     '+':   function (a) { return a.reduce(function (x, y) { return x + y; }, 0); },
     '-':   function (a) { if (a.length === 1) return -a[0]; var r = a[0]; for (var i = 1; i < a.length; i++) r -= a[i]; return r; },
     '*':   function (a) { return a.reduce(function (x, y) { return x * y; }, 1); },
-    '/':   function (a) { var r = a[0]; for (var i = 1; i < a.length; i++) r /= a[i]; return r; },
-    'mod': function (a) { return a[0] % a[1]; },
+    '/':   function (a) { var r = a[0]; for (var i = 1; i < a.length; i++) { if (a[i] === 0) throw new Error('[mp] division by zero'); r /= a[i]; } return r; },
+    'mod': function (a) { if (a[1] === 0) throw new Error('[mp] modulo by zero'); return a[0] % a[1]; },
     'inc': function (a) { return a[0] + 1; },
     'dec': function (a) { return a[0] - 1; },
     'abs': function (a) { return Math.abs(a[0]); },
@@ -476,40 +493,40 @@
     'split':     function (a) { return String(a[0] || '').split(a[1] || ''); },
     'join':      function (a) { return (a[0] || []).join(a[1] != null ? a[1] : ''); },
     'starts?':   function (a) { return String(a[0] || '').indexOf(a[1]) === 0; },
-    'ends?':     function (a) { return String(a[0] || '').slice(-(a[1] || '').length) === a[1]; },
+    'ends?':     function (a) { var s = String(a[0] || ''), n = a[1] || ''; return n.length === 0 ? true : s.slice(-n.length) === n; },
     'contains?': function (a) { return String(a[0] || '').indexOf(a[1]) !== -1; },
     'replace':   function (a) { return String(a[0] || '').split(a[1]).join(a[2] || ''); },
     'subs':      function (a) { return String(a[0] || '').substring(a[1], a[2]); },
     'count':     function (a) { return a[0] == null ? 0 : (a[0].length != null ? a[0].length : Object.keys(a[0]).length); },
-    'first':     function (a) { return a[0] && a[0][0]; },
-    'last':      function (a) { return a[0] && a[0][a[0].length - 1]; },
-    'nth':       function (a) { return a[0] && a[0][a[1]]; },
+    'first':     function (a) { return a[0] != null && a[0].length > 0 ? a[0][0] : null; },
+    'last':      function (a) { return a[0] != null && a[0].length > 0 ? a[0][a[0].length - 1] : null; },
+    'nth':       function (a) { var v = a[0] != null ? a[0][a[1]] : undefined; return v !== undefined ? v : null; },
     'rest':      function (a) { return a[0] ? a[0].slice(1) : []; },
     'take':      function (a) { return (a[1] || []).slice(0, a[0]); },
     'drop':      function (a) { return (a[1] || []).slice(a[0]); },
-    'concat':    function (a) { var r = a[0] || []; for (var i = 1; i < a.length; i++) r = r.concat(a[i] || []); return r; },
+    'concat':    function (a) { var r = (a[0] || []).slice(); for (var i = 1; i < a.length; i++) r = r.concat(a[i] || []); return r; },
     'reverse':   function (a) { return (a[0] || []).slice().reverse(); },
     'sort':      function (a) { return (a[0] || []).slice().sort(a[1] || undefined); },
     'includes?': function (a) { return (a[0] || []).indexOf(a[1]) !== -1; },
     'has-key?': function (a) { return a[0] != null && a[1] in Object(a[0]); },
-    'index-of':  function (a) { return (a[0] || []).indexOf(a[1]); },
+    'index-of':  function (a) { var i = (a[0] || []).indexOf(a[1]); return i === -1 ? null : i; },
     'uniq':      function (a) { return a[0] ? a[0].filter(function (v, i, s) { return s.indexOf(v) === i; }) : []; },
     'range':     function (a) { var start = a.length === 1 ? 0 : a[0], end = a.length === 1 ? a[0] : a[1], step = a[2] || 1; var r = []; for (var i = start; i < end; i += step) r.push(i); return r; },
     'map':     function (a) { var fn = _coerceFn(a[0]); return (a[1] || []).map(fn); },
     'filter':  function (a) { var fn = _coerceFn(a[0]); return (a[1] || []).filter(fn); },
-    'find':    function (a) { var fn = _coerceFn(a[0]); return (a[1] || []).find(fn); },
+    'find':    function (a) { var fn = _coerceFn(a[0]); var r = (a[1] || []).find(fn); return r !== undefined ? r : null; },
     'every?':  function (a) { var fn = _coerceFn(a[0]); return (a[1] || []).every(fn); },
     'some':    function (a) { var arr = a[1] || [], fn = _coerceFn(a[0]); for (var i = 0; i < arr.length; i++) { var v = fn(arr[i]); if (v) return v; } return null; },
     'reduce':  function (a) { var fn = _coerceFn(a[0]); return (a[2] || []).reduce(fn, a[1]); },
     'flat-map': function (a) { var fn = _coerceFn(a[0]); return (a[1] || []).reduce(function (r, x) { return r.concat(fn(x)); }, []); },
     'sort-by': function (a) { var fn = _coerceFn(a[0]); return (a[1] || []).slice().sort(function (x, y) { var fx = fn(x), fy = fn(y); return fx < fy ? -1 : fx > fy ? 1 : 0; }); },
-    'obj':    function (a) { var o = {}; for (var i = 0; i < a.length; i += 2) o[a[i]] = a[i + 1]; return o; },
-    'get':    function (a) { return a[0] != null ? a[0][a[1]] : null; },
+    'obj':    function (a) { var o = {}; for (var i = 0; i < a.length; i += 2) { if (!unsafePaths[a[i]]) o[a[i]] = a[i + 1]; } return o; },
+    'get':    function (a) { if (a[0] == null) return null; var v = a[0][a[1]]; return v !== undefined ? v : null; },
     'keys':   function (a) { return a[0] ? Object.keys(a[0]) : []; },
     'vals':   function (a) { return a[0] ? Object.keys(a[0]).map(function (k) { return a[0][k]; }) : []; },
-    'assoc':  function (a) { var o = {}; for (var k in a[0]) { if (a[0].hasOwnProperty(k)) o[k] = a[0][k]; } for (var i = 1; i < a.length - 1; i += 2) o[a[i]] = a[i + 1]; return o; },
-    'dissoc': function (a) { var skip = {}; for (var i = 1; i < a.length; i++) skip[a[i]] = true; var o = {}; for (var k in a[0]) { if (a[0].hasOwnProperty(k) && !skip[k]) o[k] = a[0][k]; } return o; },
-    'merge':  function (a) { var o = {}; for (var i = 0; i < a.length; i++) { if (a[i]) for (var k in a[i]) { if (a[i].hasOwnProperty(k)) o[k] = a[i][k]; } } return o; },
+    'assoc':  function (a) { var o = {}; for (var k in a[0]) { if (a[0].hasOwnProperty(k) && !unsafePaths[k]) o[k] = a[0][k]; } for (var i = 1; i < a.length - 1; i += 2) { if (!unsafePaths[a[i]]) o[a[i]] = a[i + 1]; } return o; },
+    'dissoc': function (a) { var skip = {}; for (var i = 1; i < a.length; i++) skip[a[i]] = true; var o = {}; for (var k in a[0]) { if (a[0].hasOwnProperty(k) && !skip[k] && !unsafePaths[k]) o[k] = a[0][k]; } return o; },
+    'merge':  function (a) { var o = {}; for (var i = 0; i < a.length; i++) { if (a[i]) for (var k in a[i]) { if (a[i].hasOwnProperty(k) && !unsafePaths[k]) o[k] = a[i][k]; } } return o; },
     'type':  function (a) { return a[0] === null ? 'nil' : Array.isArray(a[0]) ? 'list' : typeof a[0]; },
     'num':   function (a) { return Number(a[0]); },
     'int':   function (a) { return parseInt(a[0], a[1] || 10); },
@@ -534,35 +551,35 @@
     'identity': function (a) { return a[0]; },
     'list':  function (a) { return a.slice(); },
     'not=':  function (a) { for (var i = 1; i < a.length; i++) { if (_deepEq(a[i - 1], a[i])) return false; } return true; },
-    'distinct': function (a) { var seen = {}, r = []; for (var i = 0; i < a[0].length; i++) { var k = JSON.stringify(a[0][i]); if (!seen[k]) { seen[k] = true; r.push(a[0][i]); } } return r; },
+    'distinct': function (a) { if (!a[0]) return []; var seen = {}, r = []; for (var i = 0; i < a[0].length; i++) { var k = JSON.stringify(a[0][i]); if (!seen[k]) { seen[k] = true; r.push(a[0][i]); } } return r; },
     'mapcat': function (a) { var fn = _coerceFn(a[0]), arr = a[1] || [], r = []; for (var i = 0; i < arr.length; i++) { var v = fn(arr[i]); if (Array.isArray(v)) for (var j = 0; j < v.length; j++) r.push(v[j]); else r.push(v); } return r; },
     'get-in': function (a) { var obj = a[0], path = a[1]; if (!obj || !path) return null; for (var i = 0; i < path.length; i++) { obj = obj[path[i]]; if (obj == null) return null; } return obj; },
-    'update': function (a) { var fn = _coerceFn(a[2]); var o = {}; for (var k in a[0]) { if (a[0].hasOwnProperty(k)) o[k] = a[0][k]; } o[a[1]] = fn(o[a[1]]); return o; },
+    'update': function (a) { var fn = _coerceFn(a[2]); var o = {}; for (var k in a[0]) { if (a[0].hasOwnProperty(k) && !unsafePaths[k]) o[k] = a[0][k]; } if (!unsafePaths[a[1]]) o[a[1]] = fn(o[a[1]]); return o; },
     'log':  function (a) { console.log.apply(console, a); return a[0]; },
     'warn': function (a) { console.warn.apply(console, a); return a[0]; },
 
-    // ── Tier 3 additions ──
+    // ── Collection transforms ──
     'conj':     function (a) {
       if (a[0] != null && typeof a[0] === 'object' && !Array.isArray(a[0])) {
-        var o = {}; for (var k in a[0]) { if (a[0].hasOwnProperty(k)) o[k] = a[0][k]; }
-        if (Array.isArray(a[1]) && a[1].length >= 2) o[a[1][0]] = a[1][1];
+        var o = {}; for (var k in a[0]) { if (a[0].hasOwnProperty(k) && !unsafePaths[k]) o[k] = a[0][k]; }
+        if (Array.isArray(a[1]) && a[1].length >= 2 && !unsafePaths[a[1][0]]) o[a[1][0]] = a[1][1];
         return o;
       }
       return (a[0] || []).concat([a[1]]);
     },
     'select-keys': function (a) { var obj = a[0] || {}, ks = a[1] || [], o = {}; for (var i = 0; i < ks.length; i++) { if (ks[i] in obj) o[ks[i]] = obj[ks[i]]; } return o; },
-    'zipmap':   function (a) { var ks = a[0] || [], vs = a[1] || [], o = {}; for (var i = 0; i < ks.length; i++) o[ks[i]] = vs[i]; return o; },
+    'zipmap':   function (a) { var ks = a[0] || [], vs = a[1] || [], o = {}; for (var i = 0; i < ks.length; i++) { if (!unsafePaths[ks[i]]) o[ks[i]] = i < vs.length ? vs[i] : null; } return o; },
     'number?':  function (a) { return typeof a[0] === 'number'; },
     'string?':  function (a) { return typeof a[0] === 'string'; },
     'boolean?': function (a) { return typeof a[0] === 'boolean'; },
     'map?':     function (a) { return a[0] != null && typeof a[0] === 'object' && !Array.isArray(a[0]); },
     'coll?':    function (a) { return Array.isArray(a[0]); },
     'fn?':      function (a) { return typeof a[0] === 'function'; },
-    'group-by': function (a) { var fn = _coerceFn(a[0]), arr = a[1] || [], r = {}; for (var i = 0; i < arr.length; i++) { var k = fn(arr[i]); if (!r[k]) r[k] = []; r[k].push(arr[i]); } return r; },
+    'group-by': function (a) { var fn = _coerceFn(a[0]), arr = a[1] || [], r = Object.create(null); for (var i = 0; i < arr.length; i++) { var k = fn(arr[i]); if (!r[k]) r[k] = []; r[k].push(arr[i]); } return r; },
     'assoc-in': function (a) { var obj = a[0] || {}, path = a[1], val = a[2]; return _assocIn(obj, path, 0, val); },
     'update-in': function (a) { var obj = a[0] || {}, path = a[1], fn = _coerceFn(a[2]); var cur = obj; for (var i = 0; i < path.length; i++) cur = cur ? cur[path[i]] : null; return _assocIn(obj, path, 0, fn(cur)); },
     'starts-with?': function (a) { return String(a[0] || '').indexOf(a[1]) === 0; },
-    'ends-with?':   function (a) { var s = String(a[0] || ''); return s.indexOf(a[1], s.length - a[1].length) !== -1; },
+    'ends-with?':   function (a) { if (a[1] == null) return false; var s = String(a[0] || ''), needle = String(a[1]); return s.indexOf(needle, s.length - needle.length) !== -1; },
     'comp':    function (a) { var fns = a.slice(); return function (x) { for (var i = fns.length - 1; i >= 0; i--) x = fns[i](x); return x; }; },
     'partial': function (a) { var fn = a[0], bound = a.slice(1); return function () { return fn.apply(null, bound.concat(Array.prototype.slice.call(arguments))); }; }
   };
@@ -576,9 +593,11 @@
   // Deep assoc-in helper
   function _assocIn(obj, path, idx, val) {
     var o = {};
-    if (obj != null) { for (var k in obj) { if (obj.hasOwnProperty(k)) o[k] = obj[k]; } }
-    if (idx === path.length - 1) { o[path[idx]] = val; }
-    else { o[path[idx]] = _assocIn(o[path[idx]], path, idx + 1, val); }
+    if (obj != null) { for (var k in obj) { if (obj.hasOwnProperty(k) && !unsafePaths[k]) o[k] = obj[k]; } }
+    var key = path[idx];
+    if (unsafePaths[key]) return o;
+    if (idx === path.length - 1) { o[key] = val; }
+    else { o[key] = _assocIn(o[key], path, idx + 1, val); }
     return o;
   }
 
@@ -592,7 +611,7 @@
     'not': function (x) { return !x; },
     'str': function () { return Array.prototype.slice.call(arguments).map(function (x) { return x == null ? '' : String(x); }).join(''); },
     'count': function (x) { return x == null ? 0 : x.length != null ? x.length : Object.keys(x).length; },
-    'get': function (o, k) { return o != null ? o[k] : null; },
+    'get': function (o, k) { if (o == null) return null; var v = o[k]; return v !== undefined ? v : null; },
     'upper': function (s) { return String(s || '').toUpperCase(); },
     'lower': function (s) { return String(s || '').toLowerCase(); },
     'trim': function (s) { return String(s || '').trim(); },
@@ -601,8 +620,8 @@
     'identity': function (x) { return x; },
     'conj': function (coll, x) {
       if (coll != null && typeof coll === 'object' && !Array.isArray(coll)) {
-        var o = {}; for (var k in coll) { if (coll.hasOwnProperty(k)) o[k] = coll[k]; }
-        if (Array.isArray(x) && x.length >= 2) o[x[0]] = x[1];
+        var o = {}; for (var k in coll) { if (coll.hasOwnProperty(k) && !unsafePaths[k]) o[k] = coll[k]; }
+        if (Array.isArray(x) && x.length >= 2 && !unsafePaths[x[0]]) o[x[0]] = x[1];
         return o;
       }
       return (coll || []).concat([x]);
@@ -623,12 +642,14 @@
   }
 
   var mutationForms = { 'set!':1, 'inc!':1, 'dec!':1, 'toggle!':1, 'push!':1,
-                        'remove-where!':1, 'splice!':1, 'assoc!':1, 'invoke!':1, 'swap!':1 };
+                        'remove-where!':1, 'splice!':1, 'assoc!':1, 'invoke!':1, 'swap!':1,
+                        'then!':1, 'focus!':1, 'prevent!':1, 'stop!':1,
+                        'to':1, 'emit':1 };
 
   function _checkPure(node) {
     if (!Array.isArray(node)) return;
     if (node.length > 0 && node[0] && node[0].t === 'Y' && mutationForms[node[0].v]) {
-      throw new Error('[mp] mutation "' + node[0].v + '" is not allowed in bindings. Move it to mp-to, mp-on:, mp-init, or mp-exit.');
+      throw new Error('[mp] mutation "' + node[0].v + '" is not allowed in bindings. Move it to <mp-on>, <mp-init>, <mp-exit>, mp-to, or a transition <mp-action>.');
     }
     for (var i = 0; i < node.length; i++) {
       if (Array.isArray(node[i])) _checkPure(node[i]);
@@ -647,9 +668,9 @@
   }
 
   function evalExpr(expr, ctx, state, el) {
-    if (!expr) return undefined;
+    if (!expr) return null;
     var str = expr.trim();
-    if (!str) return undefined;
+    if (!str) return null;
     if (str.charAt(0) === '(') return sevalPure(parse(str), makeScope(ctx, state, el));
     if (str === 'true') return true;
     if (str === 'false') return false;
@@ -663,7 +684,8 @@
     }
     if (trackingDeps) trackedDeps[str] = true;
     if (debug && !(str in ctx)) console.warn('[mp-debug] undefined variable "' + str + '"');
-    return ctx[str];
+    var val = ctx[str];
+    return val !== undefined ? val : null;
   }
 
   function execExpr(expr, ctx, state, el, event, inst) {
@@ -678,7 +700,7 @@
     return {
       to: scope.__mpTo || null,
       emit: scope.__mpEmit || null,
-      emitPayload: scope.__mpEmitPayload || null,
+      emitPayload: scope.__mpEmitPayload !== undefined ? scope.__mpEmitPayload : null,
       effects: scope.__mpEffects || null
     };
   }
@@ -700,7 +722,7 @@
 
   function applyScope(scope, target, inst) {
     for (var k in scope) {
-      if (scope.hasOwnProperty(k) && k.charAt(0) !== '$' && k.charAt(0) !== '_') {
+      if (scope.hasOwnProperty(k) && k.charAt(0) !== '$' && k.indexOf('__mp') !== 0) {
         target[k] = scope[k];
         if (inst) { if (!inst._mpDirty) inst._mpDirty = {}; inst._mpDirty[depKey(k)] = true; }
       }
@@ -715,10 +737,10 @@
   function get(obj, path) {
     var parts = path.split('.');
     for (var i = 0; i < parts.length; i++) {
-      if (obj == null) return undefined;
+      if (obj == null) return null;
       obj = obj[parts[i]];
     }
-    return obj;
+    return obj !== undefined ? obj : null;
   }
 
   var unsafePaths = { '__proto__': 1, 'constructor': 1, 'prototype': 1 };
@@ -733,71 +755,6 @@
       obj = obj[parts[i]];
     }
     obj[parts[parts.length - 1]] = val;
-  }
-
-
-  // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  mp-to decomposition                                                    ║
-  // ╚══════════════════════════════════════════════════════════════════════════╝
-  //
-  // Compile-time AST decomposition of mp-to s-expressions into canonical
-  // transition slots: { target, guard, action, emit }.
-  // Pattern-matches on (when), (if), (do), (to), (emit) form heads.
-  // No expression evaluation — pure structural analysis.
-
-  function _serializeNode(node) {
-    if (!node) return null;
-    if (!Array.isArray(node)) {
-      if (node.t === 'S') return "'" + node.v + "'";
-      if (node.t === 'K') return ':' + node.v;
-      if (node.t === 'N') return 'nil';
-      if (node.t === 'B') return String(node.v);
-      if (node.t === '#') return String(node.v);
-      return node.v;
-    }
-    return '(' + node.map(_serializeNode).join(' ') + ')';
-  }
-
-  function decomposeMpTo(expr) {
-    var ast = parse(expr);
-    var result = { target: null, guard: null, action: null, emit: null, emitPayload: null };
-    _extractSlots(ast, result);
-    return result;
-  }
-
-  function _extractSlots(node, result) {
-    if (!Array.isArray(node) || node.length === 0) return;
-    var head = node[0] && node[0].v;
-
-    if (head === 'when' || head === 'if') {
-      result.guard = _serializeNode(node[1]);
-      if (node.length > 3) {
-        // Implicit do: (when cond body1 body2 ...) → treat as (do body1 body2 ...)
-        var doNode = [{ t: 'Y', v: 'do' }].concat(node.slice(2));
-        _extractSlots(doNode, result);
-      } else if (node[2]) {
-        _extractSlots(node[2], result);
-      }
-    } else if (head === 'do') {
-      var actions = [];
-      for (var i = 1; i < node.length; i++) {
-        if (!_extractSignal(node[i], result)) {
-          actions.push(node[i]);
-        }
-      }
-      if (actions.length === 1) result.action = _serializeNode(actions[0]);
-      else if (actions.length > 1) result.action = '(do ' + actions.map(_serializeNode).join(' ') + ')';
-    } else if (!_extractSignal(node, result)) {
-      result.action = _serializeNode(node);
-    }
-  }
-
-  function _extractSignal(node, result) {
-    if (!Array.isArray(node)) return false;
-    var head = node[0] && node[0].v;
-    if (head === 'to' && node[1]) { result.target = node[1].v; return true; }
-    if (head === 'emit' && node[1]) { result.emit = node[1].v; if (node[2]) result.emitPayload = _serializeNode(node[2]); return true; }
-    return false;
   }
 
 
@@ -830,9 +787,6 @@
     // Path utilities
     get: get,
     set: set,
-
-    // mp-to decomposition
-    decomposeMpTo: decomposeMpTo,
 
     // Extension points
     fn: function (name, func) { userFns[name] = func; },

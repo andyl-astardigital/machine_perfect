@@ -5,7 +5,7 @@
  * 3. Checks the pipeline result
  * 4. Checks the order persisted in GET /api/orders
  *
- * Run: node examples/purchase-order/test-browser-flow.js
+ * Run: node examples/purchase-order/tests/browser-flow.test.js
  */
 
 var http = require('http');

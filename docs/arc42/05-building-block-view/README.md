@@ -24,7 +24,7 @@
 │              │  Tokenizer       │                     │
 │              │  Parser          │                     │
 │              │  Evaluator       │                     │
-│              │  Stdlib (~80 fns) │                     │
+│              │  Stdlib (~120 fns)│                     │
 │              │  Dep tracking    │                     │
 │              │  Scope mgmt     │                     │
 │              │  Path utilities  │                     │
@@ -41,7 +41,7 @@
 | Parser | Tokens → AST (cached) | `parse`, `parseOne` |
 | Evaluator | AST + context → value | `seval`, `sevalInner` |
 | Pure evaluator | AST + context → value (rejects mutations) | `sevalPure` |
-| Stdlib | ~80 built-in functions as dispatch table | `stdlib` object |
+| Stdlib | ~120 built-in functions as dispatch table | `stdlib` object |
 | First-class | Built-in functions as values for HOFs | `firstClass` object |
 | Expression interface | String expression → value (read) or side effect (write) | `eval`, `exec` |
 | Scope management | Prototype-chain context layering | `makeScope`, `applyScope` |
@@ -54,8 +54,8 @@
 | Component | Responsibility |
 |-----------|---------------|
 | HTML compiler | Read `mp-*` attributes → canonical machine definition |
-| DOM bindings | `mp-text`, `mp-model`, `mp-show`, `mp-class`, `mp-bind-*` |
-| Event delegation | `mp-to` click handler, `mp-on:*`, `mp-model` input/change |
+| DOM bindings | `<mp-text>`, `mp-model`, `<mp-show>`, `<mp-class>`, `<mp-bind>` |
+| Event delegation | `mp-to` click handler, `<mp-on>`, `mp-model` input/change |
 | Template system | `mp-define`, `mp-slot`, `mp-import` |
 | Temporal behaviour | `mp-temporal` — (animate), (after), (every) |
 | List rendering | `mp-each` with keyed reconciliation |
@@ -100,7 +100,7 @@
 ```
 
 Services dissolve into capability pools: engine instances with specific
-effect adapters registered. A transition with `mp-where="(requires 'persist')"`
+effect adapters registered. A state with `<mp-where>(requires 'persist')</mp-where>`
 routes to any host in a pool that has a `persist` adapter.
 
 The machine definition carries its own routing requirements. The route table

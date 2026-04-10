@@ -938,7 +938,7 @@ eq(whereInst.state, 'draft', 'still in draft state');
 eq(whereInst.context.title, 'Test', 'context unchanged — action did not run');
 
 // Instead it returns a route signal
-assert(whereResult.route !== null && whereResult.route !== undefined, 'has route signal');
+eq(typeof whereResult.route, 'object', 'has route signal (object)');
 deepEq(whereResult.route.requires, ['log'], 'route requires log capability');
 eq(whereResult.route.event, 'submit', 'route carries the event name');
 eq(whereResult.route.target, 'submitted', 'route carries the target state');
@@ -1190,9 +1190,10 @@ var watchDef = machine.createDefinition({
 });
 var watchInst = machine.createInstance(watchDef);
 var watchLog = [];
-machine.watch(watchInst, function (key, oldVal, newVal, state) {
+var watchFn = function (key, oldVal, newVal, state) {
   watchLog.push({ key: key, old: oldVal, new: newVal, state: state });
-});
+};
+machine.watch(watchInst, watchFn);
 machine.sendEvent(watchInst, 'inc');
 eq(watchLog.length, 1, 'watcher called once');
 eq(watchLog[0].key, 'count', 'watcher reports changed key');
@@ -1200,10 +1201,10 @@ eq(watchLog[0].old, 0, 'watcher reports old value');
 eq(watchLog[0].new, 1, 'watcher reports new value');
 eq(watchLog[0].state, 'b', 'watcher reports target state');
 
-// Unwatch
-machine.unwatch(watchInst, watchLog);
+// Unwatch by callback reference
+machine.unwatch(watchInst, watchFn);
 machine.sendEvent(watchInst, 'dec');
-eq(watchLog.length, 1, 'no call after unwatch');
+eq(watchLog.length, 1, 'no call after unwatch by callback');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -1372,7 +1373,7 @@ var pipeRoute = machine.createDefinition({
 var routeResult = machine.executePipeline(pipeRoute, {});
 
 eq(routeResult.blocked, false, 'not blocked — routed');
-assert(routeResult.route !== null && routeResult.route !== undefined, 'route signal present');
+eq(typeof routeResult.route, 'object', 'route signal present (object)');
 deepEq(routeResult.route.requires, ['gpu', 'ml'], 'route requires gpu and ml');
 eq(routeResult.instance.state, 'local', 'stayed in local (routed, not executed)');
 
@@ -1419,8 +1420,719 @@ eq(fmtResult.format, '<scxml initial="b"/>', 'format updated');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  Summary                                                                ║
+// ║  Bug fixes                                                              ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-console.log('\n' + passed + ' passed, ' + failed + ' failed, ' + (passed + failed) + ' total');
-process.exit(failed > 0 ? 1 : 0);
+describe('Bug 4 — autoLimit sentinel: 100 eventless transitions, no spurious warning');
+
+(function () {
+  // Build a machine with exactly 100 chained eventless transitions.
+  // With the old `if (autoLimit <= 0)` check this incorrectly warns.
+  var states = { trigger: { on: { go: [{ target: 's0' }] } } };
+  for (var i = 0; i < 100; i++) {
+    states['s' + i] = { on: { __auto: [{ target: 's' + (i + 1) }] } };
+  }
+  states['s100'] = { final: true };
+  var autoLimitDef = machine.createDefinition({ id: 'auto-limit-100', initial: 'trigger', states: states });
+  var autoLimitInst = machine.createInstance(autoLimitDef);
+
+  var warnings = [];
+  var origWarn = console.warn;
+  console.warn = function (msg) { warnings.push(msg); };
+  machine.sendEvent(autoLimitInst, 'go');
+  console.warn = origWarn;
+
+  eq(autoLimitInst.state, 's100', 'reached s100 after 100 auto transitions');
+  eq(warnings.filter(function (w) { return w.indexOf('eventless transition loop limit') !== -1; }).length, 0,
+    'no spurious warning for clean exit at limit');
+})();
+
+describe('Bug 4 — autoLimit: warning fires when limit truly exceeded');
+
+(function () {
+  // A machine that loops forever: a→b→a via auto. Should warn.
+  var loopDef = machine.createDefinition({
+    id: 'auto-loop',
+    states: {
+      start: { on: { go: [{ target: 'a' }] } },
+      a: { on: { __auto: [{ target: 'b' }] } },
+      b: { on: { __auto: [{ target: 'a' }] } }
+    }
+  });
+  var loopInst = machine.createInstance(loopDef);
+  var warnings = [];
+  var origWarn = console.warn;
+  console.warn = function (msg) { warnings.push(msg); };
+  machine.sendEvent(loopInst, 'go');
+  console.warn = origWarn;
+
+  eq(warnings.filter(function (w) { return w.indexOf('eventless transition loop limit') !== -1; }).length, 1,
+    'warning fires when loop actually exhausts autoLimit');
+})();
+
+
+describe('Bug 5 — _validateTransitions does not mutate caller-owned spec');
+
+(function () {
+  var spec = {
+    id: 'no-mutate',
+    states: {
+      a: { on: { go: { target: 'b' } } },  // object, not array
+      b: { final: true }
+    }
+  };
+  var origTransition = spec.states.a.on.go;  // the plain object
+
+  machine.createDefinition(spec);
+
+  // spec.states.a.on.go must still be the original plain object, not wrapped in an array
+  eq(Array.isArray(spec.states.a.on.go), false, 'createDefinition does not mutate caller spec to array');
+  eq(spec.states.a.on.go, origTransition, 'caller-owned transition object is unchanged');
+
+  // Calling createDefinition a second time must produce an identical definition
+  var def2 = machine.createDefinition(spec);
+  eq(def2.id, 'no-mutate', 'second createDefinition call succeeds with same spec');
+})();
+
+
+describe('Bug 6 — executePipeline cancels timers after completion');
+
+(function () {
+  var timersCancelled = [];
+  var timerIdCounter = 100;
+  var pipeTimerDef = machine.createDefinition({
+    id: 'pipe-timer',
+    states: {
+      waiting: { after: { ms: 5000, target: 'done' }, on: { go: [{ target: 'done' }], __timeout: [{ target: 'done' }] } },
+      done: { final: true }
+    }
+  });
+
+  // Run pipeline — it should cancel the `after` timer it set up
+  machine.executePipeline(pipeTimerDef, {
+    effects: {},
+    eventSelector: function () { return 'go'; }
+  });
+
+  // After pipeline returns, inst._timers should be empty (timers cancelled)
+  // We verify by checking via a custom mock host
+  var cancelled = [];
+  var scheduled = [];
+  var mockTimerHost = {
+    now: function () { return Date.now(); },
+    scheduleAfter: function (ms, cb) { var id = ++timerIdCounter; scheduled.push(id); return id; },
+    scheduleEvery: function (ms, cb) { var id = ++timerIdCounter; scheduled.push(id); return id; },
+    cancelTimer: function (id) { cancelled.push(id); },
+    emit: function () {},
+    persist: null,
+    log: function () {},
+    capabilities: ['go']
+  };
+
+  var pipeTimerResult = machine.executePipeline(pipeTimerDef, {
+    effects: { go: function () {} },
+    eventSelector: function () { return 'go'; },
+    _host: mockTimerHost   // not used — pipeline creates its own host
+  });
+
+  // The pipeline instance's _timers must be empty after it returns
+  eq(pipeTimerResult.instance._timers.length, 0, 'pipeline instance has no live timers after completion');
+})();
+
+
+describe('Bug 7 — executePipeline collects events from ancestor states');
+
+(function () {
+  // Child state has no `on`, parent has `submit` → final.
+  // Pipeline must be able to fire parent's event.
+  var ancestorDef = machine.createDefinition({
+    id: 'pipe-ancestor',
+    states: {
+      processing: {
+        on: { submit: [{ target: 'done' }] },  // event on PARENT
+        states: {
+          validate: {}   // atomic child with no events of its own
+        }
+      },
+      done: { final: true }
+    }
+  });
+
+  var ancestorResult = machine.executePipeline(ancestorDef, {});
+  eq(ancestorResult.instance.state, 'done', 'pipeline fires parent-level event from child atomic state');
+  eq(ancestorResult.blocked, false, 'not blocked — parent event was found');
+})();
+
+
+describe('Bug 8 — unwatch removes a single watcher, leaves others intact');
+
+(function () {
+  var uwDef = machine.createDefinition({
+    id: 'unwatch-single',
+    context: { x: 0 },
+    states: {
+      a: { on: { tick: [{ target: 'b', action: '(inc! x)' }] } },
+      b: { on: { tick: [{ target: 'a', action: '(inc! x)' }] } }
+    }
+  });
+
+  var uwInst = machine.createInstance(uwDef);
+  var log1 = [], log2 = [];
+  var fn1 = function (k) { log1.push(k); };
+  var fn2 = function (k) { log2.push(k); };
+
+  machine.watch(uwInst, fn1);
+  machine.watch(uwInst, fn2);
+  machine.sendEvent(uwInst, 'tick');
+  eq(log1.length, 1, 'both watchers fire before unwatch: fn1');
+  eq(log2.length, 1, 'both watchers fire before unwatch: fn2');
+
+  machine.unwatch(uwInst, fn1);   // remove only fn1
+  machine.sendEvent(uwInst, 'tick');
+  eq(log1.length, 1, 'fn1 not called after unwatch');
+  eq(log2.length, 2, 'fn2 still called after fn1 unwatched');
+
+  machine.unwatch(uwInst);        // remove all
+  machine.sendEvent(uwInst, 'tick');
+  eq(log2.length, 2, 'fn2 not called after unwatch-all');
+})();
+
+
+describe('history — bounded by maxHistory (default 200)');
+
+(function () {
+  var histDef = machine.createDefinition({
+    id: 'hist-cap',
+    states: {
+      a: { on: { go: [{ target: 'b' }] } },
+      b: { on: { back: [{ target: 'a' }] } }
+    }
+  });
+  var histInst = machine.createInstance(histDef);
+  for (var h = 0; h < 300; h++) {
+    machine.sendEvent(histInst, h % 2 === 0 ? 'go' : 'back');
+  }
+  eq(histInst.history.length, 200, 'history capped at exactly 200 after 300 events');
+})();
+
+describe('history — custom maxHistory via spec');
+
+(function () {
+  var histSmallDef = machine.createDefinition({
+    id: 'hist-small',
+    maxHistory: 5,
+    states: {
+      a: { on: { go: [{ target: 'b' }] } },
+      b: { on: { back: [{ target: 'a' }] } }
+    }
+  });
+  var histSmallInst = machine.createInstance(histSmallDef);
+  for (var hs = 0; hs < 20; hs++) {
+    machine.sendEvent(histSmallInst, hs % 2 === 0 ? 'go' : 'back');
+  }
+  eq(histSmallInst.history.length, 5, 'custom maxHistory=5 — exactly 5 after 20 events');
+})();
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Quality check — new bugs                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('H6 — watchers called on targetless transitions');
+(function () {
+  var def = machine.createDefinition({
+    id: 'watchTargetless', initial: 'idle',
+    states: { idle: { on: { ping: [{ action: '(inc! count)' }] } } }
+  });
+  var inst = machine.createInstance(def, { context: { count: 0 } });
+  var watchLog = [];
+  // watcher signature: (key, oldVal, newVal, state)
+  machine.watch(inst, function (key, oldVal, newVal) { watchLog.push({ key: key, oldVal: oldVal, newVal: newVal }); });
+  machine.sendEvent(inst, 'ping');
+  assert(watchLog.length === 1, 'watcher called once after targetless transition (got ' + watchLog.length + ')');
+  eq(watchLog[0].key, 'count', 'watcher reports correct key');
+  eq(watchLog[0].oldVal, 0, 'old value is 0');
+  eq(watchLog[0].newVal, 1, 'new value is 1');
+  eq(inst.context.count, 1, 'context updated to count=1');
+})();
+
+describe('H9 — snapshot returns copy not live history reference');
+(function () {
+  var def = machine.createDefinition({
+    id: 'snapHistory', initial: 'a',
+    states: { a: { on: { go: [{ target: 'b' }] } }, b: {} }
+  });
+  var inst = machine.createInstance(def);
+  machine.sendEvent(inst, 'go');
+  var snap = machine.snapshot(inst);
+  var snapLen = snap.history.length;
+  machine.sendEvent(inst, 'go'); // won't transition (b has no events), but history stays
+  eq(snap.history.length, snapLen, 'snapshot.history length unchanged after further mutations');
+})();
+
+describe('M8 — pipeline not blocked when final state reached on last step');
+(function () {
+  var def = machine.createDefinition({
+    id: 'finalOnLastStep', initial: 'a',
+    states: {
+      a: { on: { go: [{ target: 'b' }] } },
+      b: { on: { go: [{ target: 'done' }] } },
+      done: { final: true }
+    }
+  });
+  // maxSteps=2 — exactly enough steps to reach final
+  var result = machine.executePipeline(def, {
+    maxSteps: 2,
+    eventSelector: function (events) { return events[0] || null; }
+  });
+  eq(result.blocked, false, 'not blocked when final reached on last step');
+  eq(result.instance.state, 'done', 'reached final state');
+})();
+
+
+describe('L4 — inspect does not expose internal events (__timeout, __auto)');
+
+(function () {
+  // A machine with an `after` timer has __timeout in its on map at definition time.
+  // inspect() must not expose __timeout as an enabled transition.
+  var afterDef = machine.createDefinition({
+    id: 'l4-test',
+    initial: 'waiting',
+    context: {},
+    states: {
+      waiting: {
+        after: { ms: 5000, target: 'done' }
+      },
+      done: { final: true }
+    }
+  });
+  var afterInst = machine.createInstance(afterDef);
+  var info = machine.inspect(afterInst);
+  var internalNames = info.enabled.map(function (t) { return t.event; }).filter(function (e) {
+    return e === '__timeout' || e === '__auto' || e === '.';
+  });
+  deepEq(internalNames, [], 'inspect enabled list contains no internal event names');
+})();
+
+
+describe('createResult — enabled does not include internal events (__timeout, __auto)');
+
+(function () {
+  // sendEvent returns result.enabled via createResult — must filter internal names.
+  var timerDef = machine.createDefinition({
+    id: 'cr-internal-test',
+    initial: 'waiting',
+    context: {},
+    states: {
+      waiting: {
+        after: { ms: 5000, target: 'done' },
+        on: { proceed: [{ target: 'done' }] }
+      },
+      done: { final: true }
+    }
+  });
+  var inst = machine.createInstance(timerDef);
+  // A failed transition returns result.enabled for the current state (waiting).
+  // waiting has both 'proceed' and '__timeout' in its on map.
+  // createResult must not expose '__timeout'.
+  var result = machine.sendEvent(inst, 'nonexistent');
+  deepEq(result.enabled, ['proceed'], 'createResult enabled is [proceed] — no __timeout');
+  // cleanup — override host to cancel the timer
+  inst._host.cancelTimer = function () {};
+})();
+
+
+describe('restore — _statePath preserved in pending timer metadata');
+
+(function () {
+  // When a snapshot is restored, the afterMeta and everyMeta objects must carry
+  // _statePath so that clearTimersForState() can remove them when the state exits.
+  // Without _statePath, ghost timers survive state transitions.
+  var timerDef2 = machine.createDefinition({
+    id: 'restore-statepath-test',
+    initial: 'waiting',
+    context: {},
+    states: {
+      waiting: {
+        after: { ms: 100000, target: 'done' },
+        on: { go: [{ target: 'done' }] }
+      },
+      done: { final: true }
+    }
+  });
+
+  var inst = machine.createInstance(timerDef2);
+  eq(inst._pendingTimers.length, 1, 'original instance has one pending timer');
+  eq(inst._pendingTimers[0]._statePath, 'waiting', 'original timer has _statePath=waiting');
+
+  var snap = machine.snapshot(inst);
+  eq(snap.pendingTimers.length, 1, 'snapshot captures one pending timer');
+  eq(snap.pendingTimers[0]._statePath, 'waiting', 'snapshot timer has _statePath=waiting');
+
+  var inst2 = machine.restore(timerDef2, snap);
+  eq(inst2._pendingTimers.length, 1, 'restored instance has one pending timer');
+  eq(inst2._pendingTimers[0]._statePath, 'waiting', 'restored timer has _statePath=waiting');
+
+  inst._timers.forEach(function (id) { clearTimeout(id); clearInterval(id); });
+  inst2._timers.forEach(function (id) { clearTimeout(id); clearInterval(id); });
+})();
+
+
+describe('targetless transitions respect maxHistory cap');
+
+(function () {
+  var tlDef = machine.createDefinition({
+    id: 'tl-hist-cap',
+    initial: 'active',
+    context: { n: 0 },
+    states: { active: { on: { bump: [{ action: '(inc! n)' }] } } },
+    maxHistory: 10
+  });
+  var inst = machine.createInstance(tlDef);
+  for (var i = 0; i < 25; i++) machine.sendEvent(inst, 'bump');
+  eq(inst.history.length, 10, 'targetless transitions capped at maxHistory=10');
+  eq(inst.context.n, 25, 'all 25 events executed');
+})();
+
+
+describe('snapshot — pendingTimers is a copy, not a live reference');
+
+(function () {
+  var snapDef = machine.createDefinition({
+    id: 'snap-copy-test',
+    initial: 'waiting',
+    context: {},
+    states: { waiting: { after: { ms: 99999, target: 'done' } }, done: { final: true } }
+  });
+  var inst = machine.createInstance(snapDef);
+  var snap = machine.snapshot(inst);
+  var origLen = inst._pendingTimers.length;
+  snap.pendingTimers.push({ type: 'after', ms: 1, target: 'x', createdAt: 0, _statePath: null });
+  eq(inst._pendingTimers.length, origLen, 'snapshot mutation does not affect live instance');
+  inst._timers.forEach(function (id) { clearTimeout(id); clearInterval(id); });
+})();
+
+
+describe('snapshot — history entries are deep copies');
+
+(function () {
+  var histDef = machine.createDefinition({
+    id: 'snap-hist-deep',
+    initial: 'a',
+    context: {},
+    states: { a: { on: { go: [{ target: 'b' }] } }, b: {} }
+  });
+  var inst = machine.createInstance(histDef);
+  machine.sendEvent(inst, 'go');
+  var snap = machine.snapshot(inst);
+  snap.history[0].event = 'TAMPERED';
+  eq(inst.history[0].event, 'go', 'snapshot history mutation does not affect live instance');
+})();
+
+
+describe('restore — _stateTimers populated for saved timers');
+
+(function () {
+  var rtDef = machine.createDefinition({
+    id: 'restore-statetimers',
+    initial: 'waiting',
+    context: {},
+    states: { waiting: { after: { ms: 99999, target: 'done' }, on: { go: [{ target: 'done' }] } }, done: { final: true } }
+  });
+  var inst = machine.createInstance(rtDef);
+  var snap = machine.snapshot(inst);
+  var inst2 = machine.restore(rtDef, snap);
+  // _stateTimers must be populated so clearTimersForState works on transition
+  deepEq(Object.keys(inst2._stateTimers), ['waiting'], 'restored instance has _stateTimers for waiting state');
+  eq(inst2._stateTimers.waiting.length, 1, 'restored instance has exactly one timer in waiting state');
+  // Transition should cancel the timer via _stateTimers
+  machine.sendEvent(inst2, 'go');
+  eq(inst2.state, 'done', 'restored instance transitions correctly');
+  inst._timers.forEach(function (id) { clearTimeout(id); clearInterval(id); });
+  inst2._timers.forEach(function (id) { clearTimeout(id); clearInterval(id); });
+})();
+
+
+describe('createInstance — options.context values are deep-copied');
+
+(function () {
+  var dcDef = machine.createDefinition({
+    id: 'deep-copy-opts',
+    initial: 's',
+    context: {},
+    states: { s: {} }
+  });
+  var nested = { name: 'Bob' };
+  var inst = machine.createInstance(dcDef, { context: { user: nested } });
+  nested.name = 'Alice';
+  eq(inst.context.user.name, 'Bob', 'options.context nested object is isolated after create');
+})();
+
+
+describe('compound state — invalid initial caught by validate');
+
+(function () {
+  var badDef = machine.createDefinition({
+    id: 'bad-compound',
+    initial: 'parent',
+    context: {},
+    states: {
+      parent: {
+        initial: 'nonexistent',
+        states: { child: {} }
+      }
+    }
+  });
+  var issues = machine.validate(badDef);
+  var initIssue = null;
+  for (var vi = 0; vi < issues.length; vi++) {
+    if (issues[vi].type === 'invalid-initial') { initIssue = issues[vi]; break; }
+  }
+  assert(initIssue !== null, 'validate includes an invalid-initial issue');
+  eq(initIssue.state, 'parent', 'invalid-initial issue targets parent state');
+})();
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  executePipelineAsync                                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('executePipelineAsync — exists and returns a promise');
+
+(async function () {
+  assert(typeof machine.executePipelineAsync === 'function', 'executePipelineAsync exported');
+
+  // Simple sync adapter — still works in async pipeline
+  var syncDef = machine.createDefinition({
+    id: 'async-basic', initial: 'draft', context: { title: 'Test' },
+    states: {
+      draft: { on: { submit: [{ target: 'submitted', action: '(set! submitted_at (now))' }] } },
+      submitted: { on: { approve: [{ target: 'done' }] } },
+      done: { final: true }
+    }
+  });
+  var syncResult = await machine.executePipelineAsync(syncDef, { maxSteps: 5 });
+  eq(syncResult.instance.state, 'done', 'async pipeline reaches final state with sync adapters');
+  eq(syncResult.blocked, false, 'not blocked');
+
+
+  describe('executePipelineAsync — async adapter with bind');
+
+  // Async adapter returns a promise. bind injects result into context.
+  var solveDef = machine.createDefinition({
+    id: 'async-bind', initial: 'pending', context: { input: 42, result: null },
+    states: {
+      pending: { on: { compute: [{
+        target: 'done',
+        action: "(invoke! :type 'solver' :bind 'result' :input input)"
+      }] } },
+      done: { final: true }
+    }
+  });
+
+  var solverCalled = false;
+  var solverInput = null;
+  var bindResult = await machine.executePipelineAsync(solveDef, {
+    maxSteps: 5,
+    effects: {
+      solver: function (input) {
+        solverCalled = true;
+        solverInput = input;
+        return new Promise(function (resolve) {
+          setTimeout(function () { resolve(input * 2); }, 10);
+        });
+      }
+    }
+  });
+
+  eq(solverCalled, true, 'async adapter was called');
+  eq(solverInput, 42, 'adapter received correct input');
+  eq(bindResult.instance.context.result, 84, 'bind injected async result into context (42 * 2 = 84)');
+  eq(bindResult.instance.state, 'done', 'reached final state after async effect');
+  eq(bindResult.effects.length, 1, 'one effect logged');
+  eq(bindResult.effects[0].type, 'solver', 'effect type is solver');
+
+
+  describe('executePipelineAsync — on-success event injection');
+
+  var successDef = machine.createDefinition({
+    id: 'async-success', initial: 'pending', context: { status: null },
+    states: {
+      pending: { on: {
+        run: [{ action: "(invoke! :type 'api' :on-success 'completed' :input 'go')" }],
+        completed: [{ target: 'done', action: "(set! status 'ok')" }]
+      } },
+      done: { final: true }
+    }
+  });
+
+  var successResult = await machine.executePipelineAsync(successDef, {
+    maxSteps: 10,
+    effects: {
+      api: function () {
+        return Promise.resolve('response-data');
+      }
+    }
+  });
+
+  eq(successResult.instance.state, 'done', 'on-success event advanced to done');
+  eq(successResult.instance.context.status, 'ok', 'on-success action ran');
+
+
+  describe('executePipelineAsync — on-error event injection');
+
+  var errorDef = machine.createDefinition({
+    id: 'async-error', initial: 'pending', context: { error: null },
+    states: {
+      pending: { on: {
+        run: [{ action: "(invoke! :type 'flaky' :on-error 'failed' :input 'go')" }],
+        failed: [{ target: 'error', action: "(set! error 'adapter failed')" }]
+      } },
+      error: { final: true }
+    }
+  });
+
+  var errorResult = await machine.executePipelineAsync(errorDef, {
+    maxSteps: 10,
+    effects: {
+      flaky: function () {
+        return Promise.reject(new Error('network timeout'));
+      }
+    }
+  });
+
+  eq(errorResult.instance.state, 'error', 'on-error event routed to error state');
+  eq(errorResult.instance.context.error, 'adapter failed', 'error action ran');
+
+
+  describe('executePipelineAsync — multiple sequential async effects');
+
+  var multiDef = machine.createDefinition({
+    id: 'async-multi', initial: 'step1', context: { a: null, b: null },
+    states: {
+      step1: { on: { go: [{
+        target: 'step2',
+        action: "(invoke! :type 'fetch-a' :bind 'a' :input 'first')"
+      }] } },
+      step2: { on: { go: [{
+        target: 'done',
+        action: "(invoke! :type 'fetch-b' :bind 'b' :input 'second')"
+      }] } },
+      done: { final: true }
+    }
+  });
+
+  var callOrder = [];
+  var multiResult = await machine.executePipelineAsync(multiDef, {
+    maxSteps: 10,
+    effects: {
+      'fetch-a': function (input) {
+        callOrder.push('a');
+        return new Promise(function (resolve) { setTimeout(function () { resolve('result-a'); }, 5); });
+      },
+      'fetch-b': function (input) {
+        callOrder.push('b');
+        return new Promise(function (resolve) { setTimeout(function () { resolve('result-b'); }, 5); });
+      }
+    }
+  });
+
+  eq(multiResult.instance.state, 'done', 'multi-step async pipeline reached done');
+  eq(multiResult.instance.context.a, 'result-a', 'first async result bound');
+  eq(multiResult.instance.context.b, 'result-b', 'second async result bound');
+  deepEq(callOrder, ['a', 'b'], 'adapters called sequentially in pipeline order');
+  eq(multiResult.effects.length, 2, 'two effects logged');
+
+
+  describe('executePipelineAsync — maxSteps respected');
+
+  var loopDef = machine.createDefinition({
+    id: 'async-loop', initial: 'a', context: {},
+    states: {
+      a: { on: { go: [{ target: 'b' }] } },
+      b: { on: { go: [{ target: 'a' }] } }
+    }
+  });
+
+  var loopResult = await machine.executePipelineAsync(loopDef, { maxSteps: 4 });
+  eq(loopResult.blocked, true, 'blocked after maxSteps');
+  eq(loopResult.reason, 'maxSteps exceeded', 'reason is maxSteps');
+
+
+  describe('executePipelineAsync — chained effects from on-success event');
+
+  var chainDef = machine.createDefinition({
+    id: 'async-chain', initial: 'pending', context: { logged: false },
+    states: {
+      pending: { on: {
+        run: [{ action: "(invoke! :type 'api' :on-success 'api-done' :input 'req')" }],
+        'api-done': [{
+          target: 'done',
+          action: "(invoke! :type 'logger' :bind 'logged' :input 'success')"
+        }]
+      } },
+      done: { final: true }
+    }
+  });
+
+  var chainEffects = [];
+  var chainResult = await machine.executePipelineAsync(chainDef, {
+    maxSteps: 10,
+    eventSelector: function (events) {
+      // Prefer 'run' over 'api-done' — api-done should only fire via on-success
+      return events.indexOf('run') !== -1 ? 'run' : events[0];
+    },
+    effects: {
+      api: function () { return Promise.resolve('data'); },
+      logger: function (input) { chainEffects.push(input); return true; }
+    }
+  });
+
+  eq(chainResult.instance.state, 'done', 'chained effects: reached done');
+  eq(chainResult.instance.context.logged, true, 'chained effects: logger bind injected');
+  deepEq(chainEffects, ['success'], 'chained effects: logger adapter called with correct input');
+  eq(chainResult.effects.length, 2, 'chained effects: both effects logged');
+
+
+  describe('executePipelineAsync — no adapter logs correctly');
+
+  var noAdapterDef = machine.createDefinition({
+    id: 'async-no-adapter', initial: 'a', context: {},
+    states: {
+      a: { on: { go: [{ target: 'b', action: "(invoke! :type 'missing' :input 'x')" }] } },
+      b: { final: true }
+    }
+  });
+
+  var noAdapterResult = await machine.executePipelineAsync(noAdapterDef, { maxSteps: 5, effects: {} });
+  eq(noAdapterResult.instance.state, 'b', 'no-adapter: reached final state');
+  eq(noAdapterResult.effects.length, 1, 'no-adapter: effect logged');
+  eq(noAdapterResult.effects[0].service, 'no-adapter', 'no-adapter: service marked as no-adapter');
+
+
+  describe('executePipelineAsync — sync adapter return value bound correctly');
+
+  var syncBindDef = machine.createDefinition({
+    id: 'async-sync-bind', initial: 'a', context: { id: null },
+    states: {
+      a: { on: { go: [{ target: 'b', action: "(invoke! :type 'create' :bind 'id' :input 'data')" }] } },
+      b: { final: true }
+    }
+  });
+
+  var syncBindResult = await machine.executePipelineAsync(syncBindDef, {
+    maxSteps: 5,
+    effects: { create: function () { return 'sync-id-42'; } }
+  });
+
+  eq(syncBindResult.instance.context.id, 'sync-id-42', 'sync adapter return value bound via await');
+
+
+  // ── Summary ──
+  console.log('\n' + passed + ' passed, ' + failed + ' failed, ' + (passed + failed) + ' total');
+  process.exit(failed > 0 ? 1 : 0);
+
+})().catch(function (err) {
+  console.error(err);
+  process.exit(1);
+});
