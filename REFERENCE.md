@@ -188,7 +188,7 @@ $el                 machine element
 (do a b c)                  sequence, return last
 (let [x 1 y 2] body)       local bindings (implicit do, multiple body forms)
 (fn [x y] body)             lambda (implicit do, multiple body forms)
-#(> % 0)                    shorthand lambda (% = single argument, no %1/%2)
+#(> % 0)                    shorthand lambda (% = first arg, %1/%2/%3 for multiple)
 (-> x (f a) (g b))          thread first
 (->> x (f) (g))             thread last
 ```
@@ -361,7 +361,7 @@ When a guard blocks a transition, debug mode logs which guard expression failed 
 **Clojure divergences:**
 - `(join arr sep)` takes array first, separator second. Clojure's `clojure.string/join` takes separator first.
 - `(contains? s sub)` checks substring presence. Clojure's `contains?` checks key membership. Use `(has-key? obj key)` for key checks.
-- `#(> % 0)` supports single argument `%` only. Clojure also supports `%1`, `%2`, `%3`.
+- `#(> % 0)` supports `%` (first arg) and `%1`, `%2`, `%3` for multiple arguments, matching Clojure convention.
 
 **Reserved event names:** `__auto` (eventless transitions) and `__timeout` (timer-fired transitions) are used internally and should not be used as event names in machine definitions.
 
@@ -385,7 +385,10 @@ machine_native implements a subset of the W3C SCXML specification, extended with
 | Compound (nested) states | Supported |
 | Parallel states | Not yet |
 | History states | Not yet |
-| `<invoke>` | Not yet (use `invoke!` s-expression) |
+| `<invoke type="scxml" src="name"/>` | Supported — loads stored machines as live children |
+| `<invoke>` with `mn-state` filter | Supported (MP extension) |
+| `<mn-project>` / `<mn:project>` | Supported — context projection at transport boundary (MP extension) |
+| `<mn-project as="name">` | Supported — derive a different machine for different audiences |
 | `<raise>` / internal events | Not yet |
 
 ---
@@ -407,8 +410,9 @@ var scxml = require('machine-native/scxml');
 | `machine.snapshot(inst)` | Serializable copy for persistence |
 | `machine.restore(def, snapshot, host)` | Restore from snapshot |
 | `machine.validate(def)` | Validate a definition (check targets, guards) |
-| `machine.executePipeline(def, options)` | Advance machine synchronously to final state |
-| `machine.executePipelineAsync(def, options)` | Same, but `await`s each effect adapter |
+| `machine.executePipeline(def, opts)` | Sync pipeline — advance machine through transitions |
+| `machine.executePipelineAsync(def, opts)` | Async pipeline — awaits effect adapters |
+| `machine.watch(inst, callback)` | Observe context changes, returns unwatch function |
 
 ### executePipeline / executePipelineAsync
 

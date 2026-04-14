@@ -10,7 +10,7 @@
 | Binding purity | Structural enforcement, `eval` rejects mutation forms | Convention only (Alpine) |
 | Shared engine | Single JS codebase, ES5, UMD | Rust port (two codebases to maintain) |
 | Backend markup | SCXML + MP extensions | Custom XML format (no standard to build on) |
-| Backend persistence | Postgres with JSONB datamodels | Document DB (less query power), flat files (no transactions) |
+| Backend persistence | Pluggable effect adapters with SCXML snapshots (machine-as-persistence) | Hardcoded persistence engine (limits host flexibility) |
 | Canonical format | Plain JS object with s-expression strings preserved | AST-compiled form (loses readability and inspectability) |
 
 ## Architecture approach
@@ -23,7 +23,7 @@ Three-layer split:
 
 3. Host runtimes: platform-specific adapters that connect the engine to the outside world.
    - Browser host: DOM bindings, event delegation, CSS transitions, MutationObserver, localStorage.
-   - Node host: HTTP API, Postgres persistence, effect adapters, durable timers.
+   - Node host: HTTP API, persistence via effect adapters (SCXML snapshots), durable timers.
 
 ## Key quality approaches
 

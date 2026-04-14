@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Toast notification machine.
+
+  States: idle, show (auto-dismiss after 3s)
+  Receives events from sibling machines.
+  Pure browser machine — never leaves the DOM.
+-->
+<scxml xmlns:mn="http://machine-native.dev/scxml/1.0"
+       name="po-toast" initial="idle"
+       mn-ctx='{"message":"","type":"info"}'>
+
+  <state id="idle">
+    <transition event="show-toast" target="show"/>
+  </state>
+
+  <state id="show">
+    <mn:temporal>(after 3000 (to idle))</mn:temporal>
+  </state>
+</scxml>

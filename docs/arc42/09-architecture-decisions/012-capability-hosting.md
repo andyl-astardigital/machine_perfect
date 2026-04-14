@@ -1,7 +1,7 @@
 # ADR-012: Capability-based hosting and distributed transition execution
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 Traditional distributed systems decompose into services, each with its own codebase, API, deployment, and team. Business logic scatters across boundaries. The contract between services (API spec) is separate from the implementation (code). Integration is glue work.

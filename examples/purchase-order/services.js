@@ -1,64 +1,65 @@
 /**
  * Purchase order pipeline — capability-based machine execution.
  *
- * Effect adapters define this host's capabilities. The framework's
- * executePipeline handles the compile→instance→event loop→dispatch
- * pattern. This file only defines WHAT this host can do.
+ * Wires effect adapters from adapters/ into the pipeline executor.
+ * Each adapter is a single-responsibility module. This file only
+ * composes them and exposes the pipeline execution function.
+ *
+ * No business logic. The machine carries the logic. This file is
+ * pure infrastructure: compile SCXML, execute with adapters, return SCXML.
  */
 
 var scxml = require('../../mn/scxml');
 var machine = require('../../mn/machine');
 var transforms = require('../../mn/transforms');
 
-
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  Storage                                                                ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-
-var storage = [];
-
-function setStorage(store) { storage = store; }
+var auth = require('./adapters/auth');
+var log = require('./adapters/log');
+var notify = require('./adapters/notify');
+var fulfil = require('./adapters/fulfil');
+var persist = require('./adapters/persist');
+var data = require('./adapters/data');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  Effect adapters — this host's capabilities                             ║
+// ║  Effect adapter registry                                                ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 var adapters = {
-  'log': function (input) {
-    console.log('[effect:log] ' + input);
-  },
-  'notify': function (input) {
-    // Async — simulates sending an email via an external API
-    return new Promise(function (resolve) {
-      setTimeout(function () {
-        console.log('[effect:notify] to=' + input.to + ' subject=' + input.subject);
-        resolve({ sent: true, to: input.to });
-      }, 2);
-    });
-  },
-  'fulfil': function (input) {
-    console.log('[effect:fulfil] ' + input.title + ' (' + input.items.length + ' items)');
-  },
-  'persist': function (input, context) {
-    // Async — simulates a database write
-    var id = 'po-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
-    var order = {
-      id: id, title: input.title, amount: input.amount,
-      items: input.items, notes: input.notes || '',
-      status: input.status || 'fulfilled', created_at: input.created_at || Date.now()
-    };
-    return new Promise(function (resolve) {
-      setTimeout(function () {
-        storage.push(order);
-        console.log('[effect:persist] order ' + id + ' stored (' + storage.length + ' total)');
-        resolve(id);
-      }, 2);
-    });
-  }
+  'auth': auth,
+  'data': data,
+  'log': log,
+  'notify': notify,
+  'fulfil': fulfil,
+  'persist': persist
 };
 
 var capabilities = Object.keys(adapters);
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Result formatting                                                      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+function _formatResult(def, result, scxmlMarkup) {
+  var isFinal = result.instance && result.instance.state &&
+    def._stateTree[result.instance.state] &&
+    def._stateTree[result.instance.state].spec.final;
+
+  if (isFinal) console.log('[executor] final state: ' + result.instance.state);
+  if (result.blocked) console.log('[executor] blocked: ' + result.reason);
+  if (result.route) console.log('[executor] routed: requires ' + (result.route.requires || []).join(', '));
+  console.log('[executor] complete.\n');
+
+  return {
+    scxml: result.format || scxmlMarkup,
+    history: result.history,
+    effects: result.effects,
+    blocked: result.blocked || false,
+    reason: result.reason || null,
+    route: result.route || null
+  };
+}
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -67,83 +68,36 @@ var capabilities = Object.keys(adapters);
 
 function execute(scxmlMarkup) {
   console.log('[executor] received SCXML');
-
   var def = scxml.compile(scxmlMarkup, {});
-
   var result = machine.executePipeline(def, {
     effects: adapters,
     maxSteps: 10,
     format: scxmlMarkup,
-    formatUpdater: transforms.updateScxmlState
+    formatUpdater: transforms.updateScxmlState,
+    compiler: scxml.compile,
+    canonicalResolver: function (id) { return require('./db').one(id); }
   });
-
-  var isFinal = result.instance && result.instance.state &&
-    def._stateTree[result.instance.state] &&
-    def._stateTree[result.instance.state].spec.final;
-
-  if (isFinal) console.log('[executor] final state: ' + result.instance.state);
-  if (result.blocked) console.log('[executor] blocked: ' + result.reason);
-  if (result.route) console.log('[executor] route signal: requires ' + result.route.requires.join(', '));
-
-  console.log('[executor] complete.\n');
-
-  return {
-    scxml: result.format || scxmlMarkup,
-    history: result.history,
-    effects: result.effects,
-    blocked: result.blocked || false,
-    reason: result.reason || null,
-    route: result.route || null
-  };
+  return _formatResult(def, result, scxmlMarkup);
 }
-
-
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  Async pipeline execution                                               ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-//
-// Same as execute() but awaits each effect adapter. Use when adapters
-// return promises (database queries, HTTP calls, solver invocations).
-// The bind field on invoke! injects the resolved value back into context
-// before the next guard evaluates.
 
 async function executeAsync(scxmlMarkup) {
   console.log('[executor] received SCXML (async)');
-
   var def = scxml.compile(scxmlMarkup, {});
-
   var result = await machine.executePipelineAsync(def, {
     effects: adapters,
     maxSteps: 10,
     effectTimeout: 10000,
     format: scxmlMarkup,
-    formatUpdater: transforms.updateScxmlState
+    formatUpdater: transforms.updateScxmlState,
+    compiler: scxml.compile,
+    canonicalResolver: function (id) { return require('./db').one(id); }
   });
-
-  var isFinal = result.instance && result.instance.state &&
-    def._stateTree[result.instance.state] &&
-    def._stateTree[result.instance.state].spec.final;
-
-  if (isFinal) console.log('[executor] final state: ' + result.instance.state);
-  if (result.blocked) console.log('[executor] blocked: ' + result.reason);
-  if (result.route) console.log('[executor] route signal: requires ' + result.route.requires.join(', '));
-
-  console.log('[executor] complete.\n');
-
-  return {
-    scxml: result.format || scxmlMarkup,
-    history: result.history,
-    effects: result.effects,
-    blocked: result.blocked || false,
-    reason: result.reason || null,
-    route: result.route || null
-  };
+  return _formatResult(def, result, scxmlMarkup);
 }
 
 
 module.exports = {
   execute: execute,
   executeAsync: executeAsync,
-  setStorage: setStorage,
   capabilities: capabilities
 };

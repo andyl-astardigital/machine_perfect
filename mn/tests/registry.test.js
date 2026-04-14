@@ -60,32 +60,42 @@ eq(inst.context.nodes.length, 0, 'starts empty');
 
 // Register a server node — set context, then send event
 inst.context.id = 'server-1';
-inst.context.address = 'http://localhost:4000';
 inst.context.capabilities = ['log', 'notify', 'ui-render'];
-inst.context.formats = ['html', 'scxml'];
+inst.context.transport = { type: 'http-post', address: 'http://localhost:4000/api/machine' };
 var r1 = machine.sendEvent(inst, 'register');
 
 eq(r1.targetless, true, 'register succeeded (targetless)');
 eq(inst.context.nodes.length, 1, 'one node registered');
 eq(inst.context.nodes[0].id, 'server-1', 'node id');
-eq(inst.context.nodes[0].address, 'http://localhost:4000', 'node address');
+eq(inst.context.nodes[0].transport.type, 'http-post', 'transport type');
+eq(inst.context.nodes[0].transport.address, 'http://localhost:4000/api/machine', 'transport address');
 deepEq(inst.context.nodes[0].capabilities, ['log', 'notify', 'ui-render'], 'capabilities');
-deepEq(inst.context.nodes[0].formats, ['html', 'scxml'], 'formats');
 eq(typeof inst.context.nodes[0].registered_at, 'number', 'registered_at is a timestamp');
 
 
 // Register a second node — fulfilment container
 inst.context.id = 'fulfilment-1';
-inst.context.address = 'http://localhost:4001';
 inst.context.capabilities = ['persist', 'fulfil'];
-inst.context.formats = ['scxml'];
+inst.context.transport = { type: 'http-post', address: 'http://localhost:4001/api/machine' };
 var r2 = machine.sendEvent(inst, 'register');
 
 eq(r2.targetless, true, 'second register succeeded (targetless)');
 eq(inst.context.nodes.length, 2, 'two nodes registered');
 eq(inst.context.nodes[1].id, 'fulfilment-1', 'second node id');
 deepEq(inst.context.nodes[1].capabilities, ['persist', 'fulfil'], 'second capabilities');
-deepEq(inst.context.nodes[1].formats, ['scxml'], 'second formats');
+eq(inst.context.nodes[1].transport.type, 'http-post', 'second transport type');
+
+
+// Register a browser node with SSE transport
+inst.context.id = 'browser-abc';
+inst.context.capabilities = ['dom', 'director-review'];
+inst.context.transport = { type: 'sse', channel: 'http://localhost:4000/sse/browser-abc' };
+var r2b = machine.sendEvent(inst, 'register');
+
+eq(r2b.targetless, true, 'browser SSE register succeeded');
+eq(inst.context.nodes.length, 3, 'three nodes registered');
+eq(inst.context.nodes[2].transport.type, 'sse', 'browser transport is SSE');
+eq(inst.context.nodes[2].transport.channel, 'http://localhost:4000/sse/browser-abc', 'SSE channel');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -96,20 +106,18 @@ describe('registry — guard rejects incomplete');
 
 // Clear the fields, then try to register with missing data
 inst.context.id = 'bad-1';
-inst.context.address = null;
+inst.context.transport = null;
 inst.context.capabilities = null;
-inst.context.formats = null;
 var r3 = machine.sendEvent(inst, 'register');
-eq(r3.transitioned, false, 'rejected: no address or capabilities');
-eq(inst.context.nodes.length, 2, 'still two nodes');
+eq(r3.transitioned, false, 'rejected: no transport or capabilities');
+eq(inst.context.nodes.length, 3, 'still three nodes');
 
 inst.context.id = 'bad-2';
-inst.context.address = 'http://x';
 inst.context.capabilities = ['log'];
-inst.context.formats = null;
+inst.context.transport = null;
 var r4 = machine.sendEvent(inst, 'register');
-eq(r4.transitioned, false, 'rejected: no formats');
-eq(inst.context.nodes.length, 2, 'still two nodes');
+eq(r4.transitioned, false, 'rejected: no transport');
+eq(inst.context.nodes.length, 3, 'still three nodes');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -139,20 +147,20 @@ var logNodes = engine.eval(
 eq(logNodes.length, 1, 'one node can log');
 eq(logNodes[0].id, 'server-1', 'server node');
 
-// Find nodes that accept 'html'
-var htmlNodes = engine.eval(
-  "(->> nodes (filter (fn [n] (includes? (get n :formats) 'html'))))",
+// Find nodes reachable via http-post
+var httpNodes = engine.eval(
+  "(->> nodes (filter (fn [n] (= (get (get n :transport) :type) 'http-post'))))",
   { nodes: nodes }
 );
-eq(htmlNodes.length, 1, 'one node accepts html');
-eq(htmlNodes[0].id, 'server-1', 'server accepts html');
+eq(httpNodes.length, 2, 'two nodes reachable via http-post');
 
-// Find nodes that accept 'scxml'
-var scxmlNodes = engine.eval(
-  "(->> nodes (filter (fn [n] (includes? (get n :formats) 'scxml'))))",
+// Find nodes reachable via SSE
+var sseNodes = engine.eval(
+  "(->> nodes (filter (fn [n] (= (get (get n :transport) :type) 'sse'))))",
   { nodes: nodes }
 );
-eq(scxmlNodes.length, 2, 'two nodes accept scxml');
+eq(sseNodes.length, 1, 'one node reachable via SSE');
+eq(sseNodes[0].id, 'browser-abc', 'SSE node is browser');
 
 // Find nodes that can BOTH persist AND fulfil
 var bothNodes = engine.eval(
@@ -179,11 +187,16 @@ describe('registry — deregister');
 inst.context.id = 'server-1';
 var r5 = machine.sendEvent(inst, 'deregister');
 eq(r5.targetless, true, 'deregister succeeded (targetless)');
-eq(inst.context.nodes.length, 1, 'one node remaining');
+eq(inst.context.nodes.length, 2, 'two nodes remaining (fulfilment + browser)');
 eq(inst.context.nodes[0].id, 'fulfilment-1', 'fulfilment remains');
 
-// Deregister the last one
+// Deregister fulfilment
 inst.context.id = 'fulfilment-1';
+machine.sendEvent(inst, 'deregister');
+eq(inst.context.nodes.length, 1, 'one node remaining (browser)');
+
+// Deregister browser
+inst.context.id = 'browser-abc';
 machine.sendEvent(inst, 'deregister');
 eq(inst.context.nodes.length, 0, 'no nodes remaining');
 
@@ -207,9 +220,8 @@ describe('Bug 17 — register event is targetless (transitioned=false, targetles
 (function () {
   var freshInst = machine.createInstance(registryDef);
   freshInst.context.id = 'bugtest-1';
-  freshInst.context.address = 'http://localhost:9000';
   freshInst.context.capabilities = ['log'];
-  freshInst.context.formats = ['html'];
+  freshInst.context.transport = { type: 'http-post', address: 'http://localhost:9000/api/machine' };
   var result = machine.sendEvent(freshInst, 'register');
   eq(result.transitioned, false, 'register: transitioned=false (targetless, no state change)');
   eq(result.targetless, true, 'register: targetless=true (self-update)');
@@ -222,20 +234,19 @@ describe('H7 — duplicate node ID registration is rejected');
 (function () {
   var dupInst = machine.createInstance(registryDef);
   dupInst.context.id = 'dup-1';
-  dupInst.context.address = 'http://localhost:5000';
   dupInst.context.capabilities = ['log'];
-  dupInst.context.formats = ['html'];
+  dupInst.context.transport = { type: 'http-post', address: 'http://localhost:5000/api/machine' };
   machine.sendEvent(dupInst, 'register');
   eq(dupInst.context.nodes.length, 1, 'first registration succeeds');
 
-  // Same ID, different address — must be rejected
+  // Same ID, different transport — must be rejected
   dupInst.context.id = 'dup-1';
-  dupInst.context.address = 'http://localhost:5001';
+  dupInst.context.transport = { type: 'http-post', address: 'http://localhost:5001/api/machine' };
   var rDup = machine.sendEvent(dupInst, 'register');
   eq(rDup.transitioned, false, 'duplicate id: transitioned=false');
   assert(!rDup.targetless, 'duplicate id: not targetless (guard blocked)');
   eq(dupInst.context.nodes.length, 1, 'still one node — original not replaced');
-  eq(dupInst.context.nodes[0].address, 'http://localhost:5000', 'original address preserved');
+  eq(dupInst.context.nodes[0].transport.address, 'http://localhost:5000/api/machine', 'original transport preserved');
 })();
 
 
@@ -315,8 +326,9 @@ async function runHttpTests() {
 
   describe('HTTP — POST /register succeeds');
   var reg1 = await httpPost(httpBase + '/register', {
-    id: 'http-node-1', address: 'http://localhost:9000',
-    capabilities: ['log'], formats: ['html']
+    id: 'http-node-1',
+    capabilities: ['log'],
+    transport: { type: 'http-post', address: 'http://localhost:9000/api/machine' }
   });
   eq(reg1.status, 200, 'status 200');
   eq(reg1.body.registered, true, 'registered: true');

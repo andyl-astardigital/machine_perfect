@@ -21,7 +21,7 @@
  *   POST /instances/:id/events/:event     Send event { data? }
  *   GET  /instances/:id/snapshot          Export instance
  *
- * @version 0.5.0
+ * @version 0.8.0
  * @license MIT
  */
 
@@ -173,7 +173,7 @@ function createServer(options) {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, X-MN-Target, X-MN-Machine'
+      'Access-Control-Allow-Headers': 'Content-Type'
     });
     res.end(body);
   }
@@ -232,7 +232,7 @@ function createServer(options) {
       res.writeHead(204, {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-MN-Target, X-MN-Machine'
+        'Access-Control-Allow-Headers': 'Content-Type'
       });
       res.end();
       return;

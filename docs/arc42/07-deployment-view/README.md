@@ -24,15 +24,15 @@ Distribution channels:
 Node.js host
   ├── mn/engine.js             (same engine as browser)
   ├── mn/machine.js            (canonical machine execution)
-  ├── mn/transforms.js         (HTML ↔ SCXML)
+  ├── mn/transforms.js         (SCXML metadata utilities)
   ├── mn/scxml.js              (SCXML compiler)
-  ├── effect adapters           (capabilities: persist, notify, fulfil, log, etc.)
-  └── views/                    (EJS templates for server-rendered machine markup)
+  ├── effect adapters           (pluggable: persist, notify, fulfil, log, etc.)
+  └── persistence              (adapter choice: SQLite, Postgres, flat files, etc.)
 ```
 
 A backend host is the shared engine with effect adapters. Any Node process that imports the engine and registers adapters is a capable host.
 
-## Capability-based deployment (proposed, ADR-012)
+## Capability-based deployment
 
 Traditional deployment defines services. Capability-based deployment defines pools:
 
@@ -85,7 +85,7 @@ machine_native/
   mn/
     engine.js                 ← runs everywhere
     machine.js                ← canonical machine execution
-    transforms.js             ← HTML ↔ SCXML, extractContext, extractMachine
+    transforms.js             ← SCXML metadata (extractMachine, extractMetadata, stampMetadata)
     browser.js                ← browser DOM runtime
     scxml.js                  ← SCXML compiler
     host.js                   ← HTTP server
@@ -94,11 +94,8 @@ machine_native/
     machines/                 ← SCXML machine definitions
     tests/                    ← all tests
   examples/
-    spa/                      ← Snow Check (client-side, JSON side effects)
-    purchase-order/           ← Full-stack (server-rendered, machine transport)
-      views/                  ← EJS templates (server-rendered machine markup)
-      components/             ← mn-import component files
-      services.js             ← Pipeline (3 capability pools in one process)
+    spa/                      ← Client-side only (browser machines, JSON side effects)
+    purchase-order/           ← Full-stack (machine transport, server pipeline, persistence)
   docs/
     arc42/                    ← This documentation
 ```

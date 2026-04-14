@@ -1,0 +1,68 @@
+<!--
+  Session — rendering.
+  Paired with session.scxml for behaviour.
+  Login form at login state. Authenticated state is invisible —
+  the Sign out button lives in the nav's shared navbar and emits 'sign-out'.
+-->
+<template mn-define="session">
+  <!-- Receives 'logout' from nav's Sign out button. The SCXML brain
+       has a 'logout' transition on the authenticated state — the canonical
+       engine handles it (clears $user, $token, $store.session, emits logged-out). -->
+  <mn-receive event="logout"></mn-receive>
+
+  <div mn-state="login">
+    <mn-temporal>(animate)</mn-temporal>
+    <main class="max-w-sm mx-auto p-6 pt-24">
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title justify-center text-2xl mb-2">Purchase Orders</h2>
+          <p class="text-center text-base-content/50 text-sm mb-4">Sign in to continue</p>
+
+          <div class="form-control">
+            <label class="label"><span class="label-text">Username</span></label>
+            <input mn-model="username" mn-ref="usernameInput" type="text"
+                   placeholder="alice, bob, or charlie" class="input input-bordered" autocomplete="username" />
+          </div>
+
+          <div class="form-control mt-2">
+            <label class="label"><span class="label-text">Password</span></label>
+            <input mn-model="password" type="password"
+                   placeholder="same as username" class="input input-bordered" autocomplete="current-password" />
+          </div>
+
+          <p class="text-error text-sm mt-2">
+            <mn-show>(some? $authError)</mn-show>
+            <mn-text>$authError</mn-text>
+          </p>
+
+          <button mn-to="authenticate" class="btn btn-primary mt-4">
+            <mn-bind attr="disabled">(or (empty? username) (empty? password))</mn-bind>
+            Sign in
+          </button>
+
+          <p class="text-xs text-base-content/30 text-center mt-3">
+            Credentials stored in SQLite with scrypt hashing
+          </p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div mn-state="authenticating">
+    <main class="max-w-sm mx-auto p-6 pt-24">
+      <div class="flex items-center justify-center py-16">
+        <span class="loading loading-spinner loading-lg"></span>
+      </div>
+    </main>
+  </div>
+
+  <!-- Empty — the Sign out button lives in nav's shared navbar.
+       The session machine at authenticated is invisible. Its job is done:
+       $store.session is written, 'authenticated' was emitted. -->
+  <div mn-state="authenticated"></div>
+
+  <div mn-state="failed">
+    <mn-temporal>(animate)</mn-temporal>
+    <mn-init>(to retry)</mn-init>
+  </div>
+</template>

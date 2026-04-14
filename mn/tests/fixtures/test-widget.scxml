@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml name="test-widget" initial="off">
+  <datamodel>
+    <data id="ctx" expr='{"count":0,"label":"Click me"}'/>
+  </datamodel>
+  <state id="off">
+    <transition event="toggle" target="on">
+      <mn-action><![CDATA[(inc! count)]]></mn-action>
+    </transition>
+  </state>
+  <state id="on">
+    <transition event="toggle" target="off"/>
+  </state>
+</scxml>

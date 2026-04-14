@@ -5,7 +5,7 @@
  * that satisfies these interfaces can be injected into the server.
  * The framework ships with in-memory storage. Everything else is yours.
  *
- * @version 0.5.0
+ * @version 0.8.0
  * @license MIT
  */
 

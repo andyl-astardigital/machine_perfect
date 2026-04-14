@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Purchase order pipeline machine.
+
+  States: draft → submitted → approved → fulfilled | rejected | cancelled
+                        ↘ director-approval ↗
+
+  Auth model: the machine carries its own identity.
+  - On submit, $user is stamped from $store.session into context
+  - On director-approve, approved_by is stamped from $store.session
+  - Guards on the browser check $store.session for role
+  - The SCXML travels to the server with $user and approved_by in context
+  - Server guards check what's IN the machine — no middleware
+
+  Data projection: mn:project defines what non-directors see when this
+  machine is loaded as an invoke child. Directors get the full context.
+  Everyone else gets a summary — no internal notes, no cost breakdown,
+  no approval chain. The projection runs on the server during invoke
+  resolution. Stripped fields never reach the browser.
+
+  Approval rules:
+  - Under £50,000: auto-approve
+  - £50,000–£100,000: director sign-off
+  - Over £100,000: rejected outright
+-->
+<scxml xmlns:mn="http://machine-native.dev/scxml/1.0"
+       name="purchase-order" initial="draft"
+       mn-ctx='{"title":"","amount":0,"items":[],"newItem":"","notes":"","urgent":false,"submitted_at":null,"approved_at":null,"$user":null,"$token":null,"approved_by":null,"cancelled_by":null,"cost_centre":"","internal_ref":"","margin_pct":0}'>
+
+  <!-- Non-directors get a different machine: purchase-order-status.
+       A read-only summary with no sensitive fields. The canonical PO
+       defines how it transforms — state mapping, context projection.
+       Sensitive data (notes, cost centre, margin, internal ref, tokens)
+       never leaves the server for non-directors. -->
+  <mn:project as="purchase-order-status" when="(!= (get $user :role) 'director')">
+    (obj
+      :title title
+      :amount amount
+      :item_count (count items)
+      :submitted_by (get $user :name)
+      :submitted_at submitted_at
+      :approved_at approved_at
+      :$initial (cond
+        (= $state 'fulfilled') 'fulfilled'
+        (= $state 'rejected') 'rejected'
+        (= $state 'cancelled') 'cancelled'
+        true 'pending'))
+  </mn:project>
+
+  <state id="draft">
+    <transition event="submit" target="submitted">
+      <mn:guard>(and (>= (count title) 3) (> amount 0) (> (count items) 0))</mn:guard>
+      <mn:action>(do
+        (set! submitted_at (now))
+        (set! $user (get $store.session :user))
+        (set! $token (get $store.session :token)))</mn:action>
+    </transition>
+
+    <transition event="add-item">
+      <mn:guard>(not (empty? newItem))</mn:guard>
+      <mn:action>(do (push! items (obj :name newItem :qty 1)) (set! newItem ''))</mn:action>
+    </transition>
+
+    <transition event="navigate-orders">
+      <mn:action>(emit navigate-orders)</mn:action>
+    </transition>
+  </state>
+
+  <!-- Submitted: server evaluates approval rules. -->
+  <state id="submitted">
+    <mn:where>(requires 'log' 'notify' 'persist' 'fulfil')</mn:where>
+
+    <!-- Auto-approve: under £50,000 -->
+    <transition event="approve" target="approved">
+      <mn:guard>(<= amount 50000)</mn:guard>
+      <mn:action>(do
+        (set! approved_at (now))
+        (invoke! :type 'notify'
+                 :input (obj :to 'finance@company.com'
+                             :subject (str 'Auto-approved: ' title ' by ' (get $user :name))
+                             :amount amount)))</mn:action>
+      <mn:emit>order-approved</mn:emit>
+    </transition>
+
+    <!-- Escalate: £50,000–£100,000 needs director -->
+    <transition event="escalate" target="director-approval">
+      <mn:guard>(and (> amount 50000) (<= amount 100000))</mn:guard>
+      <mn:action>(invoke! :type 'notify'
+                   :input (obj :to 'director@company.com'
+                               :subject (str 'Approval needed: ' title ' — £' amount ' from ' (get $user :name))))</mn:action>
+    </transition>
+
+    <!-- Reject: over £100,000 -->
+    <transition event="reject" target="rejected">
+      <mn:guard>(> amount 100000)</mn:guard>
+      <mn:action>(do
+        (invoke! :type 'notify'
+                 :input (obj :to (get $user :username)
+                             :subject (str 'Rejected: ' title)))
+        (invoke! :type 'persist')))</mn:action>
+      <mn:emit>order-rejected</mn:emit>
+    </transition>
+  </state>
+
+  <!-- Director approval: human-in-the-loop for £50k–£100k.
+       mn:where requires 'director-review' — no automated node has this.
+       Pipeline blocks. Machine is stored. Director loads it via invoke.
+       Browser guard checks $store.session — only directors can approve. -->
+  <state id="director-approval">
+    <mn:where>(requires 'director-review')</mn:where>
+
+    <!-- Submitter can cancel while awaiting approval -->
+    <transition event="cancel" target="cancelled">
+      <mn:action>(do
+        (set! cancelled_by (get $user :name))
+        (invoke! :type 'persist'))</mn:action>
+      <mn:emit>order-cancelled</mn:emit>
+    </transition>
+
+    <transition event="director-approve" target="approved">
+      <mn:guard>(= (get (get $store.session :user) :role) 'director')</mn:guard>
+      <mn:action>(do
+        (set! approved_at (now))
+        (set! approved_by (get $store.session :user))
+        (invoke! :type 'notify'
+                 :input (obj :to 'finance@company.com'
+                             :subject (str 'Director approved: ' title)
+                             :amount amount)))</mn:action>
+      <mn:emit>order-approved</mn:emit>
+    </transition>
+
+    <transition event="director-reject" target="rejected">
+      <mn:guard>(= (get (get $store.session :user) :role) 'director')</mn:guard>
+      <mn:action>(do
+        (set! approved_by (get $store.session :user))
+        (invoke! :type 'notify'
+                 :input (obj :to (get $user :username)
+                             :subject (str 'Director rejected: ' title)))
+        (invoke! :type 'persist')))</mn:action>
+      <mn:emit>order-rejected</mn:emit>
+    </transition>
+  </state>
+
+  <!-- Approved: fulfil and persist. Routes to server. -->
+  <state id="approved">
+    <mn:where>(requires 'fulfil' 'persist')</mn:where>
+    <transition event="fulfil" target="fulfilled">
+      <mn:action>(do
+        (invoke! :type 'fulfil'
+                 :input (obj :title title :items items))
+        (invoke! :type 'persist')))</mn:action>
+    </transition>
+  </state>
+
+  <!-- Rejected: blocks the pipeline — requires user-input (no automated node has it).
+       Same pattern as director-approval blocking on director-review.
+       The browser renders the rejection. The submitter can update and resubmit. -->
+  <state id="rejected">
+    <mn:where>(requires 'user-input')</mn:where>
+    <transition event="resubmit" target="submitted">
+      <mn:action>(do
+        (set! submitted_at (now))
+        (set! approved_at nil)
+        (set! approved_by nil))</mn:action>
+    </transition>
+  </state>
+
+  <final id="fulfilled"/>
+  <final id="cancelled"/>
+</scxml>

@@ -58,7 +58,7 @@ These are the ONLY JavaScript in the application. Everything else — routing, f
 
 ## Key patterns demonstrated
 
-- Hash routing via `mn-route` + `mn-path` for SPA navigation
+- URL routing via `mn-url` for SPA navigation
 - Lazy state rendering. 6 app states, only the active state's DOM exists.
 - Keyed list reconciliation. 27 resort cards with efficient diffing.
 - Component reuse. resort-card used in browse grid, compare grid, and saved grid with different slot content.

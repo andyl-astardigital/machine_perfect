@@ -1,15 +1,14 @@
 /**
- * Purchase order — example server.
+ * machine_native application server.
  *
- * SCXML is the canonical machine format. HTML is the browser substrate.
+ * GENERIC — copy this to any new app. Never touch it.
  *
- * The pipeline endpoint speaks SCXML:
- *   - Browser transforms HTML → SCXML at the edge, sends SCXML
- *   - Server receives SCXML, pipes through services, returns SCXML
- *   - Browser receives SCXML, transforms → HTML, renders
+ * One endpoint: POST /api/machine (fire and forget, 202 accepted).
+ * One receive channel: GET /sse/:sessionId (server pushes results).
+ * One persistence layer: SQLite via db.js.
  *
- * UI endpoints serve HTML (order list, stats, create form, detail).
- * These are browser rendering concerns, not distributed machines.
+ * The server is dumb infrastructure. It wires up adapters, runs pipelines,
+ * stores blocked machines, and pushes results. Zero business logic.
  *
  * Run: node examples/purchase-order/server.js
  */
@@ -17,32 +16,30 @@
 var http = require('http');
 var fs = require('fs');
 var path = require('path');
-var ejs = require('ejs');
 var transforms = require('../../mn/transforms');
 var services = require('./services');
+var db = require('./db');
 
 var PORT = process.env.PORT || 4000;
 var REGISTRY = process.env.REGISTRY || 'http://localhost:3100';
 var ROOT = path.join(__dirname, '..', '..');
-var VIEWS = path.join(__dirname, 'views');
 
-// ── In-memory order storage (pluggable to any DB via adapter pattern) ──
-var orders = [];
-services.setStorage(orders);
+// ── SSE connections ─────────────────────────────────────────────
+var sseClients = {};
 
-// ── Register with the capability registry on startup ────────────────
+
+// ── Register with the capability registry on startup ────────────
 function registerWithRegistry() {
-  var data = JSON.stringify({
-    id: 'po-server',
-    address: 'http://localhost:' + PORT,
-    capabilities: ['log', 'notify', 'persist', 'fulfil', 'ui-render'],
-    formats: ['html', 'scxml']
+  var reg = JSON.stringify({
+    id: 'app-server',
+    capabilities: services.capabilities,
+    transport: { type: 'http-post', address: 'http://localhost:' + PORT + '/api/machine' }
   });
 
   var url = new URL(REGISTRY + '/register');
   var req = http.request({
     hostname: url.hostname, port: url.port, path: '/register',
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(reg) }
   }, function (res) {
     var body = '';
     res.on('data', function (c) { body += c; });
@@ -53,57 +50,23 @@ function registerWithRegistry() {
   req.on('error', function (err) {
     console.log('[registry] not available — running without registry (' + err.message + ')');
   });
-  req.write(data);
+  req.write(reg);
   req.end();
 }
-
-var types = {
-  '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/svg+xml',
-  '.css': 'text/css', '.xslt': 'application/xml', '.mn.html': 'text/html'
-};
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  Helpers                                                                ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-function escHtml(str) {
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+var types = {
+  '.html': 'text/html', '.js': 'text/javascript', '.svg': 'image/svg+xml',
+  '.css': 'text/css', '.scxml': 'application/xml', '.mn.html': 'text/html'
+};
 
-function render(view, data) {
-  var file = path.join(VIEWS, view + '.ejs');
-  return ejs.renderFile(file, data || {}, { views: [VIEWS] });
-}
-
-function sendHtml(res, viewPromise) {
-  viewPromise
-    .then(function (html) {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(html);
-    })
-    .catch(function (err) {
-      console.error('[render]', err.message);
-      res.writeHead(500, { 'Content-Type': 'text/html' });
-      res.end('<div class="alert alert-error"><span>Render error: ' + escHtml(err.message) + '</span></div>');
-    });
-}
-
-function sendScxml(res, scxml) {
-  res.writeHead(200, { 'Content-Type': 'application/xml' });
-  res.end(scxml);
-}
-
-function buildStats() {
-  var total = orders.length;
-  var fulfilled = orders.filter(function (o) { return o.status === 'fulfilled'; }).length;
-  var rejected = orders.filter(function (o) { return o.status === 'rejected'; }).length;
-  var totalValue = orders.reduce(function (sum, o) { return sum + o.amount; }, 0);
-  return {
-    total: total, fulfilled: fulfilled, rejected: rejected,
-    totalValue: totalValue, avgValue: total > 0 ? Math.round(totalValue / total) : 0,
-    lastUpdated: Date.now()
-  };
+function sendJson(res, status, obj) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(obj));
 }
 
 
@@ -115,141 +78,86 @@ var server = http.createServer(function (req, res) {
   var urlPath = decodeURIComponent(req.url.split('?')[0]);
 
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-MN-Session');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
 
-  // ── UI endpoints — server-rendered HTML (browser rendering concern) ───
-
-  if (req.method === 'GET' && urlPath === '/api/stats') {
-    sendHtml(res, render('stats', { stats: buildStats() }));
-    return;
-  }
-
-  if (req.method === 'GET' && urlPath === '/api/orders') {
-    sendHtml(res, render('order-list', { orders: orders }));
-    return;
-  }
-
-  if (req.method === 'GET' && urlPath === '/api/orders/new') {
-    sendHtml(res, render('create-form'));
-    return;
-  }
-
-  if (req.method === 'GET' && urlPath.match(/^\/api\/orders\/po-/)) {
-    var viewId = urlPath.split('/api/orders/')[1];
-    var order = orders.find(function (o) { return o.id === viewId; });
-    if (!order) { sendHtml(res, render('not-found')); return; }
-    sendHtml(res, render('order-detail', { order: order }));
-    return;
-  }
-
-  if (req.method === 'DELETE' && urlPath.indexOf('/api/orders/') === 0) {
-    var deleteId = urlPath.split('/api/orders/')[1];
-    var idx = orders.findIndex(function (o) { return o.id === deleteId; });
-    if (idx !== -1) orders.splice(idx, 1);
-    sendHtml(res, render('order-list', { orders: orders }));
-    return;
-  }
-
-  if (req.method === 'POST' && urlPath === '/api/orders/reset') {
-    orders.length = 0;
-    sendHtml(res, render('order-list', { orders: orders }));
+  // ── Test utility: reset database ──────────────────────────────
+  if (req.method === 'POST' && urlPath === '/api/reset') {
+    db.reset();
+    sendJson(res, 200, { reset: true });
     return;
   }
 
 
-  // ── POST /api/machine ────────────────────────────────────────────────
-  //
-  // Dispatches by X-MN-Machine header:
-  //   app             → UI render: render view HTML for target state
-  //   purchase-order  → Pipeline: advance machine through services
-  //   (other)         → Pipeline (default)
+  // ── GET /sse/:sessionId — browser connects here ───────────────
+  var sseMatch = urlPath.match(/^\/sse\/([a-zA-Z0-9_-]+)$/);
+  if (req.method === 'GET' && sseMatch) {
+    var sessionId = sseMatch[1];
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.write(':ok\n\n');
+    sseClients[sessionId] = res;
+    console.log('[sse] connected: ' + sessionId);
+    req.on('close', function () {
+      delete sseClients[sessionId];
+      console.log('[sse] disconnected: ' + sessionId);
+    });
+    return;
+  }
 
+
+  // ── POST /api/machine — fire and forget ─────────────────────────
   if (req.method === 'POST' && urlPath === '/api/machine') {
     var body = '';
     req.on('data', function (chunk) { body += chunk; });
     req.on('end', function () {
-      var machineName = req.headers['x-mn-machine'];
-      var targetState = req.headers['x-mn-target'];
+      var sourceSession = req.headers['x-mn-session'] || null;
+      console.log('\n  Pipeline: received (' + body.length + ' bytes) from ' + (sourceSession || 'unknown'));
 
-      // ── UI render: app machine requests a view ──
-      if (machineName === 'app' && targetState) {
-        try {
-          var ctx = transforms.extractContext(body);
-          console.log('\n  UI render: ' + targetState + (ctx._action ? ' action=' + ctx._action : ''));
+      // 202 — accepted, processing async
+      res.writeHead(202, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ accepted: true }));
 
-          if (ctx._action === 'delete' && ctx._actionId) {
-            var delIdx = orders.findIndex(function (o) { return o.id === ctx._actionId; });
-            if (delIdx !== -1) {
-              orders.splice(delIdx, 1);
-              console.log('  Deleted order: ' + ctx._actionId);
-            }
-          }
-
-          if (targetState === 'orders') {
-            sendHtml(res, render('order-list', { orders: orders }));
-          } else if (targetState === 'create') {
-            sendHtml(res, render('create-form'));
-          } else if (targetState === 'detail') {
-            var orderId = ctx._actionId;
-            var order = orderId ? orders.find(function (o) { return o.id === orderId; }) : null;
-            sendHtml(res, order ? render('order-detail', { order: order }) : render('not-found'));
-          } else {
-            sendHtml(res, render('order-list', { orders: orders }));
-          }
-        } catch (err) {
-          console.error('[server]', err.message);
-          res.writeHead(500, { 'Content-Type': 'text/html' });
-          res.end('<div class="alert alert-error"><span>Error: ' + escHtml(err.message) + '</span></div>');
-        }
-        return;
-      }
-
-      // ── Pipeline execution: advance the machine through services ──
-      var isHtml = body.trim().indexOf('<scxml') === -1;
-      var scxmlInput;
-
-      if (isHtml) {
-        console.log('\n  Pipeline: received HTML (' + body.length + ' bytes)');
-        scxmlInput = transforms.htmlToScxml(body);
-      } else {
-        console.log('\n  Pipeline: received SCXML (' + body.length + ' bytes)');
-        scxmlInput = body;
-      }
-
-      services.executeAsync(scxmlInput)
+      // Execute pipeline
+      services.executeAsync(body)
         .then(function (result) {
-          console.log('  Complete.\n');
-          if (isHtml) {
-            var htmlBack = transforms.scxmlToHtml(result.scxml);
-            sendHtml(res, render('pipeline-result', {
-              blocked: result.blocked || false,
-              reason: result.reason || null,
-              effects: result.effects || [],
-              history: result.history || [],
-              scxml: result.scxml,
-              htmlBack: htmlBack
-            }));
-          } else {
-            sendScxml(res, result.scxml);
+          // Pipeline blocked (route signal) — snapshot the machine
+          if (result.route) {
+            var blockedMachine = transforms.extractMachine(result.scxml);
+            var blockedId = db.insert(blockedMachine.name, blockedMachine.state, result.scxml);
+            console.log('  Blocked — stored as ' + blockedId);
+          }
+
+          // Push result to sender via SSE
+          if (sourceSession && sseClients[sourceSession] && !sseClients[sourceSession].destroyed) {
+            var encoded = Buffer.from(result.scxml).toString('base64');
+            sseClients[sourceSession].write('event: machine\ndata: ' + encoded + '\n\n');
+            console.log('  Pushed to ' + sourceSession);
           }
         })
         .catch(function (err) {
           console.error('[server]', err.message);
-          res.writeHead(500, { 'Content-Type': 'text/html' });
-          res.end('<div class="alert alert-error"><span>Error: ' + escHtml(err.message) + '</span></div>');
+          if (sourceSession && sseClients[sourceSession] && !sseClients[sourceSession].destroyed) {
+            var errScxml = '<?xml version="1.0"?><scxml id="error" initial="error" mn-ctx=\'' +
+              JSON.stringify({ $error: err.message }).replace(/'/g, '&apos;') + '\'><final id="error"/></scxml>';
+            var encoded = Buffer.from(errScxml).toString('base64');
+            sseClients[sourceSession].write('event: machine\ndata: ' + encoded + '\n\n');
+          }
         });
     });
     return;
   }
 
 
-  // ── Static files + SPA fallback ───────────────────────────────────
+  // ── Static files + SPA fallback ───────────────────────────────
   if (urlPath === '/') urlPath = '/examples/purchase-order/index.html';
 
-  // Prevent path traversal: reject any path that escapes ROOT
   var filePath = path.join(ROOT, urlPath);
   var resolvedRoot = path.resolve(ROOT);
   var resolvedFile = path.resolve(filePath);
@@ -260,27 +168,30 @@ var server = http.createServer(function (req, res) {
   var ext = path.extname(urlPath);
   if (!ext && !urlPath.startsWith('/api/')) {
     var indexPath = path.join(ROOT, 'examples', 'purchase-order', 'index.html');
-    fs.readFile(indexPath, function (err, data) {
+    fs.readFile(indexPath, function (err, fileData) {
       if (err) { res.writeHead(500); res.end('Server error'); return; }
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(data);
+      res.end(fileData);
     });
     return;
   }
 
-  fs.readFile(filePath, function (err, data) {
+  fs.readFile(filePath, function (err, fileData) {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
     res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream' });
-    res.end(data);
+    res.end(fileData);
   });
 });
 
 server.listen(PORT, function () {
-  console.log('\n  machine_native — Purchase Order');
+  console.log('\n  machine_native application server');
   console.log('  http://localhost:' + PORT);
   console.log('');
-  console.log('  SCXML is the canonical format.');
-  console.log('  Capabilities: log, notify, persist, fulfil, ui-render');
+  console.log('  POST /api/machine  — fire and forget (202)');
+  console.log('  GET  /sse/:id      — browser receive channel');
+  console.log('  POST /api/reset    — clear database');
+  console.log('  Capabilities: ' + services.capabilities.join(', '));
+  console.log('  Database: ' + (process.env.DB_PATH || 'app.db'));
   console.log('  Registry: ' + REGISTRY + '\n');
   registerWithRegistry();
 });

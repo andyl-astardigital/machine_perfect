@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Purchase order status — summary view for non-director viewers.
+
+  Derived from the canonical purchase-order via mn:project as="purchase-order-status".
+
+  Actions:
+  - Cancel a pending order (reverse path: cancel → canonical)
+  - Edit and resubmit a rejected order (reverse path: resubmit → canonical)
+
+  Both route to server, which resolves $canonical_id, applies the event
+  to the canonical PO, re-projects, and pushes the updated status back.
+-->
+<scxml xmlns:mn="http://machine-native.dev/scxml/1.0"
+       name="purchase-order-status" initial="pending"
+       mn-ctx='{"title":"","amount":0,"item_count":0,"submitted_by":"","submitted_at":null,"approved_at":null,"$canonical_id":null}'>
+
+  <state id="pending">
+    <transition event="cancel" target="cancelling">
+      <mn:action>(set! $user (get $store.session :user))</mn:action>
+    </transition>
+  </state>
+
+  <state id="cancelling">
+    <mn:where>(requires 'persist')</mn:where>
+    <transition event="cancel" target="cancelled"/>
+  </state>
+
+  <!-- Rejected: submitter can edit fields and resubmit -->
+  <state id="rejected">
+    <transition event="resubmit" target="resubmitting">
+      <mn:action>(set! $user (get $store.session :user))</mn:action>
+    </transition>
+  </state>
+
+  <state id="resubmitting">
+    <mn:where>(requires 'persist')</mn:where>
+    <transition event="load" target="pending"/>
+  </state>
+
+  <final id="fulfilled"/>
+  <final id="cancelled"/>
+</scxml>

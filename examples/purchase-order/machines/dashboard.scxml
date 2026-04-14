@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dashboard machine — order statistics with Chart.js integration.
+
+  Routes to server to load order stats. The data adapter returns
+  purchase-order rows. The pipeline computes aggregate stats
+  (counts by state, total amounts) via _invokeCounts.
+
+  The browser renders charts using MachineNative.fn('renderChart')
+  — proving MN integrates with third-party JS libraries.
+  The machine carries the data. Chart.js renders it.
+-->
+<scxml xmlns:mn="http://machine-native.dev/scxml/1.0"
+       name="dashboard" initial="loading"
+       mn-ctx='{"$user":null}'>
+
+  <state id="loading">
+    <mn:where>(requires 'data')</mn:where>
+    <onentry>
+      <mn:action>(when (some? $store) (set! $user (get $store.session :user)))</mn:action>
+    </onentry>
+    <transition event="load" target="ready"/>
+  </state>
+
+  <state id="ready">
+    <invoke type="scxml" src="purchase-order"/>
+  </state>
+</scxml>

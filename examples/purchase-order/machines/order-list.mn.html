@@ -1,0 +1,63 @@
+<!--
+  Order list — rendering.
+  Paired with order-list.scxml.
+  The list state's invoked child machines render themselves.
+-->
+<template mn-define="order-list">
+  <div mn-state="loading">
+    <main class="max-w-5xl mx-auto p-6">
+      <div class="flex items-center justify-center py-16">
+        <span class="loading loading-spinner loading-lg"></span>
+      </div>
+    </main>
+  </div>
+
+  <div mn-state="list">
+    <main class="max-w-5xl mx-auto p-6">
+      <div class="stats shadow mb-6 w-full">
+        <div class="stat">
+          <div class="stat-title">Total</div>
+          <div class="stat-value"><mn-text>(or (get _invokeCounts :total) 0)</mn-text></div>
+        </div>
+        <div class="stat">
+          <div class="stat-title">Fulfilled</div>
+          <div class="stat-value text-success"><mn-text>(or (get (get _invokeCounts :byState) :fulfilled) 0)</mn-text></div>
+        </div>
+        <div class="stat">
+          <div class="stat-title">Rejected</div>
+          <div class="stat-value text-error"><mn-text>(or (get (get _invokeCounts :byState) :rejected) 0)</mn-text></div>
+        </div>
+      </div>
+
+      <!-- Child purchase-order machines appear here via invoke -->
+      <div class="space-y-3" id="order-list-children"></div>
+
+      <div class="text-center py-8 text-base-content/40">
+        <mn-show>(= (get _invokeCounts :total) 0)</mn-show>
+        <p>No orders yet. Click <strong>+ New</strong> to create one.</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Explicit error state — the machine defines this, overriding the implicit
+       final error. $error and $errorSource set by the framework on throw.
+       Retry transitions back to loading. Not final — the machine recovers. -->
+  <div mn-state="error">
+    <mn-temporal>(animate)</mn-temporal>
+    <main class="max-w-3xl mx-auto p-6">
+      <div class="card bg-error/10 border border-error/30 shadow-sm">
+        <div class="card-body p-6 gap-3">
+          <h3 class="font-bold text-error">Failed to load orders</h3>
+          <p class="text-sm text-base-content/70"><mn-text>$error</mn-text></p>
+          <p class="text-xs text-base-content/40">
+            <mn-show>(some? $errorSource)</mn-show>
+            Event: <span class="font-mono"><mn-text>$errorSource</mn-text></span>
+          </p>
+          <div class="card-actions mt-2">
+            <button mn-to="retry" class="btn btn-error btn-sm">Retry</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</template>

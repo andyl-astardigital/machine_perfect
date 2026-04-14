@@ -22,7 +22,7 @@ var PORT = 19000 + Math.floor(Math.random() * 1000);
 
 function serveFile(res, filePath) {
   var ext = path.extname(filePath).toLowerCase();
-  var types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
+  var types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.xslt': 'application/xml', '.scxml': 'application/xml', '.xml': 'application/xml' };
   var type = types[ext] || 'application/octet-stream';
   try {
     var content = fs.readFileSync(filePath);
@@ -41,14 +41,22 @@ var fileServer = http.createServer(function (req, res) {
   if (urlPath === '/' || urlPath === '/browser.test.html') {
     return serveFile(res, path.join(SUITE_DIR, 'browser.test.html'));
   }
-  // Serve engine.js and browser.js from mn/
+  // Serve framework files from mn/
   if (urlPath === '/engine.js') return serveFile(res, path.join(MP_DIR, 'engine.js'));
+  if (urlPath === '/machine.js') return serveFile(res, path.join(MP_DIR, 'machine.js'));
+  if (urlPath === '/scxml.js') return serveFile(res, path.join(MP_DIR, 'scxml.js'));
+  if (urlPath === '/transforms.js') return serveFile(res, path.join(MP_DIR, 'transforms.js'));
   if (urlPath === '/browser.js') return serveFile(res, path.join(MP_DIR, 'browser.js'));
   // Serve logo from repo root
   if (urlPath.endsWith('.svg')) return serveFile(res, path.join(MP_DIR, '..', urlPath.replace(/^\//, '')));
+  // Serve test fixtures (XSLT, SCXML) from tests/fixtures/
+  if (urlPath.startsWith('/fixtures/')) return serveFile(res, path.join(SUITE_DIR, urlPath.replace(/^\//, '')));
+  // Serve .mn.html component files from tests/fixtures/
+  if (urlPath.endsWith('.mn.html')) return serveFile(res, path.join(SUITE_DIR, urlPath.replace(/^\//, '')));
 
+  process.stderr.write('[404] ' + urlPath + '\n');
   res.writeHead(404);
-  res.end('Not found');
+  res.end('Not found: ' + urlPath);
 });
 
 
@@ -58,7 +66,7 @@ async function main() {
   await new Promise(function (resolve) { fileServer.listen(PORT, resolve); });
 
   var browser = await puppeteer.launch({
-    headless: true,
+    headless: 'shell',
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 

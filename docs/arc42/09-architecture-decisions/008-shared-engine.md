@@ -17,7 +17,7 @@ Extract the engine into `mn/engine.js` as a standalone UMD module with zero plat
 - Standard library (~120 functions, `stdlib`)
 - First-class function values (`firstClass`)
 - Expression interface (`eval` for reads, `exec` for writes)
-- Scope management (`makeScope`, `applyScope`)
+- Scope management (`makeScope`, `newContext` — immutable context merge)
 - Dependency tracking (`depKey`, `startTracking`, `stopTracking`)
 - Path utilities with safety (`get`, `set`)
 - User function registry (`fn`, `userFns`)

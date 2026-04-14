@@ -44,7 +44,7 @@
 | Stdlib | ~120 built-in functions as dispatch table | `stdlib` object |
 | First-class | Built-in functions as values for HOFs | `firstClass` object |
 | Expression interface | String expression → value (read) or side effect (write) | `eval`, `exec` |
-| Scope management | Prototype-chain context layering | `makeScope`, `applyScope` |
+| Scope management | Prototype-chain context layering, immutable merge | `makeScope`, `newContext` |
 | Dependency tracking | Record reads, record writes, compute overlap | `depKey`, `startTracking`, `stopTracking` |
 | Path utilities | Dotted path get/set with safety | `get`, `set` |
 | User functions | JS escape hatch registry | `fn`, `userFns` |
@@ -60,6 +60,9 @@
 | Temporal behaviour | `mn-temporal`: (animate), (after), (every) |
 | List rendering | `mn-each` with keyed reconciliation |
 | Capability routing | `mn-where` on states and transitions. `to()` checks target state, routes to capable host |
+| Fire-and-forget transport | `_sendMachineToNode` dispatches by transport type, returns immediately |
+| SSE receiver | `_openSSE` opens EventSource, receives machine results, updates instances |
+| Invoke stamping | `_stampAndEnter` creates child machine DOM elements from `<invoke>` content |
 | Persistence | `mn-persist` via localStorage |
 | Context sync | Phase 5: `mn-ctx` attribute synced on every update, markup reflects live state |
 | Lifecycle | `mn-init`, `mn-exit`, `mn-ref` |
@@ -71,13 +74,14 @@
 | Component | Responsibility |
 |-----------|---------------|
 | SCXML compiler | Parse SCXML + MP extensions → canonical machine definition |
-| Machine core | `createInstance`, `sendEvent`, `inspect`, `snapshot`, `restore`, `validate`, `executePipeline` |
-| Effect adapters | Capability declarations: persist, notify, fulfil, log, etc. |
+| Machine core | `createInstance`, `sendEvent`, `inspect`, `snapshot`, `restore`, `validate`, `executePipeline`, `executePipelineAsync` |
+| Invoke resolver | Resolves `<invoke src>` via effect adapters, embeds stored SCXML as inline invoke content |
+| Effect adapters | Pluggable capability declarations: any host registers the adapters it provides |
 | Durable timers | Persist `after`/`every` across restarts |
-| Transforms | HTML/SCXML structural conversion, `extractContext`, `extractMachine` |
+| Transforms | SCXML metadata extraction (`extractMachine`, `extractMetadata`, `stampMetadata`) |
 | Server | HTTP server, serves machine markup, receives machine markup |
 
-## Level 2: Capability-based hosting (proposed, ADR-012)
+## Level 2: Capability-based hosting
 
 ```
 ┌──────────────────────────────────────────────────────────────┐

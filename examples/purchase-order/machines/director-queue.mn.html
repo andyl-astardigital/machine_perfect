@@ -1,0 +1,29 @@
+<!--
+  Director queue — rendering.
+  Paired with director-queue.scxml.
+  Child purchase-order machines at director-approval state render themselves.
+-->
+<template mn-define="director-queue">
+  <div mn-state="loading">
+    <main class="max-w-5xl mx-auto p-6">
+      <div class="flex items-center justify-center py-16">
+        <span class="loading loading-spinner loading-lg"></span>
+      </div>
+    </main>
+  </div>
+
+  <div mn-state="list">
+    <main class="max-w-5xl mx-auto p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold">Pending Director Approvals</h2>
+        <button class="btn btn-ghost btn-sm" mn-to="back-to-orders">← Back to Orders</button>
+      </div>
+      <!-- Child purchase-order machines at director-approval render themselves here -->
+      <div class="space-y-3"></div>
+      <div class="text-center py-8 text-base-content/40">
+        <mn-show>(= (get _invokeCounts :total) 0)</mn-show>
+        <p>No orders awaiting approval.</p>
+      </div>
+    </main>
+  </div>
+</template>

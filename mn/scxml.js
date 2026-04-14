@@ -16,15 +16,21 @@
  *   <final id="...">
  *   <transition event="..." target="..." cond="...">
  *
- * MN extensions (mn- attributes, same prefix as HTML):
- *   <mn-guard>expr</mn-guard>    — transition guard (child element)
- *   <mn-action>expr</mn-action>  — transition action (child element)
- *   <mn-init>expr</mn-init>        — state entry hook
- *   <mn-exit>expr</mn-exit>        — state exit hook
- *   <mn-where>expr</mn-where>      — capability-based routing
- *   <mn-temporal>expr</mn-temporal> — temporal behaviour: (animate), (after), (every)
+ * MN extensions — xmlns:mn="http://machine-native.dev/scxml/1.0"
+ * Both mn: (XML namespace) and mn- (HTML convention) prefixes are supported:
+ *   <mn:guard>expr</mn:guard>      — transition guard (s-expression, bare < allowed)
+ *   <mn:action>expr</mn:action>    — transition action
+ *   <mn:init>expr</mn:init>        — state entry hook
+ *   <mn:exit>expr</mn:exit>        — state exit hook
+ *   <mn:where>expr</mn:where>      — capability-based routing
+ *   <mn:temporal>expr</mn:temporal> — temporal behaviour: (animate), (after), (every)
+ *   <mn:emit>name</mn:emit>        — emit inter-machine event
  *
- * @version 0.5.0
+ * S-expression content in mn: elements may contain bare < and > characters.
+ * The parser reads until the closing tag without XML-parsing the content.
+ * CDATA wrapping is optional (for strict XML compliance) but not required.
+ *
+ * @version 0.8.0
  * @license MIT
  */
 (function (root, factory) {
@@ -48,7 +54,7 @@
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
   // Parses a subset of XML sufficient for SCXML. Returns a tree of
-  // { tag, attrs, children } nodes. No namespace resolution, no DTD,
+  // { tag, attrs, children } nodes. No namespace resolution, no DTD, no validation.
   // Supports CDATA sections for s-expression content in guard/action elements.
 
   function parseXML(str) {
@@ -121,7 +127,40 @@
       }
       pos++; // skip >
 
-      // Children
+      // S-expression elements: content is raw text that may contain bare < and >.
+      // Read until the closing tag without trying to parse child elements.
+      // Supports both mn- (HTML convention) and mn: (XML namespace convention).
+      var exprTags = { 'mn-guard':1, 'mn-action':1, 'mn-init':1, 'mn-exit':1, 'mn-where':1, 'mn-temporal':1, 'mn-emit':1,
+                       'mn:guard':1, 'mn:action':1, 'mn:init':1, 'mn:exit':1, 'mn:where':1, 'mn:temporal':1, 'mn:emit':1 };
+      if (exprTags[tag]) {
+        var closeTag = '</' + tag + '>';
+        var closeIdx = str.indexOf(closeTag, pos);
+        if (closeIdx === -1) throw new Error('[mn-scxml] unterminated ' + tag + ' element');
+        var rawText = str.substring(pos, closeIdx).trim();
+        // Strip CDATA wrapper if present (optional — authors can still use CDATA for strict XML compliance)
+        if (rawText.indexOf('<![CDATA[') === 0 && rawText.indexOf(']]>') === rawText.length - 3) {
+          rawText = rawText.substring(9, rawText.length - 3);
+        } else {
+          // Not CDATA — unescape XML entities in case author used &lt; etc.
+          rawText = _unescXml(rawText);
+        }
+        var children = [];
+        if (rawText) children.push({ tag: '#text', text: rawText, attrs: {}, children: [] });
+        pos = closeIdx + closeTag.length;
+        return { tag: tag, attrs: attrs, children: children };
+      }
+
+      // <content> inside <invoke> — preserve raw inner XML as a string
+      if (tag === 'content') {
+        var contentClose = '</content>';
+        var contentEnd = str.indexOf(contentClose, pos);
+        if (contentEnd === -1) throw new Error('[mn-scxml] unterminated content element');
+        var rawContent = str.substring(pos, contentEnd).trim();
+        pos = contentEnd + contentClose.length;
+        return { tag: 'content', attrs: attrs, children: [], raw: rawContent };
+      }
+
+      // Children (standard XML parsing for non-expression elements)
       var children = [];
       while (pos < str.length) {
         skipWhitespace();
@@ -192,6 +231,7 @@
     var initial = root.attrs.initial || null;
     var context = {};
     var states = {};
+    var projects = [];
 
     // mn-ctx attribute carries the full context as JSON (round-trips cleanly)
     if (root.attrs['mn-ctx']) {
@@ -213,6 +253,10 @@
       } else if (child.tag === 'final') {
         var finalSpec = parseState(child, true);
         states[finalSpec.id] = finalSpec.def;
+      } else if (_isTag(child, 'project')) {
+        var projWhen = child.attrs.when || null;
+        var projExpr = _textContent(child);
+        if (projExpr) projects.push({ when: projWhen, expr: projExpr, as: child.attrs.as || null });
       }
     }
 
@@ -226,7 +270,8 @@
       id: id,
       initial: initial,
       context: context,
-      states: states
+      states: states,
+      projects: projects.length > 0 ? projects : null
     });
   }
 
@@ -270,6 +315,24 @@
     } catch (e) {
       return trimmed;
     }
+  }
+
+
+  // ── Tag matching ───────────────────────────────────────────────────────
+  //
+  // MN extensions use either mn- (HTML convention) or mn: (XML namespace).
+  // This helper matches both: _isTag(node, 'guard') matches mn-guard and mn:guard.
+
+  function _isTag(node, name) {
+    return node.tag === 'mn-' + name || node.tag === 'mn:' + name;
+  }
+
+  function _textContent(node) {
+    var text = '';
+    for (var i = 0; i < node.children.length; i++) {
+      if (node.children[i].tag === '#text') text += node.children[i].text;
+    }
+    return text.trim() || null;
   }
 
 
@@ -328,18 +391,16 @@
       } else if (child.tag === 'onexit') {
         if (def.exit) console.warn('[mn-scxml] state "' + stateId + '" has both mn-exit attribute and <onexit> child — <onexit> takes precedence');
         def.exit = extractActions(child);
-      } else if (child.tag === 'mn-where') {
-        var whereText = '';
-        for (var wi = 0; wi < child.children.length; wi++) {
-          if (child.children[wi].tag === '#text') whereText += child.children[wi].text;
-        }
-        def.where = whereText.trim();
-      } else if (child.tag === 'mn-temporal') {
-        var temporalText = '';
-        for (var ti2 = 0; ti2 < child.children.length; ti2++) {
-          if (child.children[ti2].tag === '#text') temporalText += child.children[ti2].text;
-        }
-        if (temporalText.trim()) def.temporal = temporalText.trim();
+      } else if (_isTag(child, 'where')) {
+        var whereVal = _textContent(child);
+        if (whereVal) def.where = whereVal;
+      } else if (_isTag(child, 'temporal')) {
+        var temporalVal = _textContent(child);
+        if (temporalVal) def.temporal = temporalVal;
+      } else if (_isTag(child, 'init')) {
+        def.init = _textContent(child);
+      } else if (_isTag(child, 'exit')) {
+        def.exit = _textContent(child);
       }
     }
 
@@ -348,6 +409,34 @@
       def.states = childStates;
       def.initial = node.attrs.initial || Object.keys(childStates)[0];
     }
+
+    // Parse <invoke type="scxml"> children — child machines embedded in this state
+    var invokes = [];
+    for (var ii = 0; ii < node.children.length; ii++) {
+      var invokeNode = node.children[ii];
+      if (invokeNode.tag === 'invoke' && invokeNode.attrs.type === 'scxml') {
+        var invokeId = invokeNode.attrs.id || null;
+        var invokeSrc = invokeNode.attrs.src || null;
+
+        if (invokeSrc) {
+          // src="machine-name" — load from storage at runtime
+          var invokeState = invokeNode.attrs['mn-state'] || null;
+          invokes.push({ id: invokeId, src: invokeSrc, state: invokeState });
+        } else {
+          // Inline <content> — embedded SCXML
+          for (var ci = 0; ci < invokeNode.children.length; ci++) {
+            if (invokeNode.children[ci].tag === 'content') {
+              var contentNode = invokeNode.children[ci];
+              var nestedScxml = contentNode.raw || _textContent(contentNode);
+              if (nestedScxml) {
+                invokes.push({ id: invokeId, scxml: nestedScxml.trim() });
+              }
+            }
+          }
+        }
+      }
+    }
+    if (invokes.length > 0) def.invokes = invokes;
 
     return { id: stateId, def: def };
   }
@@ -371,29 +460,20 @@
     def.target = target || null;
     if (node.attrs.cond) def.guard = node.attrs.cond;
 
-    // Structural child elements: <mn-guard>, <mn-action>, <mn-emit>
+    // Structural child elements: <mn:guard>/<mn-guard>, <mn:action>/<mn-action>, <mn:emit>/<mn-emit>
     for (var ci = 0; ci < node.children.length; ci++) {
       var child = node.children[ci];
-      if (child.tag === 'mn-guard') {
-        var guardText = '';
-        for (var gi = 0; gi < child.children.length; gi++) {
-          if (child.children[gi].tag === '#text') guardText += child.children[gi].text;
-        }
-        if (guardText.trim()) def.guard = guardText.trim();
+      if (_isTag(child, 'guard')) {
+        var guardText = _textContent(child);
+        if (guardText) def.guard = guardText;
       }
-      if (child.tag === 'mn-action') {
-        var actionText = '';
-        for (var ai = 0; ai < child.children.length; ai++) {
-          if (child.children[ai].tag === '#text') actionText += child.children[ai].text;
-        }
-        if (actionText.trim()) def.action = actionText.trim();
+      if (_isTag(child, 'action')) {
+        var actionText = _textContent(child);
+        if (actionText) def.action = actionText;
       }
-      if (child.tag === 'mn-emit') {
-        var emitText = '';
-        for (var ei = 0; ei < child.children.length; ei++) {
-          if (child.children[ei].tag === '#text') emitText += child.children[ei].text;
-        }
-        if (emitText.trim()) def.emit = emitText.trim();
+      if (_isTag(child, 'emit')) {
+        var emitText = _textContent(child);
+        if (emitText) def.emit = emitText;
       }
     }
 
@@ -414,11 +494,8 @@
   function extractActions(node) {
     for (var i = 0; i < node.children.length; i++) {
       var child = node.children[i];
-      if (child.tag === 'script' || child.tag === 'action' || child.tag === 'mn-action') {
-        // Action text content
-        for (var j = 0; j < child.children.length; j++) {
-          if (child.children[j].tag === '#text') return child.children[j].text;
-        }
+      if (child.tag === 'script' || child.tag === 'action' || _isTag(child, 'action')) {
+        return _textContent(child);
       }
     }
     return null;
@@ -432,6 +509,6 @@
   return {
     compile: compile,
     parseXML: parseXML,
-    version: '0.5.0'
+    version: '0.8.0'
   };
 });

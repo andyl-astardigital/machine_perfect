@@ -1,0 +1,266 @@
+<!--
+  Purchase order — rendering.
+  Pure visual. No transitions, no guards, no actions.
+  mn-to fires events. The SCXML brain handles the rest.
+  Paired with purchase-order.scxml for behaviour.
+-->
+<template mn-define="purchase-order">
+  <!-- Context defaults from paired purchase-order.scxml mn-ctx -->
+  <mn-let name="valid">(and (>= (count title) 3) (> amount 0) (> (count items) 0))</mn-let>
+
+  <div mn-state="draft">
+    <mn-temporal>(animate)</mn-temporal>
+    <mn-init>(focus! $refs.titleInput)</mn-init>
+    <mn-exit>(set! newItem '')</mn-exit>
+
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold">New Purchase Order</h2>
+      <button mn-to="navigate-orders" class="btn btn-ghost btn-sm gap-1">
+        <span class="text-xs">Esc</span> Cancel
+      </button>
+    </div>
+
+    <form class="card bg-base-100 shadow-xl">
+      <div class="card-body gap-4">
+
+        <div class="form-control">
+          <label class="label"><span class="label-text font-bold">Title</span></label>
+          <input mn-model="title" mn-ref="titleInput" type="text"
+                 placeholder="What is this order for?" class="input input-bordered" />
+          <label class="label">
+            <mn-show>(and (> (count title) 0) (< (count title) 3))</mn-show>
+            <span class="label-text-alt text-warning">Title must be at least 3 characters</span>
+          </label>
+        </div>
+
+        <div class="form-control">
+          <label class="label"><span class="label-text font-bold">Amount (£)</span></label>
+          <input mn-model="amount" type="number" placeholder="0" class="input input-bordered" />
+          <label class="label">
+            <mn-show>(< amount 0)</mn-show>
+            <span class="label-text-alt text-warning">Amount must be positive</span>
+          </label>
+        </div>
+
+        <div class="form-control">
+          <label class="label"><span class="label-text font-bold">Notes</span></label>
+          <textarea mn-model="notes" placeholder="Internal notes (director-only)..." class="textarea textarea-bordered" rows="2"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-control">
+            <label class="label"><span class="label-text font-bold">Cost Centre</span></label>
+            <input mn-model="cost_centre" type="text" placeholder="e.g. ENG-042" class="input input-bordered input-sm" />
+          </div>
+          <div class="form-control">
+            <label class="label"><span class="label-text font-bold">Internal Ref</span></label>
+            <input mn-model="internal_ref" type="text" placeholder="e.g. Q4-CAPEX" class="input input-bordered input-sm" />
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label"><span class="label-text font-bold">Margin %</span></label>
+          <input mn-model="margin_pct" type="number" placeholder="0" class="input input-bordered input-sm w-32" />
+          <label class="label"><span class="label-text-alt text-base-content/40">Director-only field</span></label>
+        </div>
+
+        <div class="form-control">
+          <label class="label cursor-pointer justify-start gap-3">
+            <input mn-model="urgent" type="checkbox" class="checkbox checkbox-warning checkbox-sm" />
+            <span class="label-text font-bold">Urgent</span>
+            <span class="badge badge-warning badge-sm">
+              <mn-show>urgent</mn-show>
+              Priority
+            </span>
+          </label>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-bold">Items</span>
+            <span class="label-text-alt"><mn-text>(str (count items) ' added')</mn-text></span>
+          </label>
+          <div class="flex gap-2">
+            <input mn-model="newItem" type="text" placeholder="Add item... (Enter)"
+                   mn-ref="itemInput" class="input input-bordered input-sm flex-1">
+              <mn-on event="keydown">
+                (when (and (= (get $event :key) 'Enter') (not (empty? newItem)))
+                  (do (prevent!) (push! items (obj :name newItem :qty 1)) (set! newItem '')))
+              </mn-on>
+            </input>
+            <button type="button" mn-to="add-item" class="btn btn-primary btn-sm">Add</button>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <mn-show>(> (count items) 0)</mn-show>
+          <template mn-each="items" mn-key="name">
+            <div class="flex items-center gap-2 bg-base-200 rounded px-3 py-2">
+              <span class="text-xs text-base-content/40 font-mono w-5"><mn-text>(str (+ $index 1) '.')</mn-text></span>
+              <span class="flex-1 text-sm font-medium"><mn-text>name</mn-text></span>
+              <label class="text-xs text-base-content/50">qty:</label>
+              <input mn-model="qty" type="number" class="input input-bordered input-xs w-16 text-center" />
+              <button type="button" class="btn btn-xs btn-ghost text-error">
+                <mn-on event="click">(remove-where! items :name name)</mn-on>
+                &#x2715;
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <p class="text-xs text-base-content/40 italic">
+          <mn-show>(= (count items) 0)</mn-show>
+          No items added yet.
+        </p>
+
+        <div class="divider my-0"></div>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-xs text-warning">
+              <mn-show>(not valid)</mn-show>
+              <mn-text>(cond
+                (empty? title) 'Enter a title'
+                (<= amount 0) 'Enter an amount'
+                (= (count items) 0) 'Add at least one item'
+                (< (count title) 3) 'Title must be at least 3 characters'
+                true '')</mn-text>
+            </p>
+            <p class="text-xs text-success">
+              <mn-show>valid</mn-show>
+              Ready to submit
+            </p>
+          </div>
+          <button type="button" mn-to="submit" class="btn btn-primary gap-1">
+            <mn-bind attr="disabled">(not valid)</mn-bind>
+            Send to Pipeline
+          </button>
+        </div>
+
+        <p class="text-xs text-base-content/30 text-center">
+          Draft auto-saved to localStorage via mn-persist
+        </p>
+      </div>
+    </form>
+  </div>
+
+  <!-- Server-handled pipeline states -->
+  <div mn-state="submitted"></div>
+
+  <!-- Director approval — only directors see this state.
+       Non-directors get purchase-order-status via mn:project as=. -->
+  <div mn-state="director-approval">
+    <mn-temporal>(animate)</mn-temporal>
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title text-warning">Approval Required</h2>
+        <p class="text-sm text-base-content/60 mt-1">
+          Submitted by <span class="font-bold"><mn-text>(get $user :name)</mn-text></span>
+        </p>
+        <p class="text-lg font-bold mt-2">
+          <mn-text>(str '£' amount)</mn-text>
+        </p>
+        <p class="text-sm text-base-content/60"><mn-text>title</mn-text></p>
+        <div class="space-y-1 my-3">
+          <template mn-each="items" mn-key="name">
+            <div class="flex items-center justify-between py-1 border-b border-base-content/10">
+              <span class="text-sm"><mn-text>name</mn-text></span>
+              <span class="font-mono text-xs"><mn-text>(str 'qty: ' qty)</mn-text></span>
+            </div>
+          </template>
+        </div>
+        <div class="bg-base-200 rounded-lg p-3 my-3 space-y-1 text-xs">
+          <p class="font-bold text-base-content/60 uppercase text-[10px] tracking-wider mb-1">Internal</p>
+          <p>
+            <mn-show>(some? notes)</mn-show>
+            Notes: <mn-text>notes</mn-text>
+          </p>
+          <div class="flex gap-4">
+            <span>
+              <mn-show>(not (empty? cost_centre))</mn-show>
+              Cost centre: <span class="font-mono"><mn-text>cost_centre</mn-text></span>
+            </span>
+            <span>
+              <mn-show>(not (empty? internal_ref))</mn-show>
+              Ref: <span class="font-mono"><mn-text>internal_ref</mn-text></span>
+            </span>
+            <span>
+              <mn-show>(> margin_pct 0)</mn-show>
+              Margin: <mn-text>(str margin_pct '%')</mn-text>
+            </span>
+          </div>
+        </div>
+        <div class="card-actions justify-end">
+          <button mn-to="director-reject" class="btn btn-error btn-sm">Reject</button>
+          <button mn-to="director-approve" class="btn btn-success">Approve</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div mn-state="approved"></div>
+
+  <div mn-state="fulfilled" mn-final>
+    <mn-temporal>(animate)</mn-temporal>
+    <mn-init>(emit order-approved)</mn-init>
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body p-4 gap-2">
+        <div class="flex items-center gap-4">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-bold text-sm truncate"><mn-text>title</mn-text></h3>
+            <p class="text-xs text-base-content/50"><mn-text>(str '£' amount ' — ' (count items) ' items')</mn-text></p>
+          </div>
+          <div class="badge badge-success badge-sm">fulfilled</div>
+        </div>
+        <div class="flex gap-4 text-xs text-base-content/40">
+          <span><mn-text>(get $user :name)</mn-text></span>
+          <span>
+            <mn-show>(some? approved_by)</mn-show>
+            Approved by <mn-text>(get approved_by :name)</mn-text>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div mn-state="rejected">
+    <mn-temporal>(animate)</mn-temporal>
+    <mn-init>(emit order-rejected)</mn-init>
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body p-4 gap-2">
+        <div class="flex items-center gap-4">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-bold text-sm truncate"><mn-text>title</mn-text></h3>
+            <p class="text-xs text-base-content/50"><mn-text>(str '£' amount ' — ' (count items) ' items')</mn-text></p>
+          </div>
+          <div class="badge badge-error badge-sm">rejected</div>
+        </div>
+        <div class="text-xs text-base-content/40">
+          <mn-text>(get $user :name)</mn-text>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div mn-state="cancelled" mn-final>
+    <mn-temporal>(animate)</mn-temporal>
+    <mn-init>(emit order-cancelled)</mn-init>
+    <div class="card bg-base-100 border border-base-300 shadow-sm opacity-60">
+      <div class="card-body p-4 gap-2">
+        <div class="flex items-center gap-4">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-bold text-sm truncate line-through"><mn-text>title</mn-text></h3>
+            <p class="text-xs text-base-content/50"><mn-text>(str '£' amount ' — ' (count items) ' items')</mn-text></p>
+          </div>
+          <div class="badge badge-ghost badge-sm">cancelled</div>
+        </div>
+        <div class="text-xs text-base-content/40">
+          <mn-text>(get $user :name)</mn-text>
+          <span>
+            <mn-show>(some? cancelled_by)</mn-show>
+             — cancelled by <mn-text>cancelled_by</mn-text>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

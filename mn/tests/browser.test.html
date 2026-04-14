@@ -29,13 +29,16 @@
 <body>
   <div class="header">
     <img src="../../logo.svg" alt="" />
-    <h1>machine_native <span class="gold">v0.5</span> — test suite</h1>
+    <h1>machine_native <span class="gold">v0.6</span> — test suite</h1>
   </div>
   <div id="summary">Running...</div>
   <div id="results"></div>
   <div id="fixture-area"></div>
-  <script src="../engine.js"></script>
-  <script src="../browser.js"></script>
+  <script src="/engine.js"></script>
+  <script src="/machine.js"></script>
+  <script src="/scxml.js"></script>
+  <script src="/transforms.js"></script>
+  <script src="/browser.js"></script>
   <script>
     var _tests = [], _g = '', _p = 0, _f = 0;
     var _r = document.getElementById('results'), _fa = document.getElementById('fixture-area');
@@ -45,6 +48,7 @@
     function perf(label, ms) { if (_currentTest) _currentTest.perf += ((_currentTest.perf ? ', ' : '') + label + ': ' + ms.toFixed(1) + 'ms'); }
     function assert(c, m) { if (!c) throw new Error(m || 'Assertion failed'); }
     function eq(a, b, m) { if (a !== b) throw new Error((m||'') + ': ' + JSON.stringify(a) + ' !== ' + JSON.stringify(b)); }
+    function deepEq(a, b, m) { var as = JSON.stringify(a), bs = JSON.stringify(b); if (as !== bs) throw new Error((m||'') + ': ' + as + ' !== ' + bs); }
     function has(s, sub) { if (String(s).indexOf(sub) === -1) throw new Error('"' + s + '" missing "' + sub + '"'); }
     function fixture(h) { var d = document.createElement('div'); d.innerHTML = h; _fa.appendChild(d); MachineNative.init(d); return d; }
     function click(e) { e.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
@@ -346,7 +350,7 @@
       assert(ctxMatch, 'outerHTML has mn-ctx');
       var ctx = JSON.parse(ctxMatch[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
       eq(ctx.title, 'Test Order', 'title in outerHTML');
-      eq(ctx.amount, '500', 'amount in outerHTML');
+      eq(ctx.amount, 500, 'amount in outerHTML (number coerced from input[type=number])');
     });
 
     test('mn-ctx sync excludes $ properties', function () {
@@ -683,6 +687,32 @@
       type(el.querySelector('#i'), 'hi');
       keydown(el.querySelector('#tr'), 'Enter');
       eq(el.querySelector('[mn]')._mn.state, 'b');
+    });
+
+    test('mn-on keydown.enter modifier — only fires on Enter key', function () {
+      var el = fixture(
+        '<div mn="key-mod" mn-ctx=\'{"fired":false}\'><div mn-state="a">' +
+        '<input id="ki"><mn-on event="keydown.enter">(set! fired true)</mn-on></input>' +
+        '<span id="ko"><mn-text>fired</mn-text></span>' +
+        '</div></div>'
+      );
+      keydown(el.querySelector('#ki'), 'a');
+      eq(el.querySelector('#ko').textContent, 'false', 'keydown "a" does NOT fire .enter handler');
+      keydown(el.querySelector('#ki'), 'Enter');
+      eq(el.querySelector('#ko').textContent, 'true', 'keydown "Enter" fires .enter handler');
+    });
+
+    test('mn-on keydown.escape modifier — only fires on Escape key', function () {
+      var el = fixture(
+        '<div mn="esc-mod" mn-ctx=\'{"escaped":false}\'><div mn-state="a">' +
+        '<input id="ei"><mn-on event="keydown.escape">(set! escaped true)</mn-on></input>' +
+        '<span id="eo"><mn-text>escaped</mn-text></span>' +
+        '</div></div>'
+      );
+      keydown(el.querySelector('#ei'), 'a');
+      eq(el.querySelector('#eo').textContent, 'false', 'keydown "a" does NOT fire .escape handler');
+      keydown(el.querySelector('#ei'), 'Escape');
+      eq(el.querySelector('#eo').textContent, 'true', 'keydown "Escape" fires .escape handler');
     });
 
     test('mn-on: with action s-expression', function () {
@@ -1788,7 +1818,7 @@
       eq(el.querySelector('#ob').textContent, '2', 'store.db binding should be skipped');
     });
 
-    test('deps tracked: mn-on s-expression handler sets dirty via _applyScope', function () {
+    test('deps tracked: mn-on s-expression handler sets dirty via newContext', function () {
       var el = fixture(
         '<div mn="t" mn-ctx=\'{"a":0,"b":0}\'><div mn-state="s">' +
         '<span mn-text="a" id="oa"></span>' +
@@ -2257,14 +2287,14 @@
       eq(el.querySelector('[mn]')._mn.state, 'b', 'transitions to b — browser has dom capability');
     });
 
-    test('state-level mn-where with unsatisfiable capability blocks transition via to()', function () {
+    test('state-level mn-where with unsatisfiable capability transitions to target but cannot route', function () {
       var el = fixture(
         '<div mn="t"><div mn-state="a">' +
         '<button mn-to="b" id="btn">Go</button></div>' +
         '<div mn-state="b"><mn-where>(requires \'persist\')</mn-where>B content</div></div>'
       );
       click(el.querySelector('#btn'));
-      eq(el.querySelector('[mn]')._mn.state, 'a', 'stays in a — target state needs persist, browser cannot satisfy');
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'machine at b — waiting for capable node');
     });
 
     test('initial state with mn-where=(requires dom) renders content locally', function () {
@@ -2504,12 +2534,12 @@
         '</div>' +
         '<div mn-state="stopped"><span id="stopped">Done</span></div></div>'
       );
-      var ctx = el.querySelector('[mn]')._mn.ctx;
+      var inst = el.querySelector('[mn]')._mn;
       el.querySelector('#ab').click();
-      eq(ctx.childExits, 1, 'child exit hook fired on a->b');
-      eq(ctx.compoundExits, 0, 'compound exit did NOT fire on internal transition');
+      eq(inst.ctx.childExits, 1, 'child exit hook fired on a->b');
+      eq(inst.ctx.compoundExits, 0, 'compound exit did NOT fire on internal transition');
       el.querySelector('#abort2').click();
-      eq(ctx.compoundExits, 1, 'compound exit fired on leaving compound');
+      eq(inst.ctx.compoundExits, 1, 'compound exit fired on leaving compound');
     });
 
     test('compound state: init hooks fire outermost first', function () {
@@ -2729,7 +2759,7 @@
         'outerHTML contains state b transition (got: ' + html.substring(0, 200) + ')');
     });
 
-    test('outerHTML round-trips through htmlToScxml with all transitions', function () {
+    test('outerHTML preserves all states and transitions for transport', function () {
       var el = fixture(
         '<div mn="transport2" mn-ctx=\'{"x":1}\'>' +
         '<div mn-state="draft"><button mn-to="submitted">Go</button></div>' +
@@ -2738,7 +2768,7 @@
         '</div>'
       );
       var html = el.querySelector('[mn]').outerHTML;
-      // htmlToScxml should find transitions for BOTH draft and submitted
+      // outerHTML should contain transitions for BOTH draft and submitted
       assert(html.indexOf('submitted') !== -1, 'outerHTML mentions submitted state');
       // The template for state b should be in the DOM
       var templates = el.querySelectorAll('template[mn-state-template]');
@@ -3139,9 +3169,9 @@
         '<div mn-state="a"><button mn-to="b" id="btn">Go</button></div>' +
         '<div mn-state="b"><mn-where>(requires \'magic\')</mn-where><span>B</span></div></div>'
       );
-      // Transition should be blocked — browser lacks 'magic' capability
+      // Machine transitions to b but cannot route — waiting for capable node
       click(el.querySelector('#btn'));
-      eq(el.querySelector('[mn]')._mn.state, 'a', 'mn-where blocks transition to b');
+      eq(el.querySelector('[mn]')._mn.state, 'b', 'machine at b — waiting for capable node');
     });
 
     test('mn-each element with computed expression', function () {
@@ -3254,6 +3284,103 @@
     });
 
 
+    test('mn-bind disabled re-evaluates after mn-model in child machine', function () {
+      var el = fixture(
+        '<div mn="parent-wrap"><div mn-state="gate">' +
+        '<div mn="child-form" mn-ctx=\'{"username":"","password":""}\'><div mn-state="login">' +
+        '<input mn-model="username" type="text" class="u" />' +
+        '<input mn-model="password" type="password" class="p" />' +
+        '<button class="submit"><mn-bind attr="disabled">(or (empty? username) (empty? password))</mn-bind>Go</button>' +
+        '</div></div>' +
+        '</div></div>'
+      );
+      var childEl = el.querySelector('[mn="child-form"]');
+      var inst = childEl._mn;
+      var btn = el.querySelector('.submit');
+      eq(btn.disabled, true, 'child button starts disabled');
+
+      type(el.querySelector('.u'), 'alice');
+      eq(inst.ctx.username, 'alice', 'username updated in context');
+
+      type(el.querySelector('.p'), 'alice');
+      eq(inst.ctx.password, 'alice', 'password updated in context');
+
+      // Check binding cache
+      var hasBtnInCache = false;
+      if (inst._mnBindCache) {
+        for (var ci = 0; ci < inst._mnBindCache.length; ci++) {
+          if (inst._mnBindCache[ci] === btn) { hasBtnInCache = true; break; }
+        }
+      }
+      assert(hasBtnInCache, 'button is in child binding cache');
+      assert(btn._mnBindAttrs && btn._mnBindAttrs.length > 0, 'button has _mnBindAttrs');
+
+      eq(btn.disabled, false, 'child button enabled after both fields filled');
+    });
+
+    test('mn-where routing via SCXML brain hides previous state DOM', function () {
+      // This reproduces the login bug: canonical sendEvent transitions to a state
+      // with mn-where. The previous state's DOM must be hidden even though
+      // _transitionTo returns early for the route.
+      var el = fixture(
+        '<div mn="where-vis" mn-ctx=\'{"x":0}\'>' +
+        '<div mn-state="idle" id="wv-idle">' +
+        '<mn-transition event="go" to="routed"><mn-action>(set! x 1)</mn-action></mn-transition>' +
+        '<p>idle content should be hidden</p>' +
+        '</div>' +
+        '<div mn-state="routed" id="wv-routed"><mn-where>(requires \'gpu\')</mn-where><p>loading...</p></div>' +
+        '<div mn-state="done" id="wv-done"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      var idleEl = el.querySelector('#wv-idle');
+      var routedEl = el.querySelector('#wv-routed');
+
+      eq(idleEl.hidden, false, 'idle visible before transition');
+      eq(routedEl.hidden, true, 'routed hidden before transition');
+
+      // Fire event through the canonical engine (same as mn-to with SCXML brain)
+      inst.send('go');
+
+      eq(inst.state, 'routed', 'state is routed');
+      eq(inst.ctx.x, 1, 'action ran');
+      eq(idleEl.hidden, true, 'idle state HIDDEN after mn-where route');
+      eq(routedEl.hidden, false, 'routed state VISIBLE (shows loading content)');
+    });
+
+    test('mn-text in non-initial state renders after transition (no raw expressions)', function () {
+      var el = fixture(
+        '<div mn="text-trans" mn-ctx=\'{"count":42}\'>' +
+        '<div mn-state="a"><button mn-to="b">Go</button></div>' +
+        '<div mn-state="b"><span class="tt-out"><mn-text>count</mn-text></span></div>' +
+        '</div>'
+      );
+      click(el.querySelector('button'));
+      // After transition: b is shown, mn-text should be evaluated
+      var out = el.querySelector('.tt-out');
+      assert(out, 'output span exists after transition');
+      eq(out.textContent, '42', 'mn-text evaluated after state transition');
+      var rawMnTexts = el.querySelector('[mn-state="b"]').querySelectorAll('mn-text');
+      eq(rawMnTexts.length, 0, 'no raw mn-text elements in state b');
+    });
+
+    test('mn-init $store write is visible to bindings in same transition', function () {
+      var el = fixture(
+        '<mn-store name="initstore" value=\'{"val":null}\'></mn-store>' +
+        '<div mn="store-init" mn-ctx=\'{}\'>' +
+        '<div mn-state="a">' +
+        '<button mn-to="b">Go</button>' +
+        '</div>' +
+        '<div mn-state="b">' +
+        '<mn-init>(set! $store.initstore.val 42)</mn-init>' +
+        '<span id="sv"><mn-text>(get $store.initstore :val)</mn-text></span>' +
+        '</div>' +
+        '</div>'
+      );
+      click(el.querySelector('button'));
+      eq(el.querySelector('#sv').textContent, '42', '$store write from mn-init visible in binding');
+    });
+
     test('mn-let computed value triggers mn-bind disabled update on dependency change', function () {
       var el = fixture(
         '<div mn="let-bind" mn-ctx=\'{"email":"","password":"","agree":false}\'>' +
@@ -3305,6 +3432,520 @@
       // After leave animation, the old state should be hidden
       eq(aEl.hidden, true, 'state a hidden after leave animation');
       assert(!aEl.classList.contains('mn-leave-active'), 'leave-active class removed after transition');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  HTML COMPILER — canonical definition from DOM
+    // ══════════════════════════════════════════════════════════════════
+
+    group('HTML compiler — canonical definition extraction');
+
+    test('machine instance has canonical definition (_def)', function () {
+      // Hand-computed: a machine with 2 states and a guarded transition
+      // should produce a canonical def with states.alpha.on.go[0].guard
+      var el = fixture(
+        '<div mn="def-test" mn-ctx=\'{"x":42}\'>' +
+        '<div mn-state="alpha">' +
+        '<mn-transition event="go" to="beta"><mn-guard>(> x 0)</mn-guard><mn-action>(inc! x)</mn-action></mn-transition>' +
+        '</div>' +
+        '<div mn-state="beta">' +
+        '<mn-transition event="back" to="alpha"/>' +
+        '</div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn="def-test"]')._mn;
+      eq(typeof inst._def, 'object', 'instance has _def (canonical definition)');
+      eq(inst._def.id, 'def-test', 'def id matches machine name');
+      eq(inst._def.initial, 'alpha', 'def initial is first state');
+      eq(typeof inst._def.states.alpha, 'object', 'def has state alpha');
+      eq(typeof inst._def.states.beta, 'object', 'def has state beta');
+    });
+
+    test('canonical def has transitions with guards and actions', function () {
+      var el = fixture(
+        '<div mn="trans-def-test">' +
+        '<div mn-state="idle">' +
+        '<mn-transition event="submit" to="done">' +
+        '<mn-guard>(> count 0)</mn-guard>' +
+        '<mn-action>(set! submitted true)</mn-action>' +
+        '</mn-transition>' +
+        '</div>' +
+        '<div mn-state="done" mn-final></div>' +
+        '</div>'
+      );
+      var def = el.querySelector('[mn="trans-def-test"]')._mn._def;
+      eq(typeof def.states.idle.on, 'object', 'idle state has transitions');
+      eq(Array.isArray(def.states.idle.on.submit), true, 'idle has submit transition array');
+      eq(def.states.idle.on.submit[0].target, 'done', 'submit targets done');
+      eq(def.states.idle.on.submit[0].guard, '(> count 0)', 'submit has guard');
+      eq(def.states.idle.on.submit[0].action, '(set! submitted true)', 'submit has action');
+      eq(def.states.done.final, true, 'done is final state');
+    });
+
+    test('canonical def has lifecycle hooks', function () {
+      var el = fixture(
+        '<div mn="lifecycle-def-test">' +
+        '<div mn-state="active">' +
+        '<mn-init>(set! loaded true)</mn-init>' +
+        '<mn-exit>(set! loaded false)</mn-exit>' +
+        '<mn-temporal>(after 5000 (to done))</mn-temporal>' +
+        '<mn-where>(requires \'data\')</mn-where>' +
+        '</div>' +
+        '<div mn-state="done"></div>' +
+        '</div>'
+      );
+      var def = el.querySelector('[mn="lifecycle-def-test"]')._mn._def;
+      eq(def.states.active.init, '(set! loaded true)', 'init hook in def');
+      eq(def.states.active.exit, '(set! loaded false)', 'exit hook in def');
+      eq(def.states.active.temporal, '(after 5000 (to done))', 'temporal in def');
+      eq(def.states.active.where, "(requires 'data')", 'where in def');
+    });
+
+    test('canonical def handles compound states', function () {
+      var el = fixture(
+        '<div mn="compound-def-test" mn-initial="running">' +
+        '<div mn-state="running">' +
+        '<div mn-state="filling"><mn-transition event="full" to="draining"/></div>' +
+        '<div mn-state="draining"><mn-transition event="empty" to="filling"/></div>' +
+        '</div>' +
+        '<div mn-state="stopped"></div>' +
+        '</div>'
+      );
+      var def = el.querySelector('[mn="compound-def-test"]')._mn._def;
+      eq(typeof def.states.running, 'object', 'compound state exists');
+      eq(typeof def.states.running.states, 'object', 'compound has child states');
+      eq(typeof def.states.running.states.filling, 'object', 'filling child exists');
+      eq(typeof def.states.running.states.draining, 'object', 'draining child exists');
+      eq(def.states.running.states.filling.on.full[0].target, 'draining', 'filling → draining transition');
+    });
+
+    test('canonical def context matches mn-ctx', function () {
+      var el = fixture(
+        '<div mn="ctx-def-test" mn-ctx=\'{"name":"test","count":42,"items":[1,2,3]}\'>' +
+        '<div mn-state="a"></div>' +
+        '</div>'
+      );
+      var def = el.querySelector('[mn="ctx-def-test"]')._mn._def;
+      eq(def.context.name, 'test', 'context.name');
+      eq(def.context.count, 42, 'context.count');
+      deepEq(def.context.items, [1, 2, 3], 'context.items');
+    });
+
+    test('multiple transitions on same event become array', function () {
+      var el = fixture(
+        '<div mn="multi-trans-test">' +
+        '<div mn-state="checking">' +
+        '<mn-transition event="decide" to="approved"><mn-guard>(<= amount 100)</mn-guard></mn-transition>' +
+        '<mn-transition event="decide" to="rejected"><mn-guard>(> amount 100)</mn-guard></mn-transition>' +
+        '</div>' +
+        '<div mn-state="approved"></div>' +
+        '<div mn-state="rejected"></div>' +
+        '</div>'
+      );
+      var def = el.querySelector('[mn="multi-trans-test"]')._mn._def;
+      eq(def.states.checking.on.decide.length, 2, 'two transitions for decide event');
+      eq(def.states.checking.on.decide[0].target, 'approved', 'first targets approved');
+      eq(def.states.checking.on.decide[0].guard, '(<= amount 100)', 'first guard');
+      eq(def.states.checking.on.decide[1].target, 'rejected', 'second targets rejected');
+      eq(def.states.checking.on.decide[1].guard, '(> amount 100)', 'second guard');
+    });
+
+    test('transition with emit', function () {
+      var el = fixture(
+        '<div mn="emit-def-test">' +
+        '<div mn-state="ready">' +
+        '<mn-transition event="go" to="done"><mn-emit>completed</mn-emit></mn-transition>' +
+        '</div>' +
+        '<div mn-state="done"></div>' +
+        '</div>'
+      );
+      var def = el.querySelector('[mn="emit-def-test"]')._mn._def;
+      eq(def.states.ready.on.go[0].emit, 'completed', 'emit in transition def');
+    });
+
+
+    // ══════════════════════════════════════════════════════════════════
+    //  CANONICAL ENGINE DELEGATION (sendEvent integration)
+    // ══════════════════════════════════════════════════════════════════
+
+    group('sendEvent delegation');
+
+    test('state-level guarded transition fires through canonical engine', function () {
+      var el = fixture(
+        '<div mn="send-guard-test" mn-ctx=\'{"count":5}\'>' +
+        '<div mn-state="idle">' +
+        '<mn-transition event="go" to="done"><mn-guard>(> count 0)</mn-guard></mn-transition>' +
+        '</div>' +
+        '<div mn-state="done"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(typeof inst._def, 'object', 'has compiled def');
+      eq(inst.state, 'idle', 'starts idle');
+
+      // Click mn-to="go" — should fire through sendEvent, guard passes
+      var btn = document.createElement('button');
+      btn.setAttribute('mn-to', 'go');
+      el.querySelector('[mn-state="idle"]').appendChild(btn);
+      click(btn);
+
+      eq(inst.state, 'done', 'guard passed, transitioned to done via sendEvent');
+    });
+
+    test('state-level guard blocks transition', function () {
+      var el = fixture(
+        '<div mn="send-block-test" mn-ctx=\'{"count":0}\'>' +
+        '<div mn-state="idle">' +
+        '<mn-transition event="go" to="done"><mn-guard>(> count 0)</mn-guard></mn-transition>' +
+        '</div>' +
+        '<div mn-state="done"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'idle', 'starts idle');
+
+      var btn = document.createElement('button');
+      btn.setAttribute('mn-to', 'go');
+      el.querySelector('[mn-state="idle"]').appendChild(btn);
+      click(btn);
+
+      eq(inst.state, 'idle', 'guard failed, stayed in idle');
+    });
+
+    test('action mutates context through sendEvent', function () {
+      var el = fixture(
+        '<div mn="send-action-test" mn-ctx=\'{"x":10}\'>' +
+        '<div mn-state="a">' +
+        '<mn-transition event="bump" to="b"><mn-action>(set! x (+ x 5))</mn-action></mn-transition>' +
+        '</div>' +
+        '<div mn-state="b"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      click_mnto(el, 'bump');
+
+      eq(inst.state, 'b', 'transitioned');
+      eq(inst.ctx.x, 15, 'action mutated context: 10 + 5 = 15');
+    });
+
+    test('direct state name when no event matches', function () {
+      // mn-to="about" where "about" is a state name, no transition event
+      var el = fixture(
+        '<div mn="direct-state-test">' +
+        '<div mn-state="home"><p>Home</p></div>' +
+        '<div mn-state="about"><p>About</p></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'home', 'starts home');
+
+      var btn = document.createElement('button');
+      btn.setAttribute('mn-to', 'about');
+      el.querySelector('[mn-state="home"]').appendChild(btn);
+      click(btn);
+
+      eq(inst.state, 'about', 'direct state transition worked');
+    });
+
+    test('canonical instance state stays in sync after to()', function () {
+      var el = fixture(
+        '<div mn="sync-test">' +
+        '<div mn-state="a"><p>A</p></div>' +
+        '<div mn-state="b"><p>B</p></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(typeof inst._canonical, 'object', 'has canonical instance');
+      eq(inst._canonical.state, 'a', 'canonical starts in a');
+
+      inst.to('b');
+      eq(inst.state, 'b', 'browser state is b');
+      eq(inst._canonical.state, 'b', 'canonical state synced to b');
+    });
+
+    // helper to create and click mn-to button
+    function click_mnto(fixtureEl, eventName) {
+      var machineEl = fixtureEl.querySelector('[mn]');
+      var stateEl = fixtureEl.querySelector('[mn-state]:not([hidden])') || machineEl;
+      var btn = document.createElement('button');
+      btn.setAttribute('mn-to', eventName);
+      stateEl.appendChild(btn);
+      click(btn);
+    }
+
+
+    group('mn-receive canonical routing');
+
+    test('mn-receive routes through SCXML brain when transition exists', function () {
+      // Parent machine with SCXML-style transition for "child-done"
+      var el = fixture(
+        '<div mn="recv-canon-parent" mn-ctx=\'{"status":"waiting","count":0}\'>' +
+        '<mn-receive event="child-done">(do (set! status \'fallback\') (to done))</mn-receive>' +
+        '<div mn-state="active">' +
+        '<mn-transition event="child-done" to="done">' +
+        '<mn-action>(do (set! status \'via-scxml\') (set! count (+ count 1)))</mn-action>' +
+        '</mn-transition>' +
+        '</div>' +
+        '<div mn-state="done"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'active', 'starts active');
+      eq(inst.ctx.status, 'waiting', 'status starts as waiting');
+
+      // Simulate inter-machine event
+      document.dispatchEvent(new CustomEvent('mn-child-done', {
+        detail: { source: document.createElement('div'), payload: null }
+      }));
+
+      // Give the event loop a tick
+      eq(inst.state, 'done', 'transitioned via SCXML brain');
+      eq(inst.ctx.status, 'via-scxml', 'SCXML action set status, not fallback body');
+      eq(inst.ctx.count, 1, 'SCXML action incremented count');
+    });
+
+    test('mn-receive falls back to body when no SCXML transition matches', function () {
+      // Machine with mn-receive but no matching SCXML transition
+      var el = fixture(
+        '<div mn="recv-fallback" mn-ctx=\'{"msg":"none"}\'>' +
+        '<mn-receive event="external-notify">(set! msg \'from-body\')</mn-receive>' +
+        '<div mn-state="idle"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.ctx.msg, 'none', 'msg starts as none');
+
+      document.dispatchEvent(new CustomEvent('mn-external-notify', {
+        detail: { source: document.createElement('div'), payload: null }
+      }));
+
+      eq(inst.ctx.msg, 'from-body', 'fallback body executed');
+      eq(inst.state, 'idle', 'state unchanged');
+    });
+
+
+    group('mn-initial override');
+
+    test('mn-initial overrides default starting state', function () {
+      var el = fixture(
+        '<div mn="init-override" mn-initial="second" mn-ctx=\'{"x":1}\'>' +
+        '<div mn-state="first"><p>First</p></div>' +
+        '<div mn-state="second"><p>Second</p></div>' +
+        '<div mn-state="third"><p>Third</p></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'second', 'starts at second, not first');
+      eq(el.querySelector('[mn-state="first"]').hidden, true, 'first is hidden');
+      eq(el.querySelector('[mn-state="second"]').hidden, false, 'second is visible');
+    });
+
+    test('mn-initial works with transitions from non-initial state', function () {
+      var el = fixture(
+        '<div mn="init-trans" mn-initial="waiting" mn-ctx=\'{"approved":false}\'>' +
+        '<div mn-state="draft"><p>Draft</p></div>' +
+        '<div mn-state="waiting">' +
+        '<mn-transition event="approve" to="done"><mn-action>(set! approved true)</mn-action></mn-transition>' +
+        '<p>Waiting</p>' +
+        '</div>' +
+        '<div mn-state="done"><p>Done</p></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'waiting', 'starts at waiting');
+      eq(inst.ctx.approved, false, 'approved starts false');
+
+      // Fire approve event
+      var btn = document.createElement('button');
+      btn.setAttribute('mn-to', 'approve');
+      el.querySelector('[mn-state="waiting"]').appendChild(btn);
+      click(btn);
+
+      eq(inst.state, 'done', 'transitioned to done');
+      eq(inst.ctx.approved, true, 'action set approved to true');
+    });
+
+    test('mn-initial sets canonical instance state correctly', function () {
+      var el = fixture(
+        '<div mn="init-canonical" mn-initial="review">' +
+        '<div mn-state="draft"><p>Draft</p></div>' +
+        '<div mn-state="review"><p>Review</p></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'review', 'browser state is review');
+      eq(typeof inst._canonical, 'object', 'has canonical instance');
+      eq(inst._canonical.state, 'review', 'canonical state is review, not draft');
+    });
+
+    test('mn-initial with mn-to fires through canonical engine from overridden state', function () {
+      var el = fixture(
+        '<div mn="init-engine" mn-initial="pending" mn-ctx=\'{"verdict":"none"}\'>' +
+        '<div mn-state="idle"><p>Idle</p></div>' +
+        '<div mn-state="pending">' +
+        '<mn-transition event="accept" to="accepted"><mn-guard>(= verdict \'none\')</mn-guard><mn-action>(set! verdict \'yes\')</mn-action></mn-transition>' +
+        '<mn-transition event="reject" to="rejected"><mn-action>(set! verdict \'no\')</mn-action></mn-transition>' +
+        '</div>' +
+        '<div mn-state="accepted"><p>Accepted</p></div>' +
+        '<div mn-state="rejected"><p>Rejected</p></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'pending', 'starts at pending via mn-initial');
+
+      // Fire accept — guard checks verdict === none, should pass
+      var btn = document.createElement('button');
+      btn.setAttribute('mn-to', 'accept');
+      el.querySelector('[mn-state="pending"]').appendChild(btn);
+      click(btn);
+
+      eq(inst.state, 'accepted', 'guard passed, transitioned to accepted');
+      eq(inst.ctx.verdict, 'yes', 'action set verdict');
+      eq(inst._canonical.state, 'accepted', 'canonical state synced');
+    });
+
+
+    group('sendEvent route signal — canonical transition to state with mn-where');
+
+    test('canonical sendEvent to state with mn-where does not stack overflow', function () {
+      // Machine: idle → (go) → routed-state (mn-where requires 'gpu') → done
+      // The canonical engine transitions to routed-state. The browser's _transitionTo
+      // hits mn-where, finds the browser lacks 'gpu', and should fire POST.
+      // This must NOT stack overflow.
+      var el = fixture(
+        '<div mn="route-test" mn-ctx=\'{"x":0}\'>' +
+        '<div mn-state="idle">' +
+        '<mn-transition event="go" to="routed"><mn-action>(set! x 42)</mn-action></mn-transition>' +
+        '</div>' +
+        '<div mn-state="routed"><mn-where>(requires \'gpu\')</mn-where></div>' +
+        '<div mn-state="done"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      eq(inst.state, 'idle', 'starts idle');
+
+      var threw = false;
+      try {
+        var btn = document.createElement('button');
+        btn.setAttribute('mn-to', 'go');
+        el.querySelector('[mn-state="idle"]').appendChild(btn);
+        click(btn);
+      } catch (e) {
+        threw = true;
+      }
+      eq(threw, false, 'no stack overflow');
+      // Machine should be at routed (waiting for server response via SSE)
+      eq(inst.state, 'routed', 'machine at routed state (waiting for capable node)');
+      eq(inst.ctx.x, 42, 'action ran before routing');
+    });
+
+
+    group('invoke — child machines from SCXML invocations');
+
+    test('invoke creates child machine element in state', function () {
+      // Parent machine with an invoke in the "loaded" state
+      // The invoke embeds a full child machine SCXML
+      var el = fixture(
+        '<div mn="invoke-parent" mn-ctx=\'{}\'>' +
+        '<div mn-state="idle"><button mn-to="loaded" id="go">Go</button></div>' +
+        '<div mn-state="loaded"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+
+      // Manually inject an invoke on the loaded state definition
+      // (normally this comes from compiled SCXML with <invoke>)
+      if (inst._def && inst._def._stateTree['loaded']) {
+        inst._def._stateTree['loaded'].spec.invokes = [{
+          id: 'child-1',
+          scxml: '<scxml name="child-machine" initial="ready" mn-ctx=\'{"value":42}\'><state id="ready"/></scxml>'
+        }];
+      }
+
+      // Transition to loaded state
+      click(el.querySelector('#go'));
+
+      // Check child machine element was created
+      var childEl = el.querySelector('[mn="child-machine"]');
+      eq(childEl != null, true, 'child machine element created');
+      eq(childEl.getAttribute('mn'), 'child-machine', 'mn attribute set');
+      eq(childEl.getAttribute('mn-initial'), 'ready', 'mn-initial set from SCXML');
+      eq(childEl.getAttribute('data-invoke-id'), 'child-1', 'invoke ID set');
+    });
+
+    test('invoke child machine has correct context from SCXML', function () {
+      var el = fixture(
+        '<div mn="invoke-ctx" mn-ctx=\'{}\'>' +
+        '<div mn-state="idle"><button mn-to="loaded" id="go">Go</button></div>' +
+        '<div mn-state="loaded"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      if (inst._def && inst._def._stateTree['loaded']) {
+        inst._def._stateTree['loaded'].spec.invokes = [{
+          id: 'ctx-child',
+          scxml: '<scxml name="ctx-child" initial="a" mn-ctx=\'{"title":"Test","amount":750}\'><state id="a"/></scxml>'
+        }];
+      }
+
+      click(el.querySelector('#go'));
+
+      var childEl = el.querySelector('[mn="ctx-child"]');
+      eq(childEl != null, true, 'child exists');
+      var ctxAttr = childEl.getAttribute('mn-ctx');
+      eq(ctxAttr.indexOf('Test') !== -1, true, 'context has title');
+      eq(ctxAttr.indexOf('750') !== -1, true, 'context has amount');
+    });
+
+    test('invoke child mn-init does NOT fire on load from storage', function () {
+      // A child machine loaded at fulfilled state via invoke should NOT
+      // fire its mn-init. mn-init is for live transitions, not hydration.
+      var emitted = [];
+      document.addEventListener('mn-test-loaded', function (e) { emitted.push(e.detail); });
+
+      var el = fixture(
+        '<div mn="invoke-noinit" mn-ctx=\'{}\'>' +
+        '<div mn-state="idle"><button mn-to="loaded" id="go">Go</button></div>' +
+        '<div mn-state="loaded"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      if (inst._def && inst._def._stateTree['loaded']) {
+        inst._def._stateTree['loaded'].spec.invokes = [{
+          id: 'stored-1',
+          scxml: '<scxml name="invoke-noinit-child" initial="done" mn-ctx=\'{"x":1}\'><state id="done"><mn-init>(emit test-loaded)</mn-init></state></scxml>'
+        }];
+      }
+
+      click(el.querySelector('#go'));
+
+      eq(emitted.length, 0, 'mn-init on invoked child did NOT fire');
+    });
+
+    test('multiple invokes create multiple child machines', function () {
+      var el = fixture(
+        '<div mn="invoke-multi" mn-ctx=\'{}\'>' +
+        '<div mn-state="idle"><button mn-to="loaded" id="go">Go</button></div>' +
+        '<div mn-state="loaded"></div>' +
+        '</div>'
+      );
+      var inst = el.querySelector('[mn]')._mn;
+      if (inst._def && inst._def._stateTree['loaded']) {
+        inst._def._stateTree['loaded'].spec.invokes = [
+          { id: 'po-1', scxml: '<scxml name="order" initial="fulfilled" mn-ctx=\'{"title":"A"}\'><state id="fulfilled"/></scxml>' },
+          { id: 'po-2', scxml: '<scxml name="order" initial="rejected" mn-ctx=\'{"title":"B"}\'><state id="rejected"/></scxml>' }
+        ];
+      }
+
+      click(el.querySelector('#go'));
+
+      var children = el.querySelectorAll('[data-invoke-id]');
+      eq(children.length, 2, 'two child machines created');
+      eq(children[0].getAttribute('data-invoke-id'), 'po-1', 'first invoke ID');
+      eq(children[1].getAttribute('data-invoke-id'), 'po-2', 'second invoke ID');
+      eq(children[0].getAttribute('mn-initial'), 'fulfilled', 'first at fulfilled');
+      eq(children[1].getAttribute('mn-initial'), 'rejected', 'second at rejected');
     });
 
 

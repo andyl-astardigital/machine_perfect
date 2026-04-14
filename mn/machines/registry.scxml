@@ -2,12 +2,12 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        id="registry"
        initial="active"
-       mn-ctx='{"nodes":[],"id":null,"address":null,"capabilities":null,"formats":null}'>
+       mn-ctx='{"nodes":[],"id":null,"capabilities":null,"transport":null}'>
 
   <state id="active">
     <transition event="register">
-      <mn-guard>(and (some? address) (some? capabilities) (some? formats) (not (some? (find (fn [n] (= (get n :id) id)) nodes))))</mn-guard>
-      <mn-action>(push! nodes (obj :id id :address address :capabilities capabilities :formats formats :registered_at (now)))</mn-action>
+      <mn-guard>(and (some? transport) (some? capabilities) (not (some? (find (fn [n] (= (get n :id) id)) nodes))))</mn-guard>
+      <mn-action>(push! nodes (obj :id id :capabilities capabilities :transport transport :registered_at (now)))</mn-action>
     </transition>
 
     <transition event="deregister">

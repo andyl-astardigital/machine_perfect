@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Navigation machine — browser only.
+
+  Controls page routing. Starts at 'login' (session machine handles auth).
+  On 'authenticated' event from session → transitions to 'orders'.
+  On 'logged-out' → back to 'login'.
+
+  Every authenticated state has the full set of nav transitions so any
+  navbar button works from any page. The navbar itself lives at the
+  template root in nav.mn.html — outside states, never re-rendered.
+
+  Data: reads $store.session for user info (set by session machine).
+  Events: receives authenticated, logged-out, order-approved, order-rejected,
+  order-cancelled, navigate-orders from sibling machines.
+-->
+<scxml xmlns:mn="http://machine-native.dev/scxml/1.0"
+       name="nav" initial="login"
+       mn-ctx='{"_orderStatus":null}'>
+
+  <state id="login">
+    <transition event="authenticated" target="orders"/>
+  </state>
+
+  <state id="orders" mn-url="/orders">
+    <mn:temporal>(animate)</mn:temporal>
+    <transition event="create-order" target="create"/>
+    <transition event="view-pending" target="director-queue"/>
+    <transition event="view-dashboard" target="dashboard"/>
+    <transition event="logged-out" target="login"/>
+  </state>
+
+  <state id="create" mn-url="/orders/new">
+    <mn:temporal>(animate)</mn:temporal>
+    <transition event="order-approved" target="review">
+      <mn:action>(set! _orderStatus 'fulfilled')</mn:action>
+    </transition>
+    <transition event="order-rejected" target="review">
+      <mn:action>(set! _orderStatus 'rejected')</mn:action>
+    </transition>
+    <transition event="order-cancelled" target="orders"/>
+    <transition event="navigate-orders" target="orders"/>
+    <transition event="back-to-orders" target="orders"/>
+    <transition event="view-pending" target="director-queue"/>
+    <transition event="view-dashboard" target="dashboard"/>
+    <transition event="logged-out" target="login"/>
+  </state>
+
+  <state id="review" mn-url="/orders/review">
+    <mn:temporal>(animate)</mn:temporal>
+    <transition event="acknowledge" target="orders">
+      <mn:action>(set! _orderStatus nil)</mn:action>
+    </transition>
+    <transition event="back-to-orders" target="orders">
+      <mn:action>(set! _orderStatus nil)</mn:action>
+    </transition>
+    <transition event="logged-out" target="login"/>
+  </state>
+
+  <state id="director-queue" mn-url="/orders/director">
+    <mn:temporal>(animate)</mn:temporal>
+    <transition event="back-to-orders" target="orders"/>
+    <transition event="create-order" target="create"/>
+    <transition event="view-dashboard" target="dashboard"/>
+    <transition event="logged-out" target="login"/>
+  </state>
+
+  <state id="dashboard" mn-url="/dashboard">
+    <mn:temporal>(animate)</mn:temporal>
+    <transition event="back-to-orders" target="orders"/>
+    <transition event="create-order" target="create"/>
+    <transition event="view-pending" target="director-queue"/>
+    <transition event="logged-out" target="login"/>
+  </state>
+</scxml>

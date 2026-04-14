@@ -1,0 +1,289 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; font-size: 12px; color: #e0e0e0; background: #1e1e1e; display: flex; flex-direction: column; height: 100vh; }
+
+  /* Layout */
+  .top { display: flex; flex: 1; overflow: hidden; }
+  .sidebar { width: 220px; border-right: 1px solid #333; overflow-y: auto; }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .context-panel { flex: 1; overflow-y: auto; padding: 8px 12px; }
+  .log-panel { height: 180px; border-top: 1px solid #333; overflow-y: auto; padding: 8px 12px; }
+  .repl-bar { display: flex; border-top: 1px solid #333; }
+  .repl-bar input { flex: 1; background: #252525; border: none; color: #e0e0e0; padding: 6px 10px; font-family: inherit; font-size: 12px; outline: none; }
+  .repl-bar span { padding: 6px 8px; color: #569cd6; font-weight: bold; }
+
+  /* Machine list */
+  .machine { padding: 6px 10px; cursor: pointer; border-bottom: 1px solid #2a2a2a; }
+  .machine:hover { background: #252525; }
+  .machine.active { background: #264f78; }
+  .machine-name { font-weight: bold; color: #dcdcaa; }
+  .machine-state { color: #4ec9b0; margin-left: 6px; }
+  .machine-states { color: #666; font-size: 10px; margin-top: 2px; }
+
+  /* Context */
+  .section-title { font-weight: bold; color: #569cd6; margin: 8px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .ctx-key { color: #9cdcfe; }
+  .ctx-val { color: #ce9178; }
+  .ctx-val.number { color: #b5cea8; }
+  .ctx-val.bool { color: #569cd6; }
+  .ctx-val.null { color: #666; }
+  .ctx-row { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .enabled { padding: 2px 0; }
+  .enabled-event { color: #dcdcaa; cursor: pointer; }
+  .enabled-event:hover { text-decoration: underline; }
+  .enabled-target { color: #4ec9b0; }
+  .enabled-guard { color: #666; font-size: 10px; }
+
+  /* Log */
+  .log-entry { padding: 1px 0; }
+  .log-from { color: #666; }
+  .log-to { color: #4ec9b0; }
+  .log-event { color: #dcdcaa; }
+  .log-time { color: #444; font-size: 10px; }
+  .log-effect { color: #c586c0; }
+
+  /* REPL output */
+  .repl-result { padding: 2px 0; color: #b5cea8; }
+  .repl-error { padding: 2px 0; color: #f44747; }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="sidebar" id="sidebar"></div>
+  <div class="main">
+    <div class="context-panel" id="context"></div>
+    <div class="log-panel" id="log"></div>
+  </div>
+</div>
+<div class="repl-bar">
+  <span>mn&gt;</span>
+  <input id="repl" type="text" placeholder="(+ 1 2) or :send machine-name event" autofocus />
+</div>
+
+<script>
+var selected = null;
+var lastSnapshot = null;
+var logEntries = [];
+var MAX_LOG = 200;
+
+
+// ── Evaluate in the inspected page ──────────────────────────────
+
+function pageEval(expr, cb) {
+  chrome.devtools.inspectedWindow.eval(expr, function (result, err) {
+    if (err) { cb(null, err); } else { cb(result); }
+  });
+}
+
+
+// ── Render machine list ─────────────────────────────────────────
+
+function renderSidebar(snapshot) {
+  var sb = document.getElementById('sidebar');
+  var html = '';
+  for (var i = 0; i < snapshot.machines.length; i++) {
+    var m = snapshot.machines[i];
+    var active = selected === m.name ? ' active' : '';
+    html += '<div class="machine' + active + '" data-name="' + m.name + '">';
+    html += '<span class="machine-name">' + m.name + '</span>';
+    html += '<span class="machine-state">' + m.state + '</span>';
+    html += '<div class="machine-states">' + (m.states || []).join(' ') + '</div>';
+    html += '</div>';
+  }
+  sb.innerHTML = html;
+
+  var items = sb.querySelectorAll('.machine');
+  for (var j = 0; j < items.length; j++) {
+    items[j].addEventListener('click', function () {
+      selected = this.getAttribute('data-name');
+      renderSidebar(lastSnapshot);
+      renderContext(lastSnapshot);
+    });
+  }
+}
+
+
+// ── Render context + enabled transitions ────────────────────────
+
+function renderContext(snapshot) {
+  var panel = document.getElementById('context');
+  if (!selected || !snapshot) { panel.innerHTML = '<div style="color:#666;padding:20px">Select a machine</div>'; return; }
+
+  var m = null;
+  for (var i = 0; i < snapshot.machines.length; i++) {
+    if (snapshot.machines[i].name === selected) { m = snapshot.machines[i]; break; }
+  }
+  if (!m) { panel.innerHTML = '<div style="color:#666">Machine not found</div>'; return; }
+
+  var html = '<div class="section-title">State: <span style="color:#4ec9b0">' + m.state + '</span></div>';
+
+  // Enabled transitions
+  if (m.enabled && m.enabled.length > 0) {
+    html += '<div class="section-title">Enabled Transitions</div>';
+    for (var ei = 0; ei < m.enabled.length; ei++) {
+      var t = m.enabled[ei];
+      html += '<div class="enabled">';
+      html += '<span class="enabled-event" data-machine="' + m.name + '" data-event="' + t.event + '">' + t.event + '</span>';
+      html += ' <span class="enabled-target">&rarr; ' + (t.target || 'self') + '</span>';
+      if (t.guard) html += ' <span class="enabled-guard">when ' + t.guard + '</span>';
+      html += '</div>';
+    }
+  }
+
+  // Context
+  html += '<div class="section-title">Context</div>';
+  html += renderObject(m.context);
+
+  // Store
+  if (snapshot.store && Object.keys(snapshot.store).length > 0) {
+    html += '<div class="section-title">$store</div>';
+    html += renderObject(snapshot.store);
+  }
+
+  panel.innerHTML = html;
+
+  // Click-to-fire on enabled transitions
+  var evLinks = panel.querySelectorAll('.enabled-event');
+  for (var li = 0; li < evLinks.length; li++) {
+    evLinks[li].addEventListener('click', function () {
+      var name = this.getAttribute('data-machine');
+      var event = this.getAttribute('data-event');
+      pageEval('JSON.stringify(MachineNative._send("' + name + '", "' + event + '"))', function (r) {
+        addLog({ type: 'send', machine: name, event: event, result: r });
+      });
+    });
+  }
+}
+
+function renderObject(obj) {
+  var html = '';
+  for (var k in obj) {
+    if (!obj.hasOwnProperty(k)) continue;
+    var val = obj[k];
+    var cls = 'ctx-val';
+    var display;
+    if (val === null || val === undefined) { cls += ' null'; display = 'nil'; }
+    else if (typeof val === 'number') { cls += ' number'; display = String(val); }
+    else if (typeof val === 'boolean') { cls += ' bool'; display = String(val); }
+    else if (typeof val === 'string') { display = '"' + val + '"'; }
+    else { display = JSON.stringify(val); }
+    html += '<div class="ctx-row"><span class="ctx-key">' + k + '</span>: <span class="' + cls + '">' + display + '</span></div>';
+  }
+  return html;
+}
+
+
+// ── Transition log ──────────────────────────────────────────────
+
+function addLog(entry) {
+  entry.time = new Date().toLocaleTimeString();
+  logEntries.push(entry);
+  if (logEntries.length > MAX_LOG) logEntries.shift();
+  renderLog();
+}
+
+function renderLog() {
+  var panel = document.getElementById('log');
+  var html = '';
+  for (var i = logEntries.length - 1; i >= 0; i--) {
+    var e = logEntries[i];
+    html += '<div class="log-entry">';
+    html += '<span class="log-time">' + e.time + '</span> ';
+    if (e.type === 'transition') {
+      html += '<span class="log-event">' + e.machine + '</span> ';
+      html += '<span class="log-from">' + e.from + '</span> &rarr; ';
+      html += '<span class="log-to">' + e.to + '</span>';
+    } else if (e.type === 'send') {
+      html += '<span class="log-effect">send</span> ';
+      html += '<span class="log-event">' + e.machine + '.' + e.event + '</span>';
+    } else if (e.type === 'repl') {
+      html += '<span class="repl-result">' + e.expr + ' &rarr; ' + e.result + '</span>';
+    } else if (e.type === 'error') {
+      html += '<span class="repl-error">' + e.message + '</span>';
+    }
+    html += '</div>';
+  }
+  panel.innerHTML = html;
+}
+
+
+// ── REPL input ──────────────────────────────────────────────────
+
+document.getElementById('repl').addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter') return;
+  var input = this.value.trim();
+  if (!input) return;
+  this.value = '';
+
+  // :send machine event
+  if (input.indexOf(':send ') === 0) {
+    var parts = input.substring(6).split(/\s+/);
+    if (parts.length >= 2) {
+      pageEval('JSON.stringify(MachineNative._send("' + parts[0] + '", "' + parts[1] + '"))', function (r) {
+        addLog({ type: 'send', machine: parts[0], event: parts[1], result: r });
+      });
+    }
+    return;
+  }
+
+  // s-expression evaluation
+  var evalExpr = 'JSON.stringify(MachineNative._eval(' + JSON.stringify(input) + ', ' + JSON.stringify(selected) + '))';
+  pageEval(evalExpr, function (result, err) {
+    if (err) {
+      addLog({ type: 'error', message: String(err.value || err) });
+    } else {
+      addLog({ type: 'repl', expr: input, result: result });
+    }
+  });
+});
+
+
+// ── Polling ─────────────────────────────────────────────────────
+// Poll the inspected page for state changes. Detect transitions
+// by comparing with the previous snapshot.
+
+function poll() {
+  pageEval('JSON.stringify(MachineNative._debug())', function (raw, err) {
+    if (err || !raw) return;
+    try {
+      var snapshot = JSON.parse(raw);
+      // Detect transitions
+      if (lastSnapshot) {
+        for (var i = 0; i < snapshot.machines.length; i++) {
+          var m = snapshot.machines[i];
+          for (var j = 0; j < lastSnapshot.machines.length; j++) {
+            var prev = lastSnapshot.machines[j];
+            if (prev.name === m.name && prev.state !== m.state) {
+              addLog({ type: 'transition', machine: m.name, from: prev.state, to: m.state });
+            }
+          }
+        }
+      }
+      lastSnapshot = snapshot;
+      renderSidebar(snapshot);
+      renderContext(snapshot);
+    } catch (e) {}
+  });
+}
+
+// Auto-select first machine on initial load
+setTimeout(function () {
+  poll();
+  setTimeout(function () {
+    if (lastSnapshot && lastSnapshot.machines.length > 0 && !selected) {
+      selected = lastSnapshot.machines[0].name;
+      renderSidebar(lastSnapshot);
+      renderContext(lastSnapshot);
+    }
+  }, 300);
+}, 100);
+
+setInterval(poll, 500);
+</script>
+</body>
+</html>

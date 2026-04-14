@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml name="test-guards" initial="idle">
+  <datamodel>
+    <data id="ctx" expr='{"amount":500,"approved":false}'/>
+  </datamodel>
+  <state id="idle">
+    <transition event="submit" target="checking">
+      <mn-guard><![CDATA[(> amount 0)]]></mn-guard>
+    </transition>
+  </state>
+  <state id="checking">
+    <transition event="approve" target="approved">
+      <mn-guard><![CDATA[(<= amount 1000)]]></mn-guard>
+      <mn-action><![CDATA[(set! approved true)]]></mn-action>
+    </transition>
+    <transition event="reject" target="rejected">
+      <mn-guard><![CDATA[(> amount 1000)]]></mn-guard>
+    </transition>
+  </state>
+  <state id="approved"/>
+  <state id="rejected"/>
+</scxml>

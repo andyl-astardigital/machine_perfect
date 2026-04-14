@@ -16,8 +16,8 @@
                          │     machine execution)            │
                          └──────────────────────────────────┘
                             │         │           │
-                   Browser DOM   Postgres    Service-to-service
-                                             machine exchange
+                   Browser DOM   Persistence  Machine-to-machine
+                                 (adapter)    exchange via SCXML
 ```
 
 ## External interfaces
@@ -29,7 +29,7 @@
 | Canonical JSON | In/Out (both) | Machine definitions as portable computation documents |
 | DOM | Out (browser) | textContent, attributes, visibility, CSS classes |
 | HTTP API | In/Out (backend) | Events in, machine state + enabled transitions out |
-| Postgres | Out (backend) | Instance snapshots, audit log, definition storage |
+| Persistence adapter | Out (backend) | SCXML snapshots stored via pluggable adapter (SQLite, Postgres, etc.) |
 | External APIs | Out (backend) | Effect adapters (HTTP, email, queues) |
 | localStorage | In/Out (browser) | `mn-persist` state persistence |
 | MachineNative.fn() | In (both) | User-registered functions (JS escape hatch) |

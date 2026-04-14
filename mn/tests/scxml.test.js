@@ -293,7 +293,7 @@ eq(r3.transitioned, true, 'approve succeeded');
 eq(poInst.state, 'approved', 'now in approved');
 eq(typeof poInst.context.approved_at, 'number', 'approved_at is a number');
 eq(r3.isFinal, true, 'approved is final');
-deepEq(r3.emits, ['order-approved', 'done.state.approved'], 'emitted order-approved + done.state');
+deepEq(r3.emits, [{name: 'order-approved', payload: null}, {name: 'done.state.approved', payload: null}], 'emitted order-approved + done.state');
 
 // Cannot transition from final
 var r4 = machine.sendEvent(poInst, 'approve');
@@ -462,7 +462,7 @@ var emitDef = scxml.compile(emitScxml, {});
 var emitInst = machine.createInstance(emitDef);
 var emitResult = machine.sendEvent(emitInst, 'go');
 eq(emitResult.transitioned, true, 'transition succeeded');
-deepEq(emitResult.emits, ['went'], 'emits exactly ["went"]');
+deepEq(emitResult.emits, [{name: 'went', payload: null}], 'emits exactly [{name:"went",payload:null}]');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -585,6 +585,231 @@ eq(dataText, '&amp; <tag>', 'multiple entities unescaped in text content');
 describe('compile — guard in text content (no CDATA) with entities');
 var entityGuardDef = scxml.compile('<scxml initial="a"><state id="a"><transition event="go" target="b"><mn-guard>&lt; x 10</mn-guard></transition></state><state id="b"/></scxml>');
 eq(entityGuardDef.states.a.on.go[0].guard, '< x 10', 'guard text entities unescaped by parser');
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Bare < in s-expression elements (no CDATA required)                    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('compile — bare < in mn-guard (no CDATA, no entities)');
+var bareLtDef = scxml.compile(
+  '<scxml initial="a"><state id="a">' +
+  '<transition event="approve" target="b"><mn-guard>(<= amount 100000)</mn-guard></transition>' +
+  '<transition event="reject" target="c"><mn-guard>(> amount 100000)</mn-guard></transition>' +
+  '</state><state id="b"/><state id="c"/></scxml>'
+);
+eq(bareLtDef.states.a.on.approve[0].guard, '(<= amount 100000)', 'bare <= in guard parsed correctly');
+eq(bareLtDef.states.a.on.reject[0].guard, '(> amount 100000)', 'bare > in guard parsed correctly');
+
+
+describe('compile — bare < in mn-action');
+var bareLtActionDef = scxml.compile(
+  '<scxml initial="a"><state id="a">' +
+  '<transition event="go" target="b">' +
+  '<mn-guard>(and (> x 0) (< x 100))</mn-guard>' +
+  '<mn-action>(do (set! result (< x 50)) (inc! count))</mn-action>' +
+  '</transition></state><state id="b"/></scxml>'
+);
+eq(bareLtActionDef.states.a.on.go[0].guard, '(and (> x 0) (< x 100))', 'multiple bare < > in guard');
+eq(bareLtActionDef.states.a.on.go[0].action, '(do (set! result (< x 50)) (inc! count))', 'bare < in action');
+
+
+describe('compile — bare < in mn-init and mn-exit');
+var bareLtLifecycleDef = scxml.compile(
+  '<scxml initial="a"><state id="a">' +
+  '<mn-init>(when (< count 10) (inc! count))</mn-init>' +
+  '<mn-exit>(when (> count 0) (dec! count))</mn-exit>' +
+  '</state></scxml>'
+);
+eq(bareLtLifecycleDef.states.a.init, '(when (< count 10) (inc! count))', 'bare < in mn-init');
+eq(bareLtLifecycleDef.states.a.exit, '(when (> count 0) (dec! count))', 'bare > in mn-exit');
+
+
+describe('compile — bare < in mn-where');
+var bareLtWhereDef = scxml.compile(
+  '<scxml initial="a"><state id="a"><mn-where>(requires \'persist\')</mn-where></state></scxml>'
+);
+eq(bareLtWhereDef.states.a.where, "(requires 'persist')", 'mn-where parsed');
+
+
+describe('compile — CDATA still works (optional strict compliance)');
+var cdataDef = scxml.compile(
+  '<scxml initial="a"><state id="a">' +
+  '<transition event="go" target="b"><mn-guard><![CDATA[(<= amount 100)]]></mn-guard></transition>' +
+  '</state><state id="b"/></scxml>'
+);
+eq(cdataDef.states.a.on.go[0].guard, '(<= amount 100)', 'CDATA guard still works');
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  mn: namespace prefix (XML namespace convention)                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('compile — mn: namespace prefix for guard/action/emit');
+var nsDef = scxml.compile(
+  '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" initial="a">' +
+  '<state id="a">' +
+  '<transition event="go" target="b">' +
+  '<mn:guard>(<= x 10)</mn:guard>' +
+  '<mn:action>(set! x (+ x 1))</mn:action>' +
+  '<mn:emit>went</mn:emit>' +
+  '</transition>' +
+  '</state><state id="b"/></scxml>'
+);
+eq(nsDef.states.a.on.go[0].guard, '(<= x 10)', 'mn:guard parsed');
+eq(nsDef.states.a.on.go[0].action, '(set! x (+ x 1))', 'mn:action parsed');
+eq(nsDef.states.a.on.go[0].emit, 'went', 'mn:emit parsed');
+
+
+describe('compile — mn: namespace for where/init/exit/temporal');
+var nsLifecycleDef = scxml.compile(
+  '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" initial="a">' +
+  '<state id="a">' +
+  '<mn:where>(requires \'data\')</mn:where>' +
+  '<mn:init>(set! loaded true)</mn:init>' +
+  '<mn:exit>(set! loaded false)</mn:exit>' +
+  '<mn:temporal>(after 3000 (to b))</mn:temporal>' +
+  '</state><state id="b"/></scxml>'
+);
+eq(nsLifecycleDef.states.a.where, "(requires 'data')", 'mn:where parsed');
+eq(nsLifecycleDef.states.a.init, '(set! loaded true)', 'mn:init parsed');
+eq(nsLifecycleDef.states.a.exit, '(set! loaded false)', 'mn:exit parsed');
+eq(nsLifecycleDef.states.a.temporal, '(after 3000 (to b))', 'mn:temporal parsed');
+
+
+describe('compile — mn: with bare < in guards (the full monty)');
+var nsBareDef = scxml.compile(
+  '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" initial="idle">' +
+  '<state id="idle">' +
+  '<transition event="submit" target="checking">' +
+  '<mn:guard>(> amount 0)</mn:guard>' +
+  '</transition></state>' +
+  '<state id="checking">' +
+  '<transition event="approve" target="done">' +
+  '<mn:guard>(<= amount 1000)</mn:guard>' +
+  '<mn:action>(set! approved true)</mn:action>' +
+  '</transition>' +
+  '<transition event="reject" target="done">' +
+  '<mn:guard>(> amount 1000)</mn:guard>' +
+  '</transition></state>' +
+  '<final id="done"/></scxml>'
+);
+eq(nsBareDef.states.idle.on.submit[0].guard, '(> amount 0)', 'bare > with mn: namespace');
+eq(nsBareDef.states.checking.on.approve[0].guard, '(<= amount 1000)', 'bare <= with mn: namespace');
+eq(nsBareDef.states.checking.on.approve[0].action, '(set! approved true)', 'action with mn: namespace');
+eq(nsBareDef.states.checking.on.reject[0].guard, '(> amount 1000)', 'second guard with mn: namespace');
+assert(nsBareDef.states.done.final === true, 'final state preserved');
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  mn:project — context projection declarations                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('mn:project — single projection with when');
+
+var projDef = scxml.compile(
+  '<?xml version="1.0"?>' +
+  '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="proj-test" initial="idle" mn-ctx=\'{"secret":"hidden","title":"visible"}\'>' +
+  '<mn:project when="(!= role \'admin\')">(obj :title title)</mn:project>' +
+  '<state id="idle"/>' +
+  '</scxml>'
+);
+
+assert(projDef.projects !== null && projDef.projects !== undefined, 'projects array exists on definition');
+eq(projDef.projects.length, 1, 'one projection declared');
+eq(projDef.projects[0].when, "(!= role 'admin')", 'when condition parsed');
+eq(projDef.projects[0].expr, '(obj :title title)', 'body expression parsed');
+
+
+describe('mn:project — multiple declarations in document order');
+
+var multiProjDef = scxml.compile(
+  '<?xml version="1.0"?>' +
+  '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="multi-proj" initial="idle" mn-ctx=\'{}\'>' +
+  '<mn:project when="(= role \'viewer\')">(obj :name name)</mn:project>' +
+  '<mn:project when="(= role \'editor\')">(obj :name name :content content)</mn:project>' +
+  '<mn:project>(obj :id id)</mn:project>' +
+  '<state id="idle"/>' +
+  '</scxml>'
+);
+
+eq(multiProjDef.projects.length, 3, 'three projections declared');
+eq(multiProjDef.projects[0].when, "(= role 'viewer')", 'first projection when');
+eq(multiProjDef.projects[1].when, "(= role 'editor')", 'second projection when');
+eq(multiProjDef.projects[2].when, null, 'third projection has no when (fallback)');
+eq(multiProjDef.projects[2].expr, '(obj :id id)', 'fallback projection expr');
+
+
+describe('mn:project — without when attribute (always matches)');
+
+var fallbackDef = scxml.compile(
+  '<?xml version="1.0"?>' +
+  '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="fallback" initial="idle" mn-ctx=\'{}\'>' +
+  '<mn:project>(obj :safe safe_field)</mn:project>' +
+  '<state id="idle"/>' +
+  '</scxml>'
+);
+
+eq(fallbackDef.projects.length, 1, 'one projection');
+eq(fallbackDef.projects[0].when, null, 'when is null (always matches)');
+eq(fallbackDef.projects[0].expr, '(obj :safe safe_field)', 'expr parsed');
+
+
+describe('mn:project — no projection declared');
+
+var noProjDef = scxml.compile(
+  '<?xml version="1.0"?>' +
+  '<scxml name="no-proj" initial="idle" mn-ctx=\'{}\'>' +
+  '<state id="idle"/>' +
+  '</scxml>'
+);
+
+eq(noProjDef.projects, null, 'projects is null when none declared');
+
+
+describe('mn:project — mn- prefix also works');
+
+var dashProjDef = scxml.compile(
+  '<?xml version="1.0"?>' +
+  '<scxml name="dash-proj" initial="idle" mn-ctx=\'{}\'>' +
+  '<mn-project when="(some? x)">(obj :x x)</mn-project>' +
+  '<state id="idle"/>' +
+  '</scxml>'
+);
+
+eq(dashProjDef.projects.length, 1, 'mn-project (dash prefix) parsed');
+eq(dashProjDef.projects[0].when, '(some? x)', 'when parsed from dash prefix');
+
+
+describe('mn:project — as attribute parsed');
+
+var asProjDef = scxml.compile(
+  '<?xml version="1.0"?>' +
+  '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="canonical" initial="idle" mn-ctx=\'{}\'>' +
+  '<mn:project as="derived-view" when="(= role \'viewer\')">(obj :title title)</mn:project>' +
+  '<state id="idle"/></scxml>'
+);
+
+eq(asProjDef.projects.length, 1, 'one projection declared');
+eq(asProjDef.projects[0].as, 'derived-view', 'as attribute parsed');
+eq(asProjDef.projects[0].when, "(= role 'viewer')", 'when still parsed with as');
+eq(asProjDef.projects[0].expr, '(obj :title title)', 'expr still parsed with as');
+
+
+describe('mn:project — without as has null');
+
+eq(projDef.projects[0].as, null, 'as is null when not specified');
+
+
+describe('mn-project — as attribute with dash prefix');
+
+var dashAsDef = scxml.compile(
+  '<scxml name="dash-as" initial="idle" mn-ctx=\'{}\'>' +
+  '<mn-project as="status-card" when="true">(obj :x x)</mn-project>' +
+  '<state id="idle"/></scxml>'
+);
+
+eq(dashAsDef.projects[0].as, 'status-card', 'as parsed from dash prefix');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗

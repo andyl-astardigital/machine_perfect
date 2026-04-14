@@ -20,13 +20,14 @@ Browser loads page
     ▼
 <link rel="mn-import" href="..."> ← parsed into DOM (sync, not fetched yet)
 <mn-store name="app" value="{}">  ← parsed into DOM
-<div mn="app" mn-initial="orders"> ← parsed into DOM
+<div mn="app" mn-initial="home">  ← parsed into DOM
     │
     ▼
-<script>MachineNative.init({ registry: 'http://localhost:3100' });</script>
+<script>MachineNative.init({ registry: '...', server: '...' });</script>
     │
     │ Sets _registry = url
     │ Starts _fetchRouteTable() → async fetch begins
+    │ Opens SSE connection to server (if configured)
     │ Does NOT call init() — boot handles that
     │
     ▼
@@ -35,7 +36,7 @@ Event loop runs _boot() (from the earlier setTimeout)
     ├─ Step 1: _loadImports()
     │   Fetches all <link rel="mn-import"> files in parallel
     │   Parses returned HTML for <template mn-define> elements
-    │   Registers templates: _templates['po-toast'] = templateEl
+    │   Registers templates: _templates['my-component'] = templateEl
     │   Returns promise that resolves when ALL imports complete
     │
     ├─ Step 2: init()  (runs after imports resolve)
@@ -57,15 +58,12 @@ Event loop runs _boot() (from the earlier setTimeout)
 _routeTableReady resolves (route table fetched from registry)
     │
     ▼
-Initial state mn-where trigger fires
-    │ inst.to('orders')
-    │ to() checks stateMap['orders'] mn-where → (requires 'ui-render')
-    │ browser lacks 'ui-render' → ROUTE
-    │ finds po-server in route table
-    │ sends machine, receives HTML, stamps into orders state
+Initial state mn-where triggers fire
+    │ machines with mn-where on initial state route to capable hosts
+    │ fire-and-forget POST, results arrive via SSE
     │
     ▼
-App is ready. User sees order list.
+App is ready. User sees initial content.
 ```
 
 ### Boot dependencies
@@ -126,7 +124,7 @@ Document click listener (delegated)
     │   returns true → proceed
     │
     ├─ Execute action: engine.exec("(push! items (obj :name newItem))", ctx)
-    │   mutates ctx.items
+    │   returns { context: newCtx } with updated items
     │   records dirty key: "items"
     │
     ▼
@@ -146,240 +144,171 @@ Phase 5: sync mn-ctx attribute
 User sees new item in list
 ```
 
-## Scenario 2: State-level mn-where on page load
+## Scenario 2: Remote state via mn-where
+
+A machine enters a state that requires capabilities the browser lacks. The framework routes the machine to a capable host.
 
 ```
-Browser boots
-    │
-    ▼
-MachineNative.init({ registry: 'http://localhost:3100' })
-    │ fetches route table from registry
-    │ stores node list locally
-    │
-    ▼
-MutationObserver / DOMContentLoaded → _boot()
-    │ loads mn-import components
-    │ scans for [mn] elements
-    │ creates machine instances
-    │
-    ▼
-App machine: mn-initial="orders"
-    │ enters initial state 'orders'
-    │ calls to('orders')
-    │
-    ▼
-to('orders')
-    │ checks stateMap['orders'] for <mn-where> element
-    │ finds: <mn-where>(requires 'ui-render')</mn-where>
-    │ evaluates → ['ui-render']
+Machine enters state 'processing'
+    │ <mn-where>(requires 'persist' 'notify')</mn-where>
     │ browser capabilities: ['dom', 'user-input', 'localstorage', 'css-transition']
-    │ browser lacks 'ui-render' → ROUTE
+    │ browser lacks 'persist' and 'notify' → ROUTE
     │
-    ├─ Show target state with inline content (loading spinner)
+    ├─ _findCapableNode(['persist', 'notify'])
+    │   queries route table from registry
+    │   finds capable host with matching adapters
     │
-    ├─ _findCapableNode(['ui-render'])
-    │   → finds po-server at http://localhost:4000
-    │
-    ├─ _sendMachineToNode(appEl, node, 'orders')
-    │   POST http://localhost:4000/api/machine
-    │   Headers: Content-Type: text/html
-    │            X-MP-Target: orders
-    │            X-MP-Machine: app
-    │   Body: machine outerHTML (with synced mn-ctx)
-    │
-    ▼
-Server receives POST /api/machine
-    │ X-MP-Machine: app → UI render mode
-    │ X-MP-Target: orders
-    │ renders order-list.ejs with current orders
-    │ returns HTML fragment
+    ├─ _sendMachineToNode (fire and forget)
+    │   POST to capable host's registered address
+    │   Headers: Content-Type: application/xml
+    │            X-MN-Session: <session-id>
+    │   Body: machine SCXML (with synced mn-ctx)
+    │   Returns immediately (202)
     │
     ▼
-Browser receives HTML response
-    │ stamps into orders state: stateEl.innerHTML = html
-    │ scans for bindings, attaches events, inits nested machines
-    │ MutationObserver boots any [mn] elements in response
+Host receives SCXML
+    │ compiles to canonical definition
+    │ executePipelineAsync: advances transitions
+    │ effect adapters fire (persist, notify, etc.)
+    │ pipeline runs until it reaches a state with no
+    │   auto-transition or a state requiring capabilities
+    │   this host also lacks
+    │
+    ├─ Pushes result SCXML back via SSE
     │
     ▼
-User sees order list (or empty state)
+Browser receives SSE event
+    │ decodes SCXML
+    │ _receiveMachine: recompiles definition, updates instance
+    │ machine now at its new state
+    │ DOM updates to reflect new state content
+    │
+    ▼
+User sees result
 ```
 
-## Scenario 3: Navigation via mn-receive
+## Scenario 3: Browser-only machine (no mn-where)
+
+Not every machine routes. Browser-only machines handle UI concerns locally.
 
 ```
-User clicks [View] on an order card (server-rendered)
+User clicks [Settings]
     │
     ▼
-Order card machine:
-    │ <button mn-to="view">View</button>
-    │
-    │ <mn-transition event="view">
-    │   <mn-emit event="navigate-detail">(obj :id id)</mn-emit>
-    │ </mn-transition>
-    │
-    │ dispatches CustomEvent('mn-navigate-detail') with payload {id: ...}
+nav machine (browser-only, no mn-where on any state):
+    │ <button mn-to="settings">Settings</button>
+    │ transitions to 'settings' state
+    │ previous state's DOM destroyed, settings state DOM created
+    │ mn-show/mn-class/mn-text bindings evaluate
     │
     ▼
-App machine's mn-receive catches event
-    │ (on 'navigate-detail' (do (set! _actionId (get $detail :id)) (to detail)))
-    │ sets _actionId in app context
-    │ calls inst.to('detail')
+User clicks [Back]
+    │ <button mn-to="home">Back</button>
+    │ transitions to 'home' state
+    │ settings DOM destroyed, home DOM created
     │
     ▼
-to('detail')
-    │ checks stateMap['detail'] for <mn-where>
-    │ finds: <mn-where>(requires 'ui-render')</mn-where>
-    │ browser lacks 'ui-render' → ROUTE
-    │
-    ├─ Phase 5 syncs mn-ctx (now includes _actionId)
-    ├─ POST to capable node with X-MP-Target: detail
-    │
-    ▼
-Server receives request
-    │ X-MP-Machine: app, X-MP-Target: detail
-    │ extracts context: _actionId = 'po-xxx'
-    │ looks up order by ID
-    │ renders order-detail.ejs
-    │ returns HTML with order data
-    │
-    ▼
-Browser stamps detail view
-    │ nested order-detail machine boots via MutationObserver
-    │ mn-each renders items, effects, history
-    │ <mn-on event="click.outside"> on delete confirmation
-    │
-    ▼
-User sees order detail
+All local. No network. No routing.
 ```
 
-## Scenario 4: Pipeline execution via state-level mn-where
+## Scenario 4: Pipeline execution (multi-step server-side)
+
+A machine transitions through multiple states on the server in a single pipeline run.
 
 ```
-User fills purchase order form, clicks [Send to Pipeline]
+Machine at state 'draft', user triggers 'submit'
     │
     ▼
-Click handler on purchase-order machine (nested inside app)
-    │ <button mn-to="submit">Send to Pipeline</button>
-    │
-    │ <mn-transition event="submit" to="submitted">
-    │   <mn-guard>(and (> (count items) 0) (> amount 0))</mn-guard>
-    │   <mn-action>(set! submitted_at (now))</mn-action>
-    │ </mn-transition>
-    │
-    │ guard evaluates → true
-    │ action executes: (set! submitted_at (now))
+Browser: guard evaluates → true (returns new context)
+    │ action executes: returns { context: newCtx }
     │ calls inst.to('submitted')
     │
     ▼
 to('submitted')
     │ checks stateMap['submitted'] for <mn-where>
-    │ finds: <mn-where>(requires 'log' 'notify' 'persist' 'fulfil')</mn-where>
-    │ browser lacks all → ROUTE
+    │ finds: <mn-where>(requires 'log' 'persist')</mn-where>
+    │ browser lacks both → ROUTE
+    │ emits suppressed (route signal — no premature emits mid-flight)
     │
-    ├─ _sendMachineToNode(purchaseOrderEl, node, 'submitted')
-    │   POST with X-MP-Machine: purchase-order
-    │   Body: purchase-order machine outerHTML (with synced ctx)
+    ├─ fire-and-forget POST to capable host
     │
     ▼
-Server receives purchase-order machine
-    │ X-MP-Machine: purchase-order → pipeline mode
-    │ transforms HTML → SCXML
-    │ machine.executePipeline(def, { effects: adapters }):
+Host receives SCXML at state 'submitted'
+    │ executePipelineAsync(def, { effects: adapters }):
     │
-    │   draft → submitted
-    │     guard: (> (count items) 0) → true
-    │     action: (set! submitted_at (now))
+    │   submitted → reviewed
+    │     guard evaluates → true
+    │     action: returns new context
     │     effect: invoke! log → adapter dispatches
     │
-    │   submitted → approved (amount < 100,000)
-    │     guard: (some? title) → true
-    │     action: (set! approved_at (now))
-    │     effect: invoke! notify → adapter dispatches
+    │   reviewed → complete
+    │     effect: invoke! persist → adapter stores SCXML snapshot
     │
-    │   approved → fulfilled
-    │     effect: invoke! fulfil → adapter dispatches
-    │     effect: invoke! persist → order stored
-    │
-    │ SCXML → HTML (for display in response)
-    │ renders pipeline-result.ejs
-    │ returns HTML
+    │ Pipeline stops at 'complete' (final state)
+    │ Pushes result SCXML via SSE
     │
     ▼
-Browser receives pipeline result
-    │ stamps into 'submitted' state of purchase-order machine
-    │ user sees: effects fired, audit trail, SCXML/HTML that travelled
+Browser receives completed machine
+    │ _receiveMachine updates instance
+    │ emits fire (previously suppressed)
+    │ machine renders 'complete' state content
     │
     ▼
-User clicks [View All Orders]
-    │ emits 'navigate-orders'
-    │ app machine receives, calls (to orders)
-    │ → Scenario 2 flow: orders state mn-where routes to server
-    │ → server returns updated order list (with new order)
+User sees result
 ```
 
-## Scenario 5: Delete via context-carried intent
+## Scenario 5: Human-in-the-loop (mn-where capability gating)
+
+A pipeline reaches a state that no automated host can satisfy. The machine blocks until a human acts.
 
 ```
-User clicks [Delete Order] on detail view
+Host pipeline advances machine to 'approval-required'
+    │ <mn-where>(requires 'human-review')</mn-where>
+    │ no host has 'human-review' capability → pipeline returns route signal
+    │ persist adapter stores SCXML snapshot at 'approval-required'
     │
     ▼
-delete-confirm machine: mn-to="open" → shows confirmation
-User clicks [Yes, delete]
-    │ <button mn-to="confirm-delete">Yes, delete</button>
-    │
-    │ <mn-transition event="confirm-delete" to="closed">
-    │   <mn-action>(emit delete-order (obj :id id))</mn-action>
-    │ </mn-transition>
+Browser machine with <invoke type="scxml" src="workflow" mn-state="approval-required"/>
+    │ loads blocked machines from persistence as live children
+    │ _stampAndEnter creates child machine DOM elements
+    │ each child renders itself using its paired .mn.html template
+    │ user sees approval UI with context data
     │
     ▼
-App machine <mn-receive>:
-    │ (on 'delete-order' (do
-    │     (set! _action 'delete')
-    │     (set! _actionId (get $detail :id))
-    │     (to orders)))
+User clicks [Approve]
+    │ child machine transitions: approval-required → approved
+    │ <mn-where>(requires 'persist')</mn-where> → ROUTE
+    │ fire-and-forget POST to capable host
     │
     ▼
-to('orders')
-    │ <mn-where>(requires 'ui-render')</mn-where> → ROUTE
-    │ Phase 5 syncs mn-ctx: {_action: 'delete', _actionId: 'po-xxx'}
-    │ POST to server with synced context
+Host pipeline continues:
+    │ approved → complete
+    │ effects fire, SCXML snapshot updated
+    │ result pushed via SSE
     │
     ▼
-Server receives request
-    │ X-MP-Target: orders
-    │ extracts context: _action='delete', _actionId='po-xxx'
-    │ deletes order from storage
-    │ renders order-list.ejs (order is gone)
-    │ returns HTML
-    │
-    ▼
-Browser stamps updated order list
-    │ deleted order not present
-    │
-    ▼
-User sees order removed
+Browser receives completed machine
 ```
 
-## Scenario 6: Auto-refresh via (every)
+## Scenario 6: Timed behaviour via mn-temporal
 
 ```
-Orders state entered
-    │ <mn-temporal>(every 30000 (to orders))</mn-temporal>
+Machine enters state with temporal behaviour
+    │ <mn-temporal>(every 30000 (to refresh))</mn-temporal>
     │ interval starts: every 30 seconds
     │
     ▼
 30 seconds elapsed
-    │ engine evaluates (to orders)
+    │ engine evaluates (to refresh)
     │
     ▼
-to('orders') — targets current state
-    │ checks <mn-where>(requires 'ui-render')</mn-where> → ROUTE
-    │ sends to capable node
-    │ server returns fresh order list
-    │ stamps updated content
+to('refresh')
+    │ if state has mn-where → routes to capable host
+    │ if no mn-where → local re-evaluation and DOM update
+    │ same transition mechanics as any other trigger source
     │
     ▼
-User sees refreshed data (no page reload)
+User sees refreshed content (no page reload)
 ```
 
 ## What is identical across ALL scenarios
@@ -387,7 +316,7 @@ User sees refreshed data (no page reload)
 | Step | Every transition |
 |------|-----------------|
 | Guard evaluation | `engine.eval(guardExpr, ctx)`, pure, cannot mutate |
-| Action execution | `engine.exec(actionExpr, ctx)`, mutates, records dirty keys |
+| Action execution | `engine.exec(actionExpr, ctx)` → `{ context, to, emit, effects }`, immutable — returns new context |
 | Context sync | Phase 5: `setAttribute('mn-ctx', JSON.stringify(ctx))` |
 | Capability check | `to()` reads target state's `<mn-where>`, evaluates, checks host capabilities |
 | Remote routing | `_findCapableNode` + `_sendMachineToNode`, same for all sources |

@@ -1,5 +1,5 @@
 /**
- * machine_native v0.5.0 — Markup-native application runtime.
+ * machine_native v0.8.0 — Markup-native application runtime.
  *
  * Build full applications in HTML. State machines are the component model.
  * JavaScript-optional. No build step. No bundler.
@@ -68,7 +68,7 @@
  *     <mn-on event="htmx:after-swap">(to ready)</mn-on>
  *   No bridge. No coupling. Just standard DOM events.
  *
- * @version 0.5.0
+ * @version 0.8.0
  * @license MIT
  */
 (function (root, factory) {
@@ -87,14 +87,40 @@
   var _parse = engine.parse;
   var _seval = engine.seval;
   var _sevalPure = engine.sevalPure;
+
+  // ── Optional modules for SCXML composition ────────────────────────────
+  // When scxml.js and machine.js are loaded (via script tags), the browser
+  // can pair SCXML behaviour definitions with HTML rendering templates.
+  // Without them, HTML-only machines work as before.
+  var _scxmlMod = (typeof MPSCXML !== 'undefined') ? MPSCXML : null;
+  var _machineMod = (typeof MPMachine !== 'undefined') ? MPMachine : null;
   var _eval = engine.eval;
   var _exec = engine.exec;
   var _makeScope = engine.makeScope;
-  var _applyScope = engine.applyScope;
+  var _newContext = engine.newContext;
   var _get = engine.get;
   var _set = engine.set;
   var _depKey = engine.depKey;
   var _userFns = engine.userFns;
+
+  // Static AST dep collector — walks ALL branches of a parsed expression
+  // to find every symbol reference. Unlike runtime dep tracking, this is
+  // not defeated by short-circuit evaluation in or/and/if/cond. Used by
+  // _applyBindings Phase 3 to build accurate binding dep sets.
+  function _collectDeps(node, deps) {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      for (var i = 0; i < node.length; i++) _collectDeps(node[i], deps);
+    } else if (node.t === 'Y') {
+      deps[_depKey(node.v)] = true;
+    }
+  }
+
+  // ── Module-level state (var-hoisted, declared in their sections) ────
+  // _templates, _store, _events, _registry, _routeTable,
+  // _hostCapabilities, _defaultLoading, _scxmlDefs, _listening
+  // All declared below in their respective sections, referenced earlier
+  // via JavaScript var hoisting.
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
   // ║  DOM runtime                                                            ║
@@ -112,10 +138,10 @@
   // Rule: element belongs to its closest [mn] ancestor.
   // Compute ancestor path from a dot-separated state name.
   // 'running.filling' → ['running.filling', 'running']
-  function _stateAncestors(s) {
-    var a = []; var p = s;
-    while (p) { a.push(p); var dot = p.lastIndexOf('.'); p = dot === -1 ? null : p.substring(0, dot); }
-    return a;
+  function _stateAncestors(statePath) {
+    var ancestors = []; var current = statePath;
+    while (current) { ancestors.push(current); var dot = current.lastIndexOf('.'); current = dot === -1 ? null : current.substring(0, dot); }
+    return ancestors;
   }
 
   // Compute exit and enter paths for a hierarchical transition via LCA.
@@ -204,6 +230,24 @@
     return el.querySelectorAll ? el.querySelectorAll(selector) : [];
   }
 
+  // Find template-level transition definitions for a clicked element.
+  // Returns the transition array from tmpl._mnTransitions if found, null otherwise.
+  // Template-level transitions come from <mn-transition> inside <template mn-each>.
+  // They require item scope ($item, $index) and are never in the compiled def.
+  function _findTemplateTrans(toEl, machineEl, eventName) {
+    var cur = toEl.parentElement;
+    while (cur && cur !== machineEl) {
+      var tpls = cur.querySelectorAll('template[mn-each]');
+      for (var ti = 0; ti < tpls.length; ti++) {
+        if (tpls[ti]._mnTransitions && tpls[ti]._mnTransitions[eventName]) {
+          return tpls[ti]._mnTransitions[eventName];
+        }
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
   // Walk up from el to find the closest mn-each item scope.
   // Returns the item scope if found, otherwise the machine's context.
   function _scopeFor(el, machineEl, ctx) {
@@ -238,15 +282,16 @@
   function _regReceive(inst) {
     // Parse <mn-receive event="x">body</mn-receive> elements directly.
     // Each element registers one event handler. No attribute synthesis.
+    // Body is optional for canonical machines — SCXML transitions handle the event.
     var recEls = inst.el.querySelectorAll('mn-receive');
     for (var ri = 0; ri < recEls.length; ri++) {
       if (recEls[ri].closest('[mn]') !== inst.el) continue;
       var evName = recEls[ri].getAttribute('event');
       var bodyText = recEls[ri].textContent.trim();
-      if (!evName || !bodyText) continue;
+      if (!evName) continue;
       recEls[ri].remove();
 
-      var body = _parse(bodyText);
+      var body = bodyText ? _parse(bodyText) : null;
 
       (function (name, bodyExpr, machine) {
         if (!_events[name]) {
@@ -257,11 +302,32 @@
               var entry = list[j];
               if (entry.inst.el === e.detail.source) continue;
 
+              // When the SCXML brain has a transition for this event,
+              // route through classified dispatch so guards and actions
+              // are evaluated by the canonical engine. If the brain has
+              // no matching transition, fall through to the body expression.
+              if (entry.inst._canonical && _machineMod) {
+                var result = _machineMod.sendEvent(entry.inst._canonical, name);
+                if (result.transitioned) {
+                  if (result.emits) {
+                    for (var ei = 0; ei < result.emits.length; ei++) {
+                      entry.inst.emit(result.emits[ei].name, result.emits[ei].payload);
+                    }
+                  }
+                  entry.inst.to(entry.inst._canonical.state);
+                  continue;
+                }
+                if (result.targetless) { entry.inst.update(); continue; }
+              }
+
+              // No body and no canonical match — nothing to do
+              if (!entry.body) continue;
+
               var scope = _makeScope(entry.inst.ctx, entry.inst.state, entry.inst.el);
               scope.$detail = e.detail.payload;
               scope.__mnInst = entry.inst;
               _seval(entry.body, scope);
-              _applyScope(scope, entry.inst.ctx, entry.inst);
+              entry.inst.ctx = _newContext(scope, entry.inst.ctx, entry.inst);
               if (scope.__mnEmit) entry.inst.emit(scope.__mnEmit, scope.__mnEmitPayload);
               if (scope.__mnTo) {
                 entry.inst.to(scope.__mnTo);
@@ -289,7 +355,7 @@
   function _attachDomEvents(container, inst) {
     var all = container.querySelectorAll('*');
     var check = function (el) {
-      if (el._mnEventsBound) return;
+      if (el._mnEventsBound && el._mnBoundInst === inst) return;
       if (el.closest('[mn]') !== inst.el) return;
       if (el._mnOnHandlers) {
         for (var i = 0; i < el._mnOnHandlers.length; i++) {
@@ -297,6 +363,7 @@
         }
       }
       el._mnEventsBound = true;
+      el._mnBoundInst = inst;
     };
     for (var i = 0; i < all.length; i++) check(all[i]);
     check(container);
@@ -308,7 +375,16 @@
     var mods = parts.slice(1);
     var isOutside = mods.indexOf('outside') !== -1;
 
+    // Key name modifiers: keydown.enter, keydown.escape, keydown.space, etc.
+    // Map modifier names to KeyboardEvent.key values.
+    var keyFilter = null;
+    var keyMap = { enter: 'Enter', escape: 'Escape', space: ' ', tab: 'Tab', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
+    for (var mi = 0; mi < mods.length; mi++) {
+      if (keyMap[mods[mi]]) { keyFilter = keyMap[mods[mi]]; break; }
+    }
+
     var handler = function (e) {
+      if (keyFilter && e.key !== keyFilter) return;
       if (mods.indexOf('self') !== -1 && e.target !== el) return;
       if (isOutside && el.contains(e.target)) return;
 
@@ -325,10 +401,19 @@
       scope.__mnEvent = e;
       scope.__mnInst = inst;
       _seval(_parse(targetState), scope);
-      _applyScope(scope, inst.ctx, inst);
+      inst.ctx = _newContext(scope, inst.ctx, inst);
       if (scope.__mnEmit) inst.emit(scope.__mnEmit, scope.__mnEmitPayload);
-      if (scope.__mnTo) inst.to(scope.__mnTo);
-      else inst.update();
+      if (scope.__mnTo) {
+        // Route through classified dispatch when SCXML brain exists,
+        // so guards and actions on SCXML transitions are evaluated.
+        if (inst._canonical && _machineMod) {
+          inst.send(scope.__mnTo);
+        } else {
+          inst.to(scope.__mnTo);
+        }
+      } else {
+        inst.update();
+      }
     };
 
     var target = isOutside ? document : el;
@@ -346,9 +431,12 @@
   // ║  Structural element binding setup                                       ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
   //
-  // Scans for structural binding elements (mn-text, mn-show, mn-class,
-  // mn-bind, mn-on, mn-each, mn-transition) and caches the bindings
-  // on the parent element for fast processing during update().
+  // Structural element → attribute conversion. Scans for <mn-text>,
+  // <mn-show>, <mn-class>, <mn-bind>, <mn-on>, <mn-each>, <mn-transition>
+  // elements, stores their expressions on the parent element as properties
+  // (_mnBind, _mnOnHandlers, _mnBindAttrs), then removes the structural
+  // elements from the DOM. This runs once when content is stamped — the
+  // binding cache in _applyBindings reads the stored properties.
 
   // perf: void elements cannot have DOM children — define once, reuse in the loop.
   var _voidTags = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
@@ -485,7 +573,7 @@
     el.classList.remove('mn-leave-from', 'mn-leave-active', 'mn-leave-to');
     el.hidden = false;
     el.classList.add('mn-enter-from', 'mn-enter-active');
-    el.offsetHeight; // perf: force reflow so browser sees from-state before transitioning
+    el.offsetHeight; // force reflow so browser registers from-state before transitioning
     requestAnimationFrame(function () {
       el.classList.remove('mn-enter-from');
       el.classList.add('mn-enter-to');
@@ -500,7 +588,7 @@
     // Clean up any in-progress enter transition classes
     el.classList.remove('mn-enter-from', 'mn-enter-active', 'mn-enter-to');
     el.classList.add('mn-leave-from', 'mn-leave-active');
-    el.offsetHeight; // perf: force reflow so browser sees from-state before transitioning
+    el.offsetHeight; // force reflow so browser registers from-state before transitioning
     requestAnimationFrame(function () {
       el.classList.remove('mn-leave-from');
       el.classList.add('mn-leave-to');
@@ -522,10 +610,9 @@
     var max = 0;
     for (var i = 0; i < parts.length; i++) {
       var trimmed = parts[i].trim();
-      var v = parseFloat(trimmed) || 0;
-      // CSS durations in 's' are the base unit; 'ms' values are converted to seconds
-      if (trimmed.indexOf('ms') !== -1) v = v / 1000;
-      if (v > max) max = v;
+      var duration = parseFloat(trimmed) || 0;
+      if (trimmed.indexOf('ms') !== -1) duration = duration / 1000;
+      if (duration > max) max = duration;
     }
     return max;
   }
@@ -591,8 +678,8 @@
 
   function _updateEach(machineEl, inst) {
     var tmpls = _ownElements(machineEl, 'template[mn-each]');
-    for (var t = 0; t < tmpls.length; t++) {
-      var tmpl = tmpls[t];
+    for (var ti = 0; ti < tmpls.length; ti++) {
+      var tmpl = tmpls[ti];
       var expr = tmpl._mnEachExpr || tmpl.getAttribute('mn-each');
       var keyExpr = tmpl.getAttribute('mn-key');
       if (!keyExpr && engine.debug) console.warn('[mn] mn-each without mn-key causes full re-render on every update. Add mn-key for efficient reconciliation.');
@@ -719,9 +806,9 @@
           if (el.hasAttribute && el.hasAttribute('mn')) {
             el.setAttribute('mn-ctx', itemJson);
           }
-          var nestedMp = _querySafe(el, '[mn]');
-          for (var ni = 0; ni < nestedMp.length; ni++) {
-            nestedMp[ni].setAttribute('mn-ctx', itemJson);
+          var nestedMachines = _querySafe(el, '[mn]');
+          for (var ni = 0; ni < nestedMachines.length; ni++) {
+            nestedMachines[ni].setAttribute('mn-ctx', itemJson);
           }
           parent.insertBefore(frag, marker);
           rendered.push(el);
@@ -867,11 +954,19 @@
   // slot content. Named slots match by attribute, unnamed slots get the rest.
 
   function _resolveTemplate(el, name) {
-    // Only warn if the machine has no inline states AND no matching template
-    if (!_templates[name] && name && !el.querySelector('[mn-state]')) {
-      console.warn('[mn] no template for "' + name + '". Available:', Object.keys(_templates).join(', '));
+    // Already has inline states — nothing to resolve
+    if (el.querySelector('[mn-state]')) return;
+
+    // Path 1: mn-define HTML template (may be paired with SCXML definition)
+    if (_templates[name]) {
+      // fall through to slot injection below
     }
-    if (!_templates[name] || el.querySelector('[mn-state]')) return;
+    // No template found
+    else {
+      if (name) console.warn('[mn] no template for "' + name + '". Available: ' +
+        Object.keys(_templates).join(', '));
+      return;
+    }
 
     // Save slot content before template replaces children
     var slotContent = {};
@@ -911,6 +1006,551 @@
   }
 
 
+  // ── State discovery ─────────────────────────────────────────────────
+  //
+  // Recursively finds mn-state elements, extracts lifecycle properties,
+  // templates content for lazy rendering, detects compound states.
+  // Module-level for line count. Accumulates into stateMap, stateNames,
+  // stateTmpls, compoundChromes (all passed by reference).
+
+  function _discoverStates(machineEl, stateMap, stateNames, stateTmpls, compoundChromes, parentEl, prefix) {
+    var children = parentEl.querySelectorAll('[mn-state]');
+    var directChildren = [];
+    for (var i = 0; i < children.length; i++) {
+      if (children[i].closest('[mn]') !== machineEl) continue;
+      var parentState = children[i].parentElement ? children[i].parentElement.closest('[mn-state]') : null;
+      if (parentState && parentState.closest('[mn]') === machineEl) {
+        if (parentState !== parentEl) continue;
+      } else if (parentEl !== machineEl) {
+        continue;
+      }
+      directChildren.push(children[i]);
+    }
+
+    for (var j = 0; j < directChildren.length; j++) {
+      var childEl = directChildren[j];
+      var shortName = childEl.getAttribute('mn-state');
+      var fullPath = prefix ? prefix + '.' + shortName : shortName;
+
+      stateMap[fullPath] = childEl;
+      stateNames.push(fullPath);
+
+      // Parse lifecycle elements — stored on element properties, removed from DOM
+      var _findOwned = function (tag) {
+        var found = childEl.querySelector(tag);
+        if (found && found.closest('[mn-state]') === childEl && found.closest('[mn]') === machineEl) return found;
+        return null;
+      };
+      var lcEl;
+      lcEl = _findOwned('mn-init');
+      if (lcEl) { childEl._mnInit = lcEl.textContent.trim(); lcEl.remove(); }
+      lcEl = _findOwned('mn-exit');
+      if (lcEl) { childEl._mnExit = lcEl.textContent.trim(); lcEl.remove(); }
+      lcEl = _findOwned('mn-temporal');
+      if (lcEl) { childEl._mnTemporal = lcEl.textContent.trim(); lcEl.remove(); }
+      lcEl = _findOwned('mn-where');
+      if (lcEl) { childEl._mnWhere = lcEl.textContent.trim(); lcEl.remove(); }
+      if (childEl.hasAttribute('mn-url')) childEl._mnUrlRaw = childEl.getAttribute('mn-url');
+      lcEl = _findOwned('mn-url');
+      if (lcEl) { childEl._mnUrlRaw = lcEl.textContent.trim(); lcEl.remove(); }
+
+      // Check for compound state (has child mn-state elements)
+      var nestedStates = childEl.querySelectorAll('[mn-state]');
+      var hasChildren = false;
+      for (var k = 0; k < nestedStates.length; k++) {
+        if (nestedStates[k].closest('[mn]') === machineEl) {
+          var nsParent = nestedStates[k].parentElement ? nestedStates[k].parentElement.closest('[mn-state]') : null;
+          if (nsParent === childEl) { hasChildren = true; break; }
+        }
+      }
+
+      if (hasChildren) {
+        var chromeTmpl = document.createElement('template');
+        var childNodes = Array.prototype.slice.call(childEl.childNodes);
+        for (var cn = 0; cn < childNodes.length; cn++) {
+          var node = childNodes[cn];
+          if (node.nodeType === 1 && node.hasAttribute && node.hasAttribute('mn-state')) continue;
+          chromeTmpl.content.appendChild(node);
+        }
+        compoundChromes[fullPath] = chromeTmpl;
+        stateTmpls[fullPath] = null;
+        childEl.hidden = true;
+        _discoverStates(machineEl, stateMap, stateNames, stateTmpls, compoundChromes, childEl, fullPath);
+      } else {
+        var tmpl = document.createElement('template');
+        tmpl.setAttribute('mn-state-template', fullPath);
+        while (childEl.firstChild) tmpl.content.appendChild(childEl.firstChild);
+        stateTmpls[fullPath] = tmpl;
+        childEl.after(tmpl);
+        if (childEl._mnWhere) {
+          childEl.innerHTML = childEl.getAttribute('mn-loading') || _defaultLoading;
+        }
+        childEl.hidden = true;
+      }
+    }
+  }
+
+
+  // ── Temporal evaluation ─────────────────────────────────────────────
+  //
+  // Evaluates mn-temporal s-expressions: (animate), (after ms expr), (every ms expr).
+  // Module-level. Reads/writes inst._afterTimer, inst._stateIntervals.
+
+  function _evalTemporal(inst, stateEl, stateName) {
+    var transVal = stateEl._mnTemporal;
+    if (!transVal) return;
+    var tScope = _makeScope(inst.ctx, stateName, inst.el);
+    tScope.__mnAfterTimer = function (ms, bodyNode) {
+      inst._afterTimer = setTimeout(function () {
+        inst._afterTimer = null;
+        var scope = _makeScope(inst.ctx, inst.state, inst.el);
+        scope.__mnInst = inst;
+        _seval(bodyNode, scope);
+        inst.ctx = _newContext(scope, inst.ctx, inst);
+        if (scope.__mnEmit) inst.emit(scope.__mnEmit, scope.__mnEmitPayload);
+        if (scope.__mnTo) inst.to(scope.__mnTo);
+        else inst.update();
+      }, ms);
+    };
+    tScope.__mnEveryInterval = function (ms, bodyNode) {
+      var id = setInterval(function () {
+        var scope = _makeScope(inst.ctx, inst.state, inst.el);
+        scope.__mnInst = inst;
+        _seval(bodyNode, scope);
+        inst.ctx = _newContext(scope, inst.ctx, inst);
+        if (scope.__mnEmit) inst.emit(scope.__mnEmit, scope.__mnEmitPayload);
+        if (scope.__mnTo) inst.to(scope.__mnTo);
+        else inst.update();
+      }, ms);
+      inst._stateIntervals.push(id);
+    };
+    tScope.__mnAnimate = function () {
+      _transitionEnter(stateEl);
+    };
+    _seval(_parse(transVal), tScope);
+  }
+
+
+  // ── State entry helper ──────────────────────────────────────────────
+  //
+  // Stamp state content from template and initialise bindings + events.
+  // Clears existing content first — the state may have boot-time content
+  // that was already processed by _scanBindAttrs. Fresh template content
+  // needs fresh processing.
+  // Shared by: normal enter, self-transition, mn-where fulfillment.
+
+  function _stampAndEnter(stateEl, stateName, machineEl, inst, stateTmpls, contentHtml) {
+    // Clear before stamping — the state may have content from initial boot
+    // that was processed by _scanBindAttrs (mn-text removed, _mnBind set).
+    // Re-stamping from template brings fresh unprocessed elements.
+    // Without clearing, both old and new content coexist.
+    if (contentHtml) {
+      stateEl.innerHTML = contentHtml;
+    } else if (stateTmpls[stateName]) {
+      stateEl.innerHTML = '';
+      stateEl.appendChild(stateTmpls[stateName].content.cloneNode(true));
+    }
+    stateEl.hidden = false;
+
+    // Create child machine elements for <invoke> children on this state.
+    // Each invoke embeds a full SCXML machine. The browser creates a DOM
+    // element for it, _initNested picks it up and initialises it as a
+    // live machine paired with its HTML template.
+    var _transforms = (typeof MPTransforms !== 'undefined') ? MPTransforms : null;
+    if (inst._def && inst._def._stateTree[stateName]) {
+      var invokes = inst._def._stateTree[stateName].spec.invokes;
+      if (invokes && _transforms) {
+        for (var ivi = 0; ivi < invokes.length; ivi++) {
+          var inv = invokes[ivi];
+          var invMachine = _transforms.extractMachine(inv.scxml);
+          if (!invMachine || !invMachine.name) continue;
+          var invCtx = _transforms.extractContext(inv.scxml);
+          var childEl = document.createElement('div');
+          childEl.setAttribute('mn', invMachine.name);
+          if (invMachine.state) childEl.setAttribute('mn-initial', invMachine.state);
+          if (invCtx && Object.keys(invCtx).length > 0) {
+            childEl.setAttribute('mn-ctx', JSON.stringify(invCtx));
+          }
+          if (inv.id) childEl.setAttribute('data-invoke-id', inv.id);
+          stateEl.appendChild(childEl);
+        }
+      }
+    }
+
+    _scanBindAttrs(stateEl, machineEl);
+    _attachDomEvents(stateEl, inst);
+    _initNested(stateEl);
+    var parsed = _parseTransitions(stateEl, machineEl);
+    if (!inst._transitions) inst._transitions = {};
+    inst._transitions[stateName] = parsed;
+  }
+
+
+  // ── Unified event dispatch ──────────────────────────────────────────
+  //
+  // Single entry point for all event-driven transitions. Module-level.
+  // Classified dispatch: template-level → canonical engine → DOM-parsed → direct state name.
+
+  function _sendEvent(inst, event, itemScope, templateDefs) {
+    var el = inst.el;
+
+    // 1. Template-level transitions (mn-each items with $item scope)
+    if (templateDefs) {
+      var scope = itemScope || inst.ctx;
+      for (var tti = 0; tti < templateDefs.length; tti++) {
+        var ttd = templateDefs[tti];
+        if (ttd.guard) {
+          if (!_eval(ttd.guard, scope, inst.state, el)) continue;
+        }
+        if (ttd.action) {
+          var tac = scope;
+          if (scope !== inst.ctx) {
+            tac = Object.create(inst.ctx);
+            for (var tak in scope) { if (scope.hasOwnProperty(tak)) tac[tak] = scope[tak]; }
+          }
+          var tar = _exec(ttd.action, tac, inst.state, el, null, inst);
+          if (tar && tar.context) inst.ctx = tar.context;
+          if (tar && tar.emit) inst.emit(tar.emit, tar.emitPayload);
+        }
+        if (ttd.emit) inst.emit(ttd.emit);
+        if (ttd.target) inst.to(ttd.target);
+        else inst.update();
+        return true;
+      }
+      return false;
+    }
+
+    // 2. Canonical engine — sendEvent walks the hierarchy
+    if (inst._canonical && _machineMod) {
+      var result = _machineMod.sendEvent(inst._canonical, event);
+      if (result.transitioned || result.targetless) {
+        // Transition/update FIRST so $store syncs, THEN emit to other machines
+        if (result.transitioned) { inst.to(inst._canonical.state); }
+        else { inst.update(); }
+        // Only fire emits on stable transitions — NOT on route signals.
+        // Route signals mean the machine is mid-flight (waiting for server).
+        // Emits fire when the machine reaches a stable state.
+        if (!result.route && result.emits) {
+          for (var ei = 0; ei < result.emits.length; ei++) {
+            inst.emit(result.emits[ei].name, result.emits[ei].payload);
+          }
+        }
+        return result;
+      }
+    }
+
+    // 3. DOM-parsed transitions (parsed on state entry)
+    var transDefs = inst._transitions && inst._transitions[inst.state];
+    if (transDefs && transDefs[event]) {
+      var scope = itemScope || inst.ctx;
+      var candidates = transDefs[event];
+      for (var ti = 0; ti < candidates.length; ti++) {
+        var td = candidates[ti];
+        if (td.guard) {
+          if (!_eval(td.guard, scope, inst.state, el)) continue;
+        }
+        if (td.action) { var tdr = _exec(td.action, scope, inst.state, el, null, inst); if (tdr && tdr.context) inst.ctx = tdr.context; }
+        if (td.emit) inst.emit(td.emit);
+        if (td.target) inst.to(td.target);
+        else inst.update();
+        return true;
+      }
+    }
+
+    // 4. Direct state name — try exact then relative to compound parent
+    if (inst.states.indexOf(event) !== -1) { inst.to(event); return true; }
+    var parts = inst.state.split('.');
+    for (var ri = parts.length - 1; ri >= 0; ri--) {
+      var candidate = parts.slice(0, ri).concat(event).join('.');
+      if (candidate && inst.states.indexOf(candidate) !== -1) { inst.to(candidate); return true; }
+    }
+
+    console.warn('[mn] unknown state "' + event + '" in "' + inst.name + '"');
+    return false;
+  }
+
+
+  // ── State transition: resolve → timers → where-check → exit → enter → init → update ──
+  //
+  // The full DOM lifecycle for a state change. Resolves target (including
+  // compound descent), clears timers, checks mn:where for routing, exits
+  // old states (innermost first), enters new states (outermost first),
+  // runs mn-init, updates bindings, dispatches events, evaluates temporal.
+
+  function _transitionTo(inst, target, contentHtml) {
+    if (inst._transitioning) {
+      console.warn('[mn] reentrant _transitionTo detected: ' + inst.name + ' → ' + target + ' (already transitioning to ' + inst._transitioning + ')');
+      return false;
+    }
+    inst._transitioning = target;
+    try {
+    var el = inst.el;
+    var name = inst.name;
+    var stateMap = inst._stateMap;
+    var stateTmpls = inst._stateTmpls;
+    var compoundChromes = inst._compoundChromes;
+    var stateNames = inst.states;
+
+    // Step 1: resolve target — handle relative names and compound descent
+    var resolvedTarget = null;
+    if (stateNames.indexOf(target) !== -1) {
+      resolvedTarget = target;
+    } else {
+      var parts = inst.state.split('.');
+      for (var ri = parts.length - 1; ri >= 0; ri--) {
+        var candidate = parts.slice(0, ri).concat(target).join('.');
+        if (candidate && stateNames.indexOf(candidate) !== -1) { resolvedTarget = candidate; break; }
+      }
+    }
+    if (!resolvedTarget) { console.warn('[mn] unknown state "' + target + '" in "' + name + '"'); return false; }
+    target = resolvedTarget;
+
+    // Descend into compound initial child
+    while (compoundChromes[target]) {
+      var childPrefix = target + '.';
+      var firstChild = null;
+      for (var fi = 0; fi < stateNames.length; fi++) {
+        if (stateNames[fi].indexOf(childPrefix) === 0 && stateNames[fi].indexOf('.', childPrefix.length) === -1) { firstChild = stateNames[fi]; break; }
+      }
+      if (!firstChild) break;
+      target = firstChild;
+    }
+
+    // Step 2: clear timers from previous state
+    if (inst._afterTimer) { clearTimeout(inst._afterTimer); inst._afterTimer = null; }
+    for (var ci = 0; ci < inst._stateIntervals.length; ci++) clearInterval(inst._stateIntervals[ci]);
+    inst._stateIntervals = [];
+
+    // Step 3: mn-where — route to capable node if host lacks required capabilities
+    if (inst._mnWhereGen && inst._mnWhereGen === inst._mnWhereResolved) {
+      inst._mnWhereResolved = 0;
+      if (inst.state === target && stateMap[target]) {
+        stateMap[target].innerHTML = '';
+        _stampAndEnter(stateMap[target], target, el, inst, stateTmpls, null);
+        inst.ctx.$refs = _buildRefs(el);
+        if (stateMap[target]._mnInit) {
+          var wiR = _exec(stateMap[target]._mnInit, inst.ctx, inst.state, el, null, inst);
+          if (wiR && wiR.context) inst.ctx = wiR.context;
+          if (wiR && wiR.emit) inst.emit(wiR.emit, wiR.emitPayload);
+          if (wiR && wiR.to) { inst.update(); inst.to(wiR.to); return true; }
+        }
+        inst.update();
+        el.dispatchEvent(new CustomEvent('mn-state-change', { bubbles: true, detail: { machine: name, prev: target, next: target, ctx: inst.ctx } }));
+        if (stateMap[target]) _evalTemporal(inst, stateMap[target], target);
+        return true;
+      }
+    } else if (!contentHtml && stateMap[target] && stateMap[target]._mnWhere) {
+      var whereExpr = stateMap[target]._mnWhere;
+      var required = _eval(whereExpr, inst.ctx, inst.state, el);
+      if (Array.isArray(required) && required.length > 0) {
+        var hasAll = true;
+        for (var wi = 0; wi < required.length; wi++) {
+          if (_hostCapabilities.indexOf(required[wi]) === -1) { hasAll = false; break; }
+        }
+        if (!hasAll) {
+          // Hide previous state DOM before routing — the user should see the target state's loading content
+          // Machine IS at this state — set it and update DOM before routing.
+          var prevState = inst.state;
+          inst.state = target;
+          if (inst._canonical) inst._canonical.state = target;
+          for (var shi = 0; shi < stateNames.length; shi++) {
+            if (stateMap[stateNames[shi]]) stateMap[stateNames[shi]].hidden = (stateNames[shi] !== target);
+          }
+
+          var node = _findCapableNode(required);
+          if (!node) {
+            if (!_registry) console.warn('[mn] mn-where requires [' + required.join(', ') + '] but no registry configured.');
+            else if (_routeTable.length === 0) console.warn('[mn] mn-where requires [' + required.join(', ') + '] but route table empty.');
+            else console.warn('[mn] no node has [' + required.join(', ') + '].');
+            return true;
+          }
+          var routeTarget = target;
+          if (!inst._mnWhereGen) inst._mnWhereGen = 0;
+          inst._mnWhereGen++;
+          if (engine.debug) console.log('[mn-debug] routing to ' + node.id + ' (' + (node.transport ? node.transport.type : '?') + ') for ' + name + '/' + routeTarget);
+
+          // Fire and forget — send the machine and move on.
+          // The result comes back via the transport (SSE for browsers, HTTP POST for servers).
+          _sendMachineToNode(el, node, routeTarget)
+            .catch(function (err) { console.warn('[mn] send failed: ' + (err && err.message ? err.message : String(err))); });
+          return true;
+        }
+      }
+    }
+
+    var prev = inst.state;
+    inst.state = target;
+    if (inst._canonical) inst._canonical.state = target;
+    if (engine.debug) console.log('[mn-debug] ' + name + ': ' + prev + ' → ' + target);
+    if (prev !== target) inst._mnBindCache = null;
+
+    // Self-transition with contentHtml
+    if (prev === target && contentHtml && stateMap[target]) {
+      var selfEl = stateMap[target];
+      if (selfEl._mnExit) { var selfExitR = _exec(selfEl._mnExit, inst.ctx, target, el, null, inst); if (selfExitR && selfExitR.context) inst.ctx = selfExitR.context; }
+      var selfNested = selfEl.querySelectorAll('[mn]');
+      for (var sni = 0; sni < selfNested.length; sni++) _cleanupInstance(selfNested[sni]);
+      _stampAndEnter(selfEl, target, el, inst, stateTmpls, contentHtml);
+      inst.ctx.$refs = _buildRefs(el);
+      if (selfEl._mnInit) {
+        var siR = _exec(selfEl._mnInit, inst.ctx, inst.state, el, null, inst);
+        if (siR && siR.context) inst.ctx = siR.context;
+        if (siR && siR.emit) inst.emit(siR.emit, siR.emitPayload);
+        if (siR && siR.to) { inst.update(); inst.to(siR.to); return true; }
+      }
+      inst.update();
+      el.dispatchEvent(new CustomEvent('mn-state-change', { bubbles: true, detail: { machine: name, prev: prev, next: target, ctx: inst.ctx } }));
+      if (inst._urlMap && inst._urlMap[target]) {
+        var urlEntry = inst._urlMap[target];
+        if (window.history && window.history.pushState) history.pushState({ mpState: target }, '', _resolveUrl(urlEntry.pattern, urlEntry.params, inst.ctx));
+      }
+      if (stateMap[target]) _evalTemporal(inst, stateMap[target], target);
+      return true;
+    }
+
+    var paths = _transitionPaths(prev, target);
+    var exitPath = paths.exitPath;
+    var enterPath = paths.enterPath;
+
+    // Step 4: exit states (innermost first) — run exit hooks, cleanup nested machines, clear content
+    for (var xi = 0; xi < exitPath.length; xi++) {
+      var exitState = exitPath[xi];
+      if (!stateMap[exitState]) continue;
+      var leaveEl = stateMap[exitState];
+      if (leaveEl._mnExit) { var leaveExitR = _exec(leaveEl._mnExit, inst.ctx, exitState, el, null, inst); if (leaveExitR && leaveExitR.context) inst.ctx = leaveExitR.context; }
+      var nested = leaveEl.querySelectorAll('[mn]');
+      for (var ni2 = 0; ni2 < nested.length; ni2++) _cleanupInstance(nested[ni2]);
+      if (compoundChromes[exitState]) {
+        var chromeNodes = [];
+        for (var cn = 0; cn < leaveEl.childNodes.length; cn++) {
+          var cnode = leaveEl.childNodes[cn];
+          if (cnode.nodeType === 1 && cnode.hasAttribute && cnode.hasAttribute('mn-state')) continue;
+          chromeNodes.push(cnode);
+        }
+        for (var cn2 = 0; cn2 < chromeNodes.length; cn2++) leaveEl.removeChild(chromeNodes[cn2]);
+      } else {
+        leaveEl.innerHTML = '';
+      }
+      leaveEl.hidden = true;
+    }
+
+    // Step 5: enter states (outermost first) — stamp template, scan bindings, attach events
+    for (var eni = 0; eni < enterPath.length; eni++) {
+      var enterState = enterPath[eni];
+      if (!stateMap[enterState]) continue;
+      var enterEl = stateMap[enterState];
+      enterEl.hidden = false;
+      if (compoundChromes[enterState]) {
+        enterEl.appendChild(compoundChromes[enterState].content.cloneNode(true));
+        _scanBindAttrs(enterEl, el);
+        _attachDomEvents(enterEl, inst);
+      } else if (enterState === target) {
+        _stampAndEnter(enterEl, enterState, el, inst, stateTmpls, contentHtml);
+      }
+    }
+
+    inst.ctx.$refs = _buildRefs(el);
+
+    // Step 6: mn-init — run synchronously so $store writes are visible to bindings
+    for (var ini = 0; ini < enterPath.length; ini++) {
+      var initState = enterPath[ini];
+      if (stateMap[initState] && stateMap[initState]._mnInit && initState !== prev) {
+        var iniR = _exec(stateMap[initState]._mnInit, inst.ctx, inst.state, el, null, inst);
+        if (iniR && iniR.context) inst.ctx = iniR.context;
+        if (iniR && iniR.emit) inst.emit(iniR.emit, iniR.emitPayload);
+        if (iniR && iniR.to) inst.to(iniR.to);
+      }
+    }
+
+    // Step 7: update bindings — dep tracking ensures only changed bindings re-evaluate
+    inst.update();
+
+    el.dispatchEvent(new CustomEvent('mn-state-change', { bubbles: true, detail: { machine: name, prev: prev, next: target, ctx: inst.ctx } }));
+
+    if (inst._urlMap && inst._urlMap[target]) {
+      var urlEntry = inst._urlMap[target];
+      if (window.history && window.history.pushState) history.pushState({ mpState: target }, '', _resolveUrl(urlEntry.pattern, urlEntry.params, inst.ctx));
+    }
+
+    if (stateMap[target]) _evalTemporal(inst, stateMap[target], target);
+    return true;
+    } finally { inst._transitioning = null; }
+  }
+
+
+  // ── Canonical definition builder ────────────────────────────────────
+  //
+  // Walks discovered states and extracts transitions, guards, actions,
+  // lifecycle into a canonical definition shape for machine.createDefinition.
+
+  function _buildDefFromStates(machineEl, stateTmpls, compoundChromes, parentEl, prefix, target) {
+    var children = parentEl.querySelectorAll('[mn-state]');
+    for (var di = 0; di < children.length; di++) {
+      var childEl = children[di];
+      if (childEl.closest('[mn]') !== machineEl) continue;
+      var parentState = childEl.parentElement ? childEl.parentElement.closest('[mn-state]') : null;
+      if (parentState && parentState.closest('[mn]') === machineEl) {
+        if (parentState !== parentEl) continue;
+      } else if (parentEl !== machineEl) {
+        continue;
+      }
+      var shortName = childEl.getAttribute('mn-state');
+      var fullPath = prefix ? prefix + '.' + shortName : shortName;
+      var stateDef = {};
+
+      if (childEl.hasAttribute('mn-final')) stateDef.final = true;
+      if (childEl._mnInit) stateDef.init = childEl._mnInit;
+      if (childEl._mnExit) stateDef.exit = childEl._mnExit;
+      if (childEl._mnWhere) stateDef.where = childEl._mnWhere;
+      if (childEl._mnTemporal) stateDef.temporal = childEl._mnTemporal;
+
+      var tmpl = stateTmpls[fullPath];
+      var transSource = tmpl ? tmpl.content : childEl;
+      var transEls = transSource.querySelectorAll('mn-transition');
+      var transitions = {};
+      for (var ti = 0; ti < transEls.length; ti++) {
+        var tel = transEls[ti];
+        if (tmpl || tel.closest('[mn]') === machineEl) {
+          var event = tel.getAttribute('event');
+          if (!event) continue;
+          var tDef = { target: tel.getAttribute('to') || null };
+          var gEl = tel.querySelector('mn-guard');
+          if (gEl) tDef.guard = gEl.textContent.trim();
+          var aEl = tel.querySelector('mn-action');
+          if (aEl) tDef.action = aEl.textContent.trim();
+          var eEl = tel.querySelector('mn-emit');
+          if (eEl) tDef.emit = eEl.textContent.trim();
+          if (!transitions[event]) transitions[event] = [];
+          transitions[event].push(tDef);
+        }
+      }
+      if (Object.keys(transitions).length > 0) stateDef.on = transitions;
+
+      if (compoundChromes[fullPath]) {
+        var chromeTrans = compoundChromes[fullPath].content.querySelectorAll('mn-transition');
+        for (var cti = 0; cti < chromeTrans.length; cti++) {
+          var ctel = chromeTrans[cti];
+          var cevent = ctel.getAttribute('event');
+          if (!cevent) continue;
+          var ctDef = { target: ctel.getAttribute('to') || null };
+          var cgEl = ctel.querySelector('mn-guard');
+          if (cgEl) ctDef.guard = cgEl.textContent.trim();
+          var caEl = ctel.querySelector('mn-action');
+          if (caEl) ctDef.action = caEl.textContent.trim();
+          var ceEl = ctel.querySelector('mn-emit');
+          if (ceEl) ctDef.emit = ceEl.textContent.trim();
+          if (!transitions[cevent]) transitions[cevent] = [];
+          transitions[cevent].push(ctDef);
+        }
+        if (Object.keys(transitions).length > 0) stateDef.on = transitions;
+        stateDef.states = {};
+        _buildDefFromStates(machineEl, stateTmpls, compoundChromes, childEl, fullPath, stateDef.states);
+        stateDef.initial = Object.keys(stateDef.states)[0] || null;
+      }
+
+      target[shortName] = stateDef;
+    }
+  }
 
 
   // ── Machine setup ───────────────────────────────────────────────────
@@ -953,101 +1593,31 @@
     var stateTmpls = {};
     var compoundChromes = {}; // compound state dot-path → chrome template
 
-    function _discoverStates(parentEl, prefix) {
-      // Find direct child mn-state elements (not deeper nested)
-      var children = parentEl.querySelectorAll('[mn-state]');
-      var directChildren = [];
-      for (var i = 0; i < children.length; i++) {
-        // Must belong to this machine, not a nested [mn]
-        if (children[i].closest('[mn]') !== el) continue;
-        // Must be a direct child of parentEl (not nested inside another mn-state at this level)
-        var parentState = children[i].parentElement ? children[i].parentElement.closest('[mn-state]') : null;
-        if (parentState && parentState.closest('[mn]') === el) {
-          // This mn-state is inside another mn-state in the same machine
-          // Only include if the parent mn-state is parentEl itself
-          if (parentState !== parentEl) continue;
-        } else if (parentEl !== el) {
-          continue;
-        }
-        directChildren.push(children[i]);
-      }
+    _discoverStates(el, stateMap, stateNames, stateTmpls, compoundChromes, el, null);
 
-      for (var j = 0; j < directChildren.length; j++) {
-        var childEl = directChildren[j];
-        var shortName = childEl.getAttribute('mn-state');
-        var fullPath = prefix ? prefix + '.' + shortName : shortName;
+    // ── Compile canonical definition from discovered DOM structure ────
+    // Same shape as scxml.compile() returns. Enables machine.sendEvent()
+    // delegation and SCXML composition.
+    var _defStates = {};
+    _buildDefFromStates(el, stateTmpls, compoundChromes, el, null, _defStates);
 
-        stateMap[fullPath] = childEl;
-        stateNames.push(fullPath);
+    // Parse context without $store/$refs for the canonical def
+    var _defCtx = {};
+    if (ctxAttr) { try { _defCtx = JSON.parse(ctxAttr); } catch (e) {} }
 
-        // ── Parse lifecycle elements before content is templated ─────
-        // Store on state element properties. The elements are removed so
-        // templates don't contain them — the properties persist on the
-        // state element across enter/exit cycles.
-        var _findOwned = function (tag) {
-          var found = childEl.querySelector(tag);
-          if (found && found.closest('[mn-state]') === childEl && found.closest('[mn]') === el) return found;
-          return null;
-        };
-        var lcEl;
-        lcEl = _findOwned('mn-init');
-        if (lcEl) { childEl._mnInit = lcEl.textContent.trim(); lcEl.remove(); }
-        lcEl = _findOwned('mn-exit');
-        if (lcEl) { childEl._mnExit = lcEl.textContent.trim(); lcEl.remove(); }
-        lcEl = _findOwned('mn-temporal');
-        if (lcEl) { childEl._mnTemporal = lcEl.textContent.trim(); lcEl.remove(); }
-        lcEl = _findOwned('mn-where');
-        if (lcEl) { childEl._mnWhere = lcEl.textContent.trim(); lcEl.remove(); }
-        // mn-url: bare attribute or <mn-url> element
-        if (childEl.hasAttribute('mn-url')) childEl._mnUrlRaw = childEl.getAttribute('mn-url');
-        lcEl = _findOwned('mn-url');
-        if (lcEl) { childEl._mnUrlRaw = lcEl.textContent.trim(); lcEl.remove(); }
-
-        // Check for nested mn-state elements (compound state)
-        var nestedStates = childEl.querySelectorAll('[mn-state]');
-        var hasChildren = false;
-        for (var k = 0; k < nestedStates.length; k++) {
-          if (nestedStates[k].closest('[mn]') === el) {
-            var nsParent = nestedStates[k].parentElement ? nestedStates[k].parentElement.closest('[mn-state]') : null;
-            if (nsParent === childEl) { hasChildren = true; break; }
-          }
-        }
-
-        if (hasChildren) {
-          // Compound state: separate chrome (non-mn-state children) from child states
-          var chromeTmpl = document.createElement('template');
-          var childNodes = Array.prototype.slice.call(childEl.childNodes);
-          for (var cn = 0; cn < childNodes.length; cn++) {
-            var node = childNodes[cn];
-            if (node.nodeType === 1 && node.hasAttribute && node.hasAttribute('mn-state')) continue;
-            chromeTmpl.content.appendChild(node);
-          }
-          compoundChromes[fullPath] = chromeTmpl;
-          // Don't template the whole compound state — children are templated individually
-          stateTmpls[fullPath] = null;
-          childEl.hidden = true;
-          // Recurse into children
-          _discoverStates(childEl, fullPath);
-        } else {
-          // Atomic state: template all content.
-          // Template stays in the DOM so outerHTML captures the full machine
-          // definition for transport. <template> is inert — no rendering cost.
-          var tmpl = document.createElement('template');
-          tmpl.setAttribute('mn-state-template', fullPath);
-          while (childEl.firstChild) tmpl.content.appendChild(childEl.firstChild);
-          stateTmpls[fullPath] = tmpl;
-          childEl.after(tmpl);
-          // mn-where states get a loading indicator — shown while the server
-          // response is in flight. Customisable via mn-loading attribute.
-          if (childEl._mnWhere) {
-            childEl.innerHTML = childEl.getAttribute('mn-loading') || _defaultLoading;
-          }
-          childEl.hidden = true;
-        }
+    var _compiledDef = null;
+    if (_machineMod && Object.keys(_defStates).length > 0) {
+      try {
+        _compiledDef = _machineMod.createDefinition({
+          id: name,
+          initial: el.getAttribute('mn-initial') || stateNames[0] || null,
+          context: _defCtx,
+          states: _defStates
+        });
+      } catch (err) {
+        console.warn('[mn] failed to compile def for "' + name + '": ' + err.message);
       }
     }
-
-    _discoverStates(el, null);
 
     // Machine-level <mn-init> — not inside any state
     var machineInitEl = el.querySelector('mn-init');
@@ -1083,15 +1653,16 @@
       }
     }
 
-    return { ctx: ctx, persistKey: persistKey, stateMap: stateMap, stateNames: stateNames, stateTmpls: stateTmpls, compoundChromes: compoundChromes, initial: initial };
+    return { ctx: ctx, persistKey: persistKey, stateMap: stateMap, stateNames: stateNames, stateTmpls: stateTmpls, compoundChromes: compoundChromes, initial: initial, compiledDef: _compiledDef };
   }
 
 
-  // ── Binding application ───────────────────────────────────────────────
+  // ── Binding application: $store broadcast → mn-let → cache build → dep-skip render → persist ──
   //
-  // The body of inst.update(). Extracted so _createInstance stays under
-  // 150 lines. Runs mn-each, builds/uses the binding cache with
-  // dependency tracking, applies all binding types, persists to localStorage.
+  // Five phases. Phase 1: propagate $store changes to sibling machines.
+  // Phase 2: recompute mn-let derived values. Phase 3: build binding cache
+  // (first render or after DOM change). Phase 4: evaluate and apply only
+  // bindings whose deps overlap the dirty set. Phase 5: persist context.
 
   function _applyBindings(machineEl, inst, persistKey) {
     var state = inst.state;
@@ -1099,20 +1670,50 @@
     var dirty = inst._mnDirty;
     inst._mnDirty = null;
 
+    // Immutable $store propagation: if this machine wrote to $store,
+    // broadcast the new $store to all other machines and re-render them.
+    if (ctx.$store && ctx.$store !== _store) {
+      _store = ctx.$store;
+      var allMachines = document.querySelectorAll('[mn]');
+      var toUpdate = [];
+      for (var mi = 0; mi < allMachines.length; mi++) {
+        var otherInst = allMachines[mi]._mn;
+        if (otherInst && otherInst !== inst) {
+          var otherCtx = {};
+          for (var sk in otherInst.ctx) { if (otherInst.ctx.hasOwnProperty(sk)) otherCtx[sk] = otherInst.ctx[sk]; }
+          otherCtx.$store = _store;
+          otherInst.ctx = otherCtx;
+          toUpdate.push(otherInst);
+        }
+      }
+      for (var ui = 0; ui < toUpdate.length; ui++) toUpdate[ui].update();
+    }
+
     // ── Phase 1: List rendering (may create new DOM) ─────────
     _updateEach(machineEl, inst);
 
     // ── Phase 1b: Evaluate mn-let computed bindings ─────────
     // Must run before the binding cache is built so computed values
     // are in ctx when dep tracking evaluates expressions like (not valid).
+    // Immutable: build new context with computed values merged.
     if (inst._mnLet) {
       var letScope = _makeScope(ctx, state, machineEl);
+      var letUpdates = {};
+      var letChanged = false;
       for (var li = 0; li < inst._mnLet.length; li++) {
         var lb = inst._mnLet[li];
         var prev = ctx[lb.name];
         var val = _sevalPure(lb.ast, letScope);
-        ctx[lb.name] = val;
-        if (val !== prev && dirty) dirty[_depKey(lb.name)] = true;
+        letUpdates[lb.name] = val;
+        letScope[lb.name] = val;
+        if (val !== prev) { letChanged = true; if (dirty) dirty[_depKey(lb.name)] = true; }
+      }
+      if (letChanged) {
+        var newLetCtx = {};
+        for (var lk in ctx) { if (ctx.hasOwnProperty(lk)) newLetCtx[lk] = ctx[lk]; }
+        for (var lk in letUpdates) { if (letUpdates.hasOwnProperty(lk)) newLetCtx[lk] = letUpdates[lk]; }
+        inst.ctx = newLetCtx;
+        ctx = inst.ctx;
       }
     }
 
@@ -1147,23 +1748,22 @@
         if (!elem._mnBind.show && elem.hasAttribute('mn-show') && !elem.hasAttribute('mn-state')) {
           elem._mnBind.show = elem.getAttribute('mn-show');
         }
-        // Track deps: evaluate with tracking enabled to discover
-        // which context keys this element's bindings read.
-        var scope = _scopeFor(elem, machineEl, ctx);
-        engine.startTracking();
-        try {
-          if (elem._mnBind.text) _eval(elem._mnBind.text, scope, state, elem);
-          if (elem._mnBind.show) _eval(elem._mnBind.show, scope, state, elem);
-          if (elem._mnBind.classExpr) for (var j = 0; j < elem._mnBind.classParsed.length; j++) _seval(elem._mnBind.classParsed[j], _makeScope(scope, state, elem));
-          if (elem._mnBindAttrs) for (var j = 0; j < elem._mnBindAttrs.length; j++) _eval(elem._mnBindAttrs[j].expr, scope, state, elem);
-        } catch (err) {
-          engine.stopTracking();
-          var tag = '<' + elem.tagName.toLowerCase();
-          var failedExpr = elem._mnBind.text || elem._mnBind.show || elem._mnBind.classExpr || '?';
-          throw new Error('[mn] error in ' + tag + '> expression "' + failedExpr + '": ' + err.message);
+        // Track deps: static AST walk to discover ALL context keys an
+        // expression references. Runtime evaluation would miss keys in
+        // short-circuit branches (or, and, if, cond) — a binding like
+        // (or (empty? a) (empty? b)) with a="" would track only 'a'
+        // because or short-circuits before evaluating b.
+        var deps = {};
+        if (elem._mnBind.text) _collectDeps(_parse(elem._mnBind.text), deps);
+        if (elem._mnBind.show) _collectDeps(_parse(elem._mnBind.show), deps);
+        if (elem._mnBind.classExpr) {
+          for (var j = 0; j < elem._mnBind.classParsed.length; j++) _collectDeps(elem._mnBind.classParsed[j], deps);
         }
-        if (elem._mnBind.model) engine.addDep(_depKey(elem._mnBind.model));
-        elem._mnBind.deps = engine.stopTracking();
+        if (elem._mnBindAttrs) {
+          for (var j = 0; j < elem._mnBindAttrs.length; j++) _collectDeps(_parse(elem._mnBindAttrs[j].expr), deps);
+        }
+        if (elem._mnBind.model) deps[_depKey(elem._mnBind.model)] = true;
+        elem._mnBind.deps = deps;
         inst._mnBindCache.push(elem);
       }
       dirty = null; // first build — force full render below
@@ -1175,8 +1775,6 @@
     for (var i = 0; i < cache.length; i++) {
       var bound = cache[i];
       var binding = bound._mnBind;
-
-      // perf: skip elements whose tracked deps don't overlap dirty set
       if (dirty) {
         var hit = false;
         for (var dk in binding.deps) { if (dirty[dk]) { hit = true; break; } }
@@ -1305,17 +1903,21 @@
       if (!inst._transitions) inst._transitions = {};
       inst._transitions[setup.initial] = initTransitions;
     }
+    // mn-init on machine element and initial state — run synchronously before update
+    if (el._mnInit) {
+      var machInitR = _exec(el._mnInit, inst.ctx, inst.state, el, null, inst);
+      if (machInitR && machInitR.context) inst.ctx = machInitR.context;
+      if (machInitR && machInitR.emit) inst.emit(machInitR.emit, machInitR.emitPayload);
+      if (machInitR && machInitR.to) inst.to(machInitR.to);
+    }
+    if (setup.initial && setup.stateMap[setup.initial] && setup.stateMap[setup.initial]._mnInit) {
+      var stInitR = _exec(setup.stateMap[setup.initial]._mnInit, inst.ctx, inst.state, el, null, inst);
+      if (stInitR && stInitR.context) inst.ctx = stInitR.context;
+      if (stInitR && stInitR.emit) inst.emit(stInitR.emit, stInitR.emitPayload);
+      if (stInitR && stInitR.to) inst.to(stInitR.to);
+    }
     inst.update();
     if (setup.initial && setup.stateMap[setup.initial]) evalTemporal(setup.stateMap[setup.initial], setup.initial);
-    var initExpr = el._mnInit;
-    if (initExpr) {
-      setTimeout(function () { _exec(initExpr, setup.ctx, inst.state, el, null, inst); }, 0);
-    }
-    // Fire mn-init on the initial state (same as when to() enters a state)
-    if (setup.initial && setup.stateMap[setup.initial] && setup.stateMap[setup.initial]._mnInit) {
-      var stateInitExpr = setup.stateMap[setup.initial]._mnInit;
-      setTimeout(function () { _exec(stateInitExpr, setup.ctx, inst.state, el, null, inst); }, 0);
-    }
     // If the initial state has mn-where, trigger capability routing.
     // Wait for the route table to be available before routing.
     if (setup.initial && setup.stateMap[setup.initial] && setup.stateMap[setup.initial]._mnWhere) {
@@ -1410,273 +2012,75 @@
     var compoundChromes = setup.compoundChromes;
     var persistKey = setup.persistKey;
     var initial = setup.initial;
-    var afterTimer = null;
-    var stateIntervals = [];
-    // Expose for cleanup on machine destruction
-    el._mnTimers = {
-      getAfter: function () { return afterTimer; },
-      clearAfter: function () { if (afterTimer) { clearTimeout(afterTimer); afterTimer = null; } },
-      clearIntervals: function () { for (var i = 0; i < stateIntervals.length; i++) clearInterval(stateIntervals[i]); stateIntervals = []; }
-    };
+    // ── Compile SCXML brain ────────────────────────────────────────
+    var _compiledDef = null;
+    if (_scxmlDefs[name] && _scxmlMod) {
+      try { _compiledDef = _scxmlMod.compile(_scxmlDefs[name], { id: name }); }
+      catch (err) { console.warn('[mn] failed to compile SCXML for "' + name + '": ' + err.message); }
+    }
+    if (!_compiledDef && setup.compiledDef) _compiledDef = setup.compiledDef;
 
-    // Evaluate mn-temporal s-expressions: (animate), (after ms expr), (every ms expr).
-    // Defined here so it closes over afterTimer/stateIntervals/ctx/el/inst.
-    // Called from to() on state entry and from post-init for the initial state.
-    function _evalTemporal(stateEl, stateName) {
-      var transVal = stateEl._mnTemporal;
-      if (!transVal) return;
-      var tScope = _makeScope(ctx, stateName, el);
-      tScope.__mnAfterTimer = function (ms, bodyNode) {
-        afterTimer = setTimeout(function () {
-          afterTimer = null;
-          var scope = _makeScope(inst.ctx, inst.state, el);
-          scope.__mnInst = inst;
-          _seval(bodyNode, scope);
-          _applyScope(scope, inst.ctx, inst);
-          if (scope.__mnEmit) inst.emit(scope.__mnEmit, scope.__mnEmitPayload);
-          if (scope.__mnTo) inst.to(scope.__mnTo);
-          else inst.update();
-        }, ms);
-      };
-      tScope.__mnEveryInterval = function (ms, bodyNode) {
-        var id = setInterval(function () {
-          var scope = _makeScope(inst.ctx, inst.state, el);
-          scope.__mnInst = inst;
-          _seval(bodyNode, scope);
-          _applyScope(scope, inst.ctx, inst);
-          if (scope.__mnEmit) inst.emit(scope.__mnEmit, scope.__mnEmitPayload);
-          if (scope.__mnTo) inst.to(scope.__mnTo);
-          else inst.update();
-        }, ms);
-        stateIntervals.push(id);
-      };
-      tScope.__mnAnimate = function () {
-        _transitionEnter(stateEl);
-      };
-      _seval(_parse(transVal), tScope);
+    // Merge SCXML context defaults
+    if (_compiledDef && _compiledDef.context) {
+      for (var dk in _compiledDef.context) {
+        if (_compiledDef.context.hasOwnProperty(dk) && !ctx.hasOwnProperty(dk)) ctx[dk] = _compiledDef.context[dk];
+      }
+    }
+    // Overlay SCXML lifecycle onto HTML state elements
+    if (_compiledDef && _compiledDef._stateTree) {
+      for (var sn in _compiledDef._stateTree) {
+        if (!_compiledDef._stateTree.hasOwnProperty(sn)) continue;
+        var defSpec = _compiledDef._stateTree[sn].spec;
+        var domEl = stateMap[sn];
+        if (!domEl) continue;
+        if (defSpec.where && !domEl._mnWhere) domEl._mnWhere = defSpec.where;
+        if (defSpec.init && !domEl._mnInit) domEl._mnInit = defSpec.init;
+        if (defSpec.exit && !domEl._mnExit) domEl._mnExit = defSpec.exit;
+        if (defSpec.temporal && !domEl._mnTemporal) domEl._mnTemporal = defSpec.temporal;
+      }
     }
 
+    // Canonical instance (shared context, no init hooks)
+    var _canonicalInst = null;
+    if (_compiledDef && _machineMod) {
+      _canonicalInst = {
+        id: name + '_browser', definitionId: _compiledDef.id, state: initial,
+        history: [], _definition: _compiledDef,
+        _host: { now: function () { return Date.now(); }, capabilities: _hostCapabilities,
+          emit: function () {}, scheduleAfter: function () { return 0; },
+          scheduleEvery: function () { return 0; }, cancelTimer: function () {},
+          persist: function () {}, log: function () {} },
+        _timers: [], _mnDirty: null
+      };
+      // context is a live getter — always reads from inst.ctx.
+      // Immutable updates to inst.ctx are automatically visible.
+      Object.defineProperty(_canonicalInst, 'context', {
+        get: function () { return inst.ctx; },
+        set: function (v) { inst.ctx = v; },
+        enumerable: true
+      });
+    }
+
+    // ── Build instance ──────────────────────────────────────────
     var inst = {
-      el: el,
-      name: name,
-      ctx: ctx,
-      state: initial,
-      states: stateNames,
-
-      // ── to — state transition ──────────────────────────────────
-      // Destroys leaving state's content, creates entering state's
-      // content from template, runs enter/leave CSS transitions,
-      // rebuilds $refs, calls update(), fires mn-state-change event,
-      // evaluates mn-temporal temporal expressions.
-      to: function (target, contentHtml) {
-
-        // Resolve target: try as-is, then relative to current compound parent
-        var resolvedTarget = null;
-        if (stateNames.indexOf(target) !== -1) {
-          resolvedTarget = target;
-        } else {
-          // Walk up from current state checking parent.target
-          var parts = inst.state.split('.');
-          for (var ri = parts.length - 1; ri >= 0; ri--) {
-            var candidate = parts.slice(0, ri).concat(target).join('.');
-            if (candidate && stateNames.indexOf(candidate) !== -1) {
-              resolvedTarget = candidate;
-              break;
-            }
-          }
-        }
-        if (!resolvedTarget) {
-          console.warn('[mn] unknown state "' + target + '" in "' + name + '"');
-          return false;
-        }
-        target = resolvedTarget;
-
-        // If target is compound, descend to its initial atomic child
-        while (compoundChromes[target]) {
-          var childPrefix = target + '.';
-          var firstChild = null;
-          for (var fi = 0; fi < stateNames.length; fi++) {
-            if (stateNames[fi].indexOf(childPrefix) === 0 && stateNames[fi].indexOf('.', childPrefix.length) === -1) {
-              firstChild = stateNames[fi];
-              break;
-            }
-          }
-          if (!firstChild) break;
-          target = firstChild;
-        }
-
-        // Clear timers from current state before any routing or transition
-        if (afterTimer) { clearTimeout(afterTimer); afterTimer = null; }
-        for (var ci = 0; ci < stateIntervals.length; ci++) clearInterval(stateIntervals[ci]);
-        stateIntervals = [];
-
-        // ── State-level mn-where: capability routing ────────────────
-        if (!contentHtml && stateMap[target] && stateMap[target]._mnWhere) {
-          var whereExpr = stateMap[target]._mnWhere;
-          var required = _eval(whereExpr, ctx, inst.state, el);
-          if (Array.isArray(required) && required.length > 0) {
-            var hasAll = true;
-            for (var wi = 0; wi < required.length; wi++) {
-              if (_hostCapabilities.indexOf(required[wi]) === -1) { hasAll = false; break; }
-            }
-            if (!hasAll) {
-              var node = _findCapableNode(required);
-              if (!node) {
-                if (!_registry) {
-                  console.warn('[mn] mn-where="' + whereExpr + '" requires capabilities [' + required.join(', ') + '] but no registry is configured. Call MachineNative.init({ registry: url }) to set one.');
-                } else if (_routeTable.length === 0) {
-                  console.warn('[mn] mn-where requires [' + required.join(', ') + '] but the route table is empty. Check that the registry at ' + _registry + ' is running and nodes are registered.');
-                } else {
-                  console.warn('[mn] no registered node has capabilities [' + required.join(', ') + ']. Available nodes: ' + _routeTable.map(function (n) { return n.id + '=[' + n.capabilities.join(',') + ']'; }).join(', '));
-                }
-                return false;
-              }
-              var routeTarget = target;
-              if (engine.debug) console.log('[mn-debug] routing to ' + node.id + ' for ' + name + '/' + routeTarget);
-              _sendMachineToNode(el, node, routeTarget)
-                .then(function (html) {
-                  if (engine.debug) console.log('[mn-debug] received ' + html.length + ' bytes for ' + name + '/' + routeTarget);
-                  inst.to(routeTarget, html);
-                })
-                .catch(function (err) {
-                  console.warn('[mn] routing to ' + node.id + ' failed: ' + (err && err.message ? err.message : String(err)));
-                });
-              return true;
-            }
-          }
-        }
-
-        var prev = inst.state;
-        inst.state = target;
-        if (engine.debug) console.log('[mn-debug] ' + name + ': ' + prev + ' → ' + target);
-        if (prev !== target) inst._mnBindCache = null;
-
-        // Self-transition with contentHtml: destroy and re-stamp without full exit/enter
-        if (prev === target && contentHtml && stateMap[target]) {
-          var selfEl = stateMap[target];
-          if (selfEl._mnExit) _exec(selfEl._mnExit, ctx, target, el, null, inst);
-          var selfNested = selfEl.querySelectorAll('[mn]');
-          for (var sni = 0; sni < selfNested.length; sni++) _cleanupInstance(selfNested[sni]);
-          selfEl.innerHTML = contentHtml;
-          _scanBindAttrs(selfEl, el);
-          _attachDomEvents(selfEl, inst);
-          _initNested(selfEl);
-          selfEl.hidden = false;
-          ctx.$refs = _buildRefs(el);
-          inst.update();
-          if (selfEl._mnInit) {
-            var siExpr = selfEl._mnInit;
-            setTimeout(function () { _exec(siExpr, ctx, inst.state, el, null, inst); }, 0);
-          }
-          el.dispatchEvent(new CustomEvent('mn-state-change', { bubbles: true, detail: { machine: name, prev: prev, next: target, ctx: ctx } }));
-          if (inst._urlMap && inst._urlMap[target]) {
-            var urlEntry = inst._urlMap[target];
-            if (window.history && window.history.pushState) history.pushState({ mpState: target }, '', _resolveUrl(urlEntry.pattern, urlEntry.params, ctx));
-          }
-          if (stateMap[target]) _evalTemporal(stateMap[target], target);
-          return true;
-        }
-
-        var paths = _transitionPaths(prev, target);
-        var exitPath = paths.exitPath;
-        var enterPath = paths.enterPath;
-
-        // ── Exit states (innermost first) ───────────────────────────
-        for (var xi = 0; xi < exitPath.length; xi++) {
-          var exitState = exitPath[xi];
-          if (!stateMap[exitState]) continue;
-          var leaveEl = stateMap[exitState];
-          if (leaveEl._mnExit) {
-            _exec(leaveEl._mnExit, ctx, exitState, el, null, inst);
-          }
-          var nested = leaveEl.querySelectorAll('[mn]');
-          for (var ni2 = 0; ni2 < nested.length; ni2++) _cleanupInstance(nested[ni2]);
-          // For compound states, also clear chrome
-          if (compoundChromes[exitState]) {
-            // Remove chrome nodes (not child mn-state elements)
-            var chromeNodes = [];
-            for (var cn = 0; cn < leaveEl.childNodes.length; cn++) {
-              var node = leaveEl.childNodes[cn];
-              if (node.nodeType === 1 && node.hasAttribute && node.hasAttribute('mn-state')) continue;
-              chromeNodes.push(node);
-            }
-            for (var cn2 = 0; cn2 < chromeNodes.length; cn2++) leaveEl.removeChild(chromeNodes[cn2]);
-          } else {
-            leaveEl.innerHTML = '';
-          }
-          leaveEl.hidden = true;
-        }
-
-        // ── Enter states (outermost first) ──────────────────────────
-        for (var eni = 0; eni < enterPath.length; eni++) {
-          var enterState = enterPath[eni];
-          if (!stateMap[enterState]) continue;
-          var enterEl = stateMap[enterState];
-          enterEl.hidden = false;
-          if (compoundChromes[enterState]) {
-            // Compound state: stamp chrome
-            enterEl.appendChild(compoundChromes[enterState].content.cloneNode(true));
-            _scanBindAttrs(enterEl, el);
-            _attachDomEvents(enterEl, inst);
-          } else if (enterState === target) {
-            // Atomic target state: stamp content
-            if (contentHtml) {
-              enterEl.innerHTML = contentHtml;
-            } else if (stateTmpls[enterState]) {
-              enterEl.appendChild(stateTmpls[enterState].content.cloneNode(true));
-            }
-            _scanBindAttrs(enterEl, el);
-            _attachDomEvents(enterEl, inst);
-            _initNested(enterEl);
-            // Parse <mn-transition> elements and store on instance
-            var parsed = _parseTransitions(enterEl, el);
-            if (!inst._transitions) inst._transitions = {};
-            inst._transitions[enterState] = parsed;
-          }
-        }
-
-        ctx.$refs = _buildRefs(el);
-        inst.update();
-
-        // Run mn-init on each entered state (outermost first).
-        // Deferred via setTimeout(0) so the DOM is fully stamped and bindings
-        // are evaluated before init runs — ensures $refs and focus targets exist.
-        for (var ini = 0; ini < enterPath.length; ini++) {
-          var initState = enterPath[ini];
-          if (stateMap[initState] && stateMap[initState]._mnInit && initState !== prev) {
-            var stateInit = stateMap[initState]._mnInit;
-            (function (expr) {
-              setTimeout(function () { _exec(expr, ctx, inst.state, el, null, inst); }, 0);
-            })(stateInit);
-          }
-        }
-
-        el.dispatchEvent(new CustomEvent('mn-state-change', {
-          bubbles: true,
-          detail: { machine: name, prev: prev, next: target, ctx: ctx }
-        }));
-
-        // URL routing: push URL for the new state
-        if (inst._urlMap && inst._urlMap[target]) {
-          var urlEntry = inst._urlMap[target];
-          var resolvedUrl = _resolveUrl(urlEntry.pattern, urlEntry.params, ctx);
-          if (window.history && window.history.pushState) history.pushState({ mpState: target }, '', resolvedUrl);
-        }
-
-        if (stateMap[target]) _evalTemporal(stateMap[target], target);
-        return true;
-      },
-
+      el: el, name: name, ctx: ctx, state: initial, states: stateNames,
+      _def: _compiledDef, _canonical: _canonicalInst,
+      _stateMap: stateMap, _stateTmpls: stateTmpls,
+      _compoundChromes: compoundChromes, _persistKey: persistKey,
+      _afterTimer: null, _stateIntervals: [],
+      send: function (event, itemScope, templateDefs) { return _sendEvent(inst, event, itemScope, templateDefs); },
+      to: function (target, contentHtml) { return _transitionTo(inst, target, contentHtml); },
       emit: function (eventName, payload) {
-        document.dispatchEvent(new CustomEvent('mn-' + eventName, {
-          detail: { source: el, payload: payload }
-        }));
+        document.dispatchEvent(new CustomEvent('mn-' + eventName, { detail: { source: el, payload: payload } }));
       },
+      update: function () { _applyBindings(el, inst, persistKey); }
+    };
 
-      // ── update — delegates to _applyBindings ─────────────────────
-      update: function () {
-        _applyBindings(el, inst, persistKey);
-      }
+    // Timer cleanup accessors
+    el._mnTimers = {
+      getAfter: function () { return inst._afterTimer; },
+      clearAfter: function () { if (inst._afterTimer) { clearTimeout(inst._afterTimer); inst._afterTimer = null; } },
+      clearIntervals: function () { for (var i = 0; i < inst._stateIntervals.length; i++) clearInterval(inst._stateIntervals[i]); inst._stateIntervals = []; }
     };
 
     // Parse <mn-let name="x">expr</mn-let> elements — computed bindings
@@ -1693,7 +2097,10 @@
     }
 
     el._mn = inst;
-    _wireInstance(el, inst, setup, _evalTemporal);
+    if (_canonicalInst) {
+      _canonicalInst._host.emit = function (eventName, payload) { inst.emit(eventName, payload); };
+    }
+    _wireInstance(el, inst, setup, function (stateEl, stateName) { _evalTemporal(inst, stateEl, stateName); });
     return inst;
   }
 
@@ -1708,11 +2115,10 @@
     if (_listening) return;
     _listening = true;
 
-    // mn-to: click → transition
+    // mn-to: click → send()
     //
-    // mn-to="name" fires event name. If a <mn-transition event="name">
-    // exists in the current state, it handles the event (guard, action,
-    // emit, target). Otherwise, treated as a direct state transition.
+    // Thin handler. Extracts scope, classifies template-level vs state-level,
+    // delegates to inst.send() which handles all dispatch paths.
     document.addEventListener('click', function (e) {
       var toEl = e.target.closest('[mn-to]');
       if (!toEl) return;
@@ -1724,85 +2130,9 @@
       }
       var inst = machineEl._mn;
       var value = toEl.getAttribute('mn-to');
-
-      {
-        // Find <mn-transition event="value"> — check pre-parsed transitions first,
-        // then template-level transitions (from mn-each), then live DOM fallback.
-        var transDefs = null;
-        var stateTransitions = inst._transitions && inst._transitions[inst.state];
-        if (stateTransitions && stateTransitions[value]) {
-          transDefs = stateTransitions[value];
-        }
-        // Check template-level transitions from mn-each items
-        if (!transDefs) {
-          var tmplEl = toEl.closest('template') || (function () {
-            // The button is a sibling of template, not inside it.
-            // Walk up to find the nearest template[mn-each] with stored transitions.
-            var cur = toEl.parentElement;
-            while (cur && cur !== machineEl) {
-              var tpls = cur.querySelectorAll('template[mn-each]');
-              for (var ti = 0; ti < tpls.length; ti++) {
-                if (tpls[ti]._mnTransitions && tpls[ti]._mnTransitions[value]) return tpls[ti];
-              }
-              cur = cur.parentElement;
-            }
-            return null;
-          })();
-          if (tmplEl && tmplEl._mnTransitions && tmplEl._mnTransitions[value]) {
-            transDefs = tmplEl._mnTransitions[value];
-          }
-        }
-        if (!transDefs) {
-          // Live DOM search — find <mn-transition> near the clicked element
-          var container = toEl.closest('[mn-state]') || machineEl;
-          var liveTrans = container.querySelectorAll('mn-transition[event="' + value + '"]');
-          if (liveTrans.length > 0) {
-            transDefs = [];
-            for (var lti = 0; lti < liveTrans.length; lti++) {
-              if (liveTrans[lti].closest('[mn]') !== machineEl) continue;
-              var ltd = { target: liveTrans[lti].getAttribute('to') || null, guard: null, action: null, emit: null };
-              var lg = liveTrans[lti].querySelector('mn-guard');
-              if (lg) ltd.guard = lg.textContent.trim();
-              var la = liveTrans[lti].querySelector('mn-action');
-              if (la) ltd.action = la.textContent.trim();
-              var le = liveTrans[lti].querySelector('mn-emit');
-              if (le) ltd.emit = le.textContent.trim();
-              transDefs.push(ltd);
-            }
-          }
-        }
-        if (transDefs && transDefs.length > 0) {
-          var itemScope = _scopeFor(toEl, machineEl, inst.ctx);
-          for (var ti = 0; ti < transDefs.length; ti++) {
-            var td = transDefs[ti];
-            // Evaluate guard
-            if (td.guard) {
-              var guardResult = _eval(td.guard, itemScope, inst.state, toEl);
-              if (!guardResult) continue;
-            }
-            // Execute action — merge item scope so $item/$index are available
-            if (td.action) {
-              var actionCtx = itemScope;
-              if (itemScope !== inst.ctx) {
-                actionCtx = Object.create(inst.ctx);
-                for (var ak in itemScope) { if (itemScope.hasOwnProperty(ak)) actionCtx[ak] = itemScope[ak]; }
-              }
-              var actionResult = _exec(td.action, actionCtx, inst.state, machineEl, e, inst);
-              if (itemScope !== inst.ctx) _applyScope(actionCtx, inst.ctx, inst);
-              if (actionResult && actionResult.emit) inst.emit(actionResult.emit, actionResult.emitPayload);
-            }
-            // Explicit <mn-emit> element
-            if (td.emit) inst.emit(td.emit);
-            // Transition
-            if (td.target) inst.to(td.target);
-            else inst.update();
-            break;
-          }
-        } else {
-          // No mn-transition found — treat as direct state transition
-          inst.to(value);
-        }
-      }
+      var itemScope = _scopeFor(toEl, machineEl, inst.ctx);
+      var templateDefs = _findTemplateTrans(toEl, machineEl, value);
+      inst.send(value, itemScope, templateDefs);
     });
 
     // mn-model: input → context
@@ -1812,7 +2142,9 @@
       var inst = machineEl._mn;
       var scope = _scopeFor(m, machineEl, inst.ctx);
       var path = m.getAttribute('mn-model');
-      var val = m.type === 'checkbox' ? m.checked : m.value;
+      var val = m.type === 'checkbox' ? m.checked
+                : (m.type === 'number' || m.type === 'range') ? (m.value === '' ? 0 : Number(m.value))
+                : m.value;
       _set(scope, path, val);
       if (!inst._mnDirty) inst._mnDirty = {};
       inst._mnDirty[_depKey(path)] = true;
@@ -1978,10 +2310,55 @@
   }
 
   // Boot: load imports (async), then init machines (sync), then observe mutations
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  SCXML-first boot                                                       ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+  //
+  // <link rel="mn-machine" href="machines/app.scxml" /> declares the app machine.
+  // The boot sequence: load XSLT stylesheets → load SCXML machine → apply XSLT
+  // → inject resulting HTML into body → init machines as normal.
+  //
+  // If no mn-machine link exists, boot falls back to the existing HTML-first path:
+  // load imports → init machines from existing DOM.
+
+  function _loadMachineLinks() {
+    var links = document.querySelectorAll('link[rel="mn-machine"]');
+    if (links.length === 0) return Promise.resolve();
+
+    var promises = [];
+    for (var i = 0; i < links.length; i++) {
+      var href = links[i].getAttribute('href');
+      if (!href) continue;
+      (function (url) {
+        promises.push(
+          fetch(url).then(function (res) {
+            if (!res.ok) throw new Error('mn-machine fetch failed: ' + res.status + ' for ' + url);
+            return res.text();
+          }).then(function (scxml) {
+            // Extract machine name from SCXML id attribute
+            var idMatch = scxml.match(/<scxml[^>]*\bname="([^"]+)"/) || scxml.match(/<scxml[^>]*\bid="([^"]+)"/);
+            var machineName = idMatch ? idMatch[1] : null;
+            if (!machineName) {
+              console.warn('[mn] mn-machine at ' + url + ' has no name or id attribute');
+              return;
+            }
+
+            // Store the SCXML definition for composition with HTML templates
+            _scxmlDefs[machineName] = scxml;
+            if (engine.debug) console.log('[mn-debug] SCXML definition loaded: ' + machineName);
+          })
+        );
+      })(href);
+    }
+    return Promise.all(promises);
+  }
+
   function _boot() {
-    _loadImports().then(function () {
+    Promise.all([_loadImports(), _loadMachineLinks()]).then(function () {
       init();
       _observe();
+    }).catch(function (err) {
+      console.error('[mn] boot failed:', err && err.message ? err.message : err);
     });
   }
 
@@ -1993,10 +2370,6 @@
     }
   }
 
-
-  // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  Public API                                                             ║
-  // ╚══════════════════════════════════════════════════════════════════════════╝
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
   // ║  Capability-based routing                                               ║
@@ -2011,6 +2384,8 @@
   var _routeTable = [];
   var _hostCapabilities = ['dom', 'user-input', 'localstorage', 'css-transition'];
   var _defaultLoading = '<div class="mn-loading" style="display:flex;align-items:center;justify-content:center;padding:2rem;opacity:0.5">Loading\u2026</div>';
+  var _sessionId = null;
+  var _sseSource = null;
 
 
   var _routeTableReady = null; // promise that resolves when route table is loaded
@@ -2040,6 +2415,78 @@
     }
     return null;
   }
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  Browser self-registration + SSE receive                                ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  function _generateSessionId() {
+    return 'session-' + Math.random().toString(36).substring(2, 10);
+  }
+
+  function _openSSE(serverUrl) {
+    if (!serverUrl || !_sessionId) return;
+    var url = serverUrl + '/sse/' + _sessionId;
+    _sseSource = new EventSource(url);
+    _sseSource.addEventListener('machine', function (event) {
+      var scxmlString;
+      try { scxmlString = atob(event.data); }
+      catch (e) { scxmlString = event.data; }
+      _receiveMachine(scxmlString);
+    });
+    _sseSource.onerror = function () {
+      if (engine.debug) console.log('[mn-debug] SSE connection error — will auto-reconnect');
+    };
+  }
+
+  function _receiveMachine(scxmlString) {
+    try {
+    var _transforms = (typeof MPTransforms !== 'undefined') ? MPTransforms : null;
+    if (!_transforms) return;
+    var incoming = _transforms.extractMachine(scxmlString);
+    if (!incoming || !incoming.name) return;
+
+    if (engine.debug) console.log('[mn-debug] received machine: ' + incoming.name + ' state=' + incoming.state);
+
+    var el = document.querySelector('[mn="' + incoming.name + '"]');
+    if (el && el._mn) {
+      var inst = el._mn;
+      if (incoming.context) {
+        var newCtx = {};
+        for (var k in inst.ctx) { if (inst.ctx.hasOwnProperty(k)) newCtx[k] = inst.ctx[k]; }
+        for (var k in incoming.context) { if (incoming.context.hasOwnProperty(k)) newCtx[k] = incoming.context[k]; }
+        inst.ctx = newCtx;
+      }
+
+      // Recompile response SCXML to pick up embedded invokes
+      if (_scxmlMod && incoming.state && inst._def) {
+        try {
+          var responseDef = _scxmlMod.compile(scxmlString, {});
+          if (responseDef._stateTree[incoming.state] && responseDef._stateTree[incoming.state].spec.invokes) {
+            if (!inst._def._stateTree[incoming.state]) {
+              inst._def._stateTree[incoming.state] = { parent: null, spec: {} };
+            }
+            inst._def._stateTree[incoming.state].spec.invokes = responseDef._stateTree[incoming.state].spec.invokes;
+          }
+        } catch (e) { /* response may not be compilable — skip invoke update */ }
+      }
+
+      if (incoming.state && incoming.state !== inst.state) {
+        inst._mnWhereResolved = inst._mnWhereGen || 0;
+        inst.to(incoming.state);
+      } else {
+        inst.update();
+      }
+    }
+    } catch (err) {
+      console.warn('[mn] _receiveMachine error: ' + (err.message || err));
+    }
+  }
+
+  function _closeSSE() {
+    if (_sseSource) { _sseSource.close(); _sseSource = null; }
+  }
+
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
   // ║  URL routing                                                            ║
@@ -2099,27 +2546,189 @@
   }
 
 
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  DOM → SCXML serialization                                              ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+  //
+  // Walks the machine element's DOM and produces an SCXML string.
+  // Reads state structure from <template mn-state-template> elements
+  // and lifecycle properties stored on state elements by _initMachine.
+  // S-expressions are CDATA-wrapped (< and > are illegal in XML text).
+
+  // CDATA-wrap s-expression content for XML serialization.
+  // S-expressions may contain < and <= which are illegal bare in XML text.
+  // CDATA is standard XML — every parser and tool handles it.
+  function _cdata(str) {
+    return str ? '<![CDATA[' + str + ']]>' : '';
+  }
+
+  function _machineElToScxml(machineEl) {
+    var inst = machineEl._mn;
+    if (!inst) return null;
+
+    // If we have the original SCXML definition, just update state and context
+    if (_scxmlDefs[inst.name]) {
+      var ctxObj = {};
+      for (var ck in inst.ctx) {
+        if (inst.ctx.hasOwnProperty(ck) && ck !== '$store' && ck !== '$refs') ctxObj[ck] = inst.ctx[ck];
+      }
+      var transforms = (typeof MPTransforms !== 'undefined') ? MPTransforms : null;
+      if (transforms) return transforms.updateScxmlState(_scxmlDefs[inst.name], inst.state, ctxObj);
+      // Fallback: manual update
+      var scxml = _scxmlDefs[inst.name];
+      var ctxJson = JSON.stringify(ctxObj).replace(/'/g, '&apos;');
+      if (scxml.indexOf('initial="') !== -1) {
+        scxml = scxml.replace(/initial="[^"]*"/, 'initial="' + inst.state + '"');
+      }
+      if (scxml.indexOf("mn-ctx='") !== -1) {
+        scxml = scxml.replace(/mn-ctx='[^']*'/, "mn-ctx='" + ctxJson + "'");
+      } else {
+        scxml = scxml.replace(/(<scxml\b[^>]*?)(\s*>)/, "$1 mn-ctx='" + ctxJson + "'$2");
+      }
+      return scxml;
+    }
+
+    // HTML-only fallback: walk the DOM
+    var name = machineEl.getAttribute('mn') || 'unknown';
+    var state = inst.state;
+    var ctxJson = JSON.stringify(inst.ctx, function (key, val) {
+      // Skip internal framework properties
+      if (key === '$store' || key === '$refs') return undefined;
+      return val;
+    }).replace(/'/g, '&apos;');
+
+    var lines = [];
+    lines.push('<?xml version="1.0" encoding="UTF-8"?>');
+    lines.push("<scxml id=\"" + name + "\" initial=\"" + state + "\" mn-ctx='" + ctxJson + "'>");
+
+    // Walk state templates and state elements
+    var templates = machineEl.querySelectorAll('template[mn-state-template]');
+    var stateEls = machineEl.querySelectorAll('[mn-state]');
+    var processed = {};
+
+    // Process templates (inactive states — content preserved)
+    for (var ti = 0; ti < templates.length; ti++) {
+      var tmpl = templates[ti];
+      var stateName = tmpl.getAttribute('mn-state-template');
+      if (processed[stateName]) continue;
+      processed[stateName] = true;
+
+      // Find the corresponding state element for lifecycle properties
+      var stateEl = null;
+      for (var si = 0; si < stateEls.length; si++) {
+        if (stateEls[si].getAttribute('mn-state') === stateName && stateEls[si].closest('[mn]') === machineEl) {
+          stateEl = stateEls[si];
+          break;
+        }
+      }
+
+      var isFinal = stateEl && stateEl.hasAttribute('mn-final');
+      lines.push('  <' + (isFinal ? 'final' : 'state') + ' id="' + stateName + '">');
+
+      // Lifecycle from element properties (set by _initMachine)
+      if (stateEl && stateEl._mnWhere) lines.push('    <mn-where>' + _cdata(stateEl._mnWhere) + '</mn-where>');
+      if (stateEl && stateEl._mnInit) lines.push('    <mn-init>' + _cdata(stateEl._mnInit) + '</mn-init>');
+      if (stateEl && stateEl._mnExit) lines.push('    <mn-exit>' + _cdata(stateEl._mnExit) + '</mn-exit>');
+      if (stateEl && stateEl._mnTemporal) lines.push('    <mn-temporal>' + _cdata(stateEl._mnTemporal) + '</mn-temporal>');
+
+      // Extract transitions from template content
+      var transEls = tmpl.content.querySelectorAll('mn-transition');
+      for (var tri = 0; tri < transEls.length; tri++) {
+        var tr = transEls[tri];
+        var event = tr.getAttribute('event') || '';
+        var target = tr.getAttribute('to') || '';
+        lines.push('    <transition' + (event ? ' event="' + event + '"' : '') + (target ? ' target="' + target + '"' : '') + '>');
+
+        var guardEl = tr.querySelector('mn-guard');
+        if (guardEl) lines.push('      <mn-guard>' + _cdata(guardEl.textContent.trim()) + '</mn-guard>');
+
+        var actionEl = tr.querySelector('mn-action');
+        if (actionEl) lines.push('      <mn-action>' + _cdata(actionEl.textContent.trim()) + '</mn-action>');
+
+        var emitEl = tr.querySelector('mn-emit');
+        if (emitEl) lines.push('      <mn-emit>' + emitEl.textContent.trim() + '</mn-emit>');
+
+        lines.push('    </transition>');
+      }
+
+      lines.push('  </' + (isFinal ? 'final' : 'state') + '>');
+    }
+
+    // Process active state (content is live in the DOM, not in a template)
+    for (var ai = 0; ai < stateEls.length; ai++) {
+      var activeEl = stateEls[ai];
+      var activeName = activeEl.getAttribute('mn-state');
+      if (processed[activeName]) continue;
+      if (activeEl.closest('[mn]') !== machineEl) continue;
+      processed[activeName] = true;
+
+      var isActiveFinal = activeEl.hasAttribute('mn-final');
+      lines.push('  <' + (isActiveFinal ? 'final' : 'state') + ' id="' + activeName + '">');
+
+      if (activeEl._mnWhere) lines.push('    <mn-where>' + _cdata(activeEl._mnWhere) + '</mn-where>');
+      if (activeEl._mnInit) lines.push('    <mn-init>' + _cdata(activeEl._mnInit) + '</mn-init>');
+      if (activeEl._mnExit) lines.push('    <mn-exit>' + _cdata(activeEl._mnExit) + '</mn-exit>');
+      if (activeEl._mnTemporal) lines.push('    <mn-temporal>' + _cdata(activeEl._mnTemporal) + '</mn-temporal>');
+
+      // Active state transitions from parsed instance data
+      // inst._transitions[state] is { eventName: [defs] }, not an array
+      if (inst._transitions && inst._transitions[activeName]) {
+        var parsedTrans = inst._transitions[activeName];
+        for (var evName in parsedTrans) {
+          if (!parsedTrans.hasOwnProperty(evName)) continue;
+          var evDefs = parsedTrans[evName];
+          for (var pi = 0; pi < evDefs.length; pi++) {
+            var pt = evDefs[pi];
+            lines.push('    <transition event="' + evName + '"' + (pt.target ? ' target="' + pt.target + '"' : '') + '>');
+            if (pt.guard) lines.push('      <mn-guard>' + _cdata(pt.guard) + '</mn-guard>');
+            if (pt.action) lines.push('      <mn-action>' + _cdata(pt.action) + '</mn-action>');
+            if (pt.emit) lines.push('      <mn-emit>' + pt.emit + '</mn-emit>');
+            lines.push('    </transition>');
+          }
+        }
+      }
+
+      lines.push('  </' + (isActiveFinal ? 'final' : 'state') + '>');
+    }
+
+    lines.push('</scxml>');
+    return lines.join('\n');
+  }
+
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  SCXML definition cache                                                 ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+  //
+  // SCXML machines loaded via <link rel="mn-machine"> are stored here.
+  // When the browser encounters <div mn="foo">, it checks _scxmlDefs[foo]
+  // for a compiled definition to pair with the mn-define HTML template.
+
+  var _scxmlDefs = {};  // machine name → SCXML string
+
+
   function _sendMachineToNode(machineEl, node, targetState) {
     if (!machineEl || !machineEl._mn) return Promise.reject(new Error('no machine'));
 
-    // Sync context to markup
-    machineEl._mn.update();
+    // Do NOT call update() here — the machine may be mid-transition.
+    // Serialize from current state and context directly.
+    var body = _machineElToScxml(machineEl);
+    var transport = node.transport;
 
-    var body = machineEl.outerHTML;
-    var targetUrl = node.address + '/api/machine';
+    if (!transport || !transport.type) {
+      return Promise.reject(new Error('node ' + node.id + ' has no transport'));
+    }
 
-    var headers = { 'Content-Type': 'text/html' };
-    if (targetState) headers['X-MN-Target'] = targetState;
-    var machineName = machineEl.getAttribute('mn');
-    if (machineName) headers['X-MN-Machine'] = machineName;
+    var headers = { 'Content-Type': 'application/xml' };
+    if (_sessionId) headers['X-MN-Session'] = _sessionId;
 
-    return fetch(targetUrl, {
+    return fetch(transport.address, {
       method: 'POST',
       headers: headers,
       body: body
     }).then(function (res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' from ' + targetUrl);
-      return res.text();
+      if (!res.ok && res.status !== 202) throw new Error('HTTP ' + res.status + ' from ' + transport.address);
+      return '';
     });
   }
 
@@ -2136,13 +2745,64 @@
         if (config.debug) engine.debug = true;
         if (config.capabilities) _hostCapabilities = config.capabilities;
         if (config.loading) _defaultLoading = config.loading;
+        if (config.server) {
+          _sessionId = config.sessionId || _generateSessionId();
+          _openSSE(config.server);
+          if (typeof window !== 'undefined') {
+            window.addEventListener('beforeunload', _closeSSE);
+          }
+        }
       } else {
         init(rootOrConfig);
       }
     },
     fn: function (name, func) { _userFns[name] = func; },
-    store: _store,
+    get store() { return _store; },
+    get _sseSource() { return _sseSource; },
+    get _sessionId() { return _sessionId; },
     get debug() { return engine.debug; },
-    set debug(v) { engine.debug = !!v; }
+    set debug(v) { engine.debug = !!v; },
+
+    // ── Debug API for devtools ─────────────────────────────────
+    // Returns a snapshot of all live machine instances for the devtools panel.
+    _debug: function () {
+      var all = document.querySelectorAll('[mn]');
+      var machines = [];
+      for (var i = 0; i < all.length; i++) {
+        var inst = all[i]._mn;
+        if (!inst) continue;
+        var enabled = [];
+        if (inst._canonical && _machineMod) {
+          try {
+            var info = _machineMod.inspect(inst._canonical);
+            enabled = info.enabled;
+          } catch (e) {}
+        }
+        machines.push({
+          name: inst.name,
+          state: inst.state,
+          context: JSON.parse(JSON.stringify(inst.ctx)),
+          enabled: enabled,
+          states: inst.states
+        });
+      }
+      return { machines: machines, store: JSON.parse(JSON.stringify(_store)) };
+    },
+
+    // Evaluate an s-expression against a named machine's live context.
+    _eval: function (expr, machineName) {
+      if (!machineName) return engine.eval(expr, {});
+      var el = document.querySelector('[mn="' + machineName + '"]');
+      if (!el || !el._mn) return null;
+      return engine.eval(expr, el._mn.ctx, el._mn.state, el._mn.el);
+    },
+
+    // Send an event to a named machine (fires the transition live).
+    _send: function (machineName, event) {
+      var el = document.querySelector('[mn="' + machineName + '"]');
+      if (!el || !el._mn) return null;
+      el._mn.send(event);
+      return { state: el._mn.state };
+    }
   };
 });

@@ -6,6 +6,35 @@
 
 The application is the markup. The markup is the transport. The transport is the application.
 
+## 30-second quick start
+
+```html
+<script src="https://unpkg.com/machine-native/mn/engine.js"></script>
+<script src="https://unpkg.com/machine-native/mn/browser.js"></script>
+
+<div mn="counter" mn-ctx='{"count": 0}'>
+  <div mn-state="counting">
+    <h1><mn-text>count</mn-text></h1>
+    <button><mn-on event="click">(inc! count)</mn-on> +1</button>
+    <button><mn-on event="click">(dec! count)</mn-on> -1</button>
+    <button><mn-on event="click">(when (> count 0) (to confirm))</mn-on> Reset</button>
+  </div>
+  <div mn-state="confirm">
+    <p>Reset to zero?</p>
+    <button mn-to="counting">No</button>
+    <button><mn-on event="click">(do (set! count 0) (to counting))</mn-on> Yes</button>
+  </div>
+</div>
+```
+
+That's a complete app. Two states, guarded transitions, reactive data binding. No JavaScript. No build step. Copy it into an HTML file, open in a browser, it works.
+
+[37 interactive lessons](examples/learn.html) teach the full framework from here.
+
+---
+
+## What it is
+
 A machine_native application is a state machine defined in markup. In the browser, that markup is HTML. On the server, it's SCXML. Between nodes, it's whichever format the receiving host speaks. The machine carries its states, guards, actions, context, and capability requirements in one document. It serialises, posts to a capable host, executes there, and comes back with its state updated. Same machine. Same engine. No API layer between them.
 
 ```html
@@ -57,7 +86,7 @@ machine_native puts the rules in the machine, not in the nodes. The machine carr
 
 Zero dependencies, zero build step. Two script tags in a browser node. `require('machine-native')` in a server node. Drop an `[mn]` element into any page and a MutationObserver auto-initialises it.
 
-Start with the [interactive tutorial](examples/learn.html). 24 lessons, zero setup.
+Start with the [interactive tutorial](examples/learn.html). 38 lessons, zero setup.
 
 ---
 
@@ -74,9 +103,9 @@ Any process that has the engine and some effect adapters is a node. Nodes regist
 ```
 POST /register
 {
-  "address": "http://10.0.1.5:4000",
+  "id": "po-server",
   "capabilities": ["persist", "log", "notify", "fulfil"],
-  "formats": ["html", "scxml"]
+  "transport": { "type": "http-post", "address": "http://10.0.1.5:4000/api/machine" }
 }
 ```
 
@@ -172,10 +201,10 @@ In the capability node model, an LLM is just another node. It receives a partial
 
 ## Examples
 
-- [Interactive Tutorial](examples/learn.html): 24 lessons, learn by building
+- [Interactive Tutorial](examples/learn.html): 38 lessons covering the full framework, learn by building
 - [Sticky Notes](examples/sticky-notes.html): CRUD app, zero JavaScript
 - [Snow Check SPA](examples/spa/): multi-page app with components, command palette, live weather
-- [Purchase Order](examples/purchase-order/): full-stack browser form to server pipeline with async effects
+- [Purchase Order](examples/purchase-order/): production-grade full-stack app — login, role-based auth, data privacy via `mn:project`, approval workflows, reject-edit-resubmit, Chart.js dashboard, 9 machines
 - [Batch Reactor](examples/batch-reactor/): ISA-88 industrial process control with compound states
 
 ---

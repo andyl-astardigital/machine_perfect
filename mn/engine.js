@@ -1,5 +1,5 @@
 /**
- * machine_native engine v0.5.0 — S-expression evaluator and runtime core.
+ * machine_native engine v0.8.0 — S-expression evaluator and runtime core.
  *
  * The shared heart of machine_native. Zero DOM dependencies.
  * Used by the frontend (browser) and backend (Node/SCXML) runtimes.
@@ -7,7 +7,7 @@
  * Contains: tokenizer, parser, evaluator, standard library (~120 functions),
  * dependency tracking, scope management, path utilities, purity enforcement.
  *
- * @version 0.5.0
+ * @version 0.8.0
  * @license MIT
  */
 (function (root, factory) {
@@ -251,31 +251,53 @@
         }
         return seval(result, ctx);
 
+      // ── Immutable mutation forms ──────────────────────────────────
+      // Every ! form creates new values. Nothing is mutated in place.
+      // For simple keys: writes to ctx (scope own property).
+      // For dotted paths: creates new objects along the path via setImmutable,
+      //   then writes the new root-level key to ctx.
+      // For arrays: creates new arrays instead of push/splice.
+
       case 'set!':
         var val = seval(n2, ctx);
         if (n1.v.indexOf('.') !== -1) {
-          set(ctx, n1.v, val);
+          var rootKey = n1.v.split('.')[0];
+          var rootObj = ctx[rootKey];
+          if (rootObj == null) rootObj = {};
+          var subPath = n1.v.substring(rootKey.length + 1);
+          ctx[rootKey] = setImmutable(typeof rootObj === 'object' ? rootObj : {}, subPath, val);
           _markDirty(ctx, n1.v);
         }
-        else { if (unsafePaths[n1.v]) return val; _owner(ctx, n1.v)[n1.v] = val; _markDirty(ctx, n1.v); }
+        else { if (unsafePaths[n1.v]) return val; ctx[n1.v] = val; _markDirty(ctx, n1.v); }
         return val;
       case 'inc!':
-        if (n1.v.indexOf('.') !== -1) { var cur = get(ctx, n1.v); set(ctx, n1.v, (cur || 0) + 1); }
-        else { if (unsafePaths[n1.v]) return 0; var ownInc = _owner(ctx, n1.v); ownInc[n1.v] = (ownInc[n1.v] || 0) + 1; }
+        var incCur = n1.v.indexOf('.') !== -1 ? get(ctx, n1.v) : ctx[n1.v];
+        var incVal = (incCur || 0) + 1;
+        if (n1.v.indexOf('.') !== -1) {
+          var incRoot = n1.v.split('.')[0];
+          ctx[incRoot] = setImmutable(ctx[incRoot] || {}, n1.v.substring(incRoot.length + 1), incVal);
+        } else { if (unsafePaths[n1.v]) return 0; ctx[n1.v] = incVal; }
         _markDirty(ctx, n1.v);
-        return n1.v.indexOf('.') !== -1 ? get(ctx, n1.v) : ctx[n1.v];
+        return incVal;
       case 'dec!':
-        if (n1.v.indexOf('.') !== -1) { var cur = get(ctx, n1.v); set(ctx, n1.v, (cur || 0) - 1); }
-        else { if (unsafePaths[n1.v]) return 0; var ownDec = _owner(ctx, n1.v); ownDec[n1.v] = (ownDec[n1.v] || 0) - 1; }
+        var decCur = n1.v.indexOf('.') !== -1 ? get(ctx, n1.v) : ctx[n1.v];
+        var decVal = (decCur || 0) - 1;
+        if (n1.v.indexOf('.') !== -1) {
+          var decRoot = n1.v.split('.')[0];
+          ctx[decRoot] = setImmutable(ctx[decRoot] || {}, n1.v.substring(decRoot.length + 1), decVal);
+        } else { if (unsafePaths[n1.v]) return 0; ctx[n1.v] = decVal; }
         _markDirty(ctx, n1.v);
-        return n1.v.indexOf('.') !== -1 ? get(ctx, n1.v) : ctx[n1.v];
+        return decVal;
       case 'toggle!':
-        if (n1.v.indexOf('.') !== -1) { set(ctx, n1.v, !get(ctx, n1.v)); }
-        else { if (unsafePaths[n1.v]) return false; var ownTog = _owner(ctx, n1.v); ownTog[n1.v] = !ownTog[n1.v]; }
+        var togCur = n1.v.indexOf('.') !== -1 ? get(ctx, n1.v) : ctx[n1.v];
+        var togVal = !togCur;
+        if (n1.v.indexOf('.') !== -1) {
+          var togRoot = n1.v.split('.')[0];
+          ctx[togRoot] = setImmutable(ctx[togRoot] || {}, n1.v.substring(togRoot.length + 1), togVal);
+        } else { if (unsafePaths[n1.v]) return false; ctx[n1.v] = togVal; }
         _markDirty(ctx, n1.v);
-        return n1.v.indexOf('.') !== -1 ? get(ctx, n1.v) : ctx[n1.v];
+        return togVal;
       case 'swap!':
-        // (swap! key fn arg1 arg2 ...) — apply fn to current value, replace atomically
         var swapKey = n1.v;
         if (unsafePaths[swapKey]) return null;
         var swapFn = seval(n2, ctx);
@@ -283,42 +305,48 @@
         var swapArgs = [swapCur];
         for (var si = 3; si < node.length; si++) swapArgs.push(seval(node[si], ctx));
         var swapResult = swapFn.apply(null, swapArgs);
-        if (swapKey.indexOf('.') !== -1) set(ctx, swapKey, swapResult);
-        else _owner(ctx, swapKey)[swapKey] = swapResult;
+        if (swapKey.indexOf('.') !== -1) {
+          var swapRoot = swapKey.split('.')[0];
+          ctx[swapRoot] = setImmutable(ctx[swapRoot] || {}, swapKey.substring(swapRoot.length + 1), swapResult);
+        } else ctx[swapKey] = swapResult;
         _markDirty(ctx, swapKey);
         return swapResult;
       case 'push!':
-        var arr = seval(n1, ctx);
-        var val = seval(n2, ctx);
-        if (Array.isArray(arr)) arr.push(val);
-        if (n1.t === 'Y') _markDirty(ctx, n1.v);
-        return arr;
+        var pushArr = seval(n1, ctx);
+        var pushVal = seval(n2, ctx);
+        var newArr = Array.isArray(pushArr) ? pushArr.concat([pushVal]) : [pushVal];
+        if (n1.t === 'Y') { ctx[n1.v] = newArr; _markDirty(ctx, n1.v); }
+        return newArr;
       case 'remove-where!':
-        var arr = seval(n1, ctx);
-        var key = seval(n2, ctx);
-        var val = seval(n3, ctx);
-        if (Array.isArray(arr)) {
-          for (var i = arr.length - 1; i >= 0; i--) { if (arr[i][key] === val) arr.splice(i, 1); }
-        }
-        if (n1.t === 'Y') _markDirty(ctx, n1.v);
-        return arr;
+        var rwArr = seval(n1, ctx);
+        var rwKey = seval(n2, ctx);
+        var rwVal = seval(n3, ctx);
+        var filtered = Array.isArray(rwArr)
+          ? rwArr.filter(function (item) { return item[rwKey] !== rwVal; })
+          : rwArr;
+        if (n1.t === 'Y') { ctx[n1.v] = filtered; _markDirty(ctx, n1.v); }
+        return filtered;
       case 'splice!':
-        var arr = seval(n1, ctx);
-        var idx = seval(n2, ctx);
-        var count = n3 != null ? seval(n3, ctx) : 1;
-        if (Array.isArray(arr)) arr.splice(idx, count);
-        if (n1.t === 'Y') _markDirty(ctx, n1.v);
-        return arr;
-
-      // All ! forms in this engine mutate in place. assoc! sets a key on
-      // an existing object. This differs from Clojure's transient assoc!.
+        var spArr = seval(n1, ctx);
+        var spIdx = seval(n2, ctx);
+        var spCount = n3 != null ? seval(n3, ctx) : 1;
+        var spliced = Array.isArray(spArr)
+          ? spArr.slice(0, spIdx).concat(spArr.slice(spIdx + spCount))
+          : spArr;
+        if (n1.t === 'Y') { ctx[n1.v] = spliced; _markDirty(ctx, n1.v); }
+        return spliced;
       case 'assoc!':
         var assocObj = seval(n1, ctx);
         var assocKey = seval(n2, ctx);
         var assocVal = seval(n3, ctx);
-        if (assocObj && !unsafePaths[assocKey]) assocObj[assocKey] = assocVal;
-        if (n1.t === 'Y') _markDirty(ctx, n1.v);
-        return assocObj;
+        if (unsafePaths[assocKey]) return assocObj;
+        var newObj = {};
+        if (assocObj && typeof assocObj === 'object') {
+          for (var ak in assocObj) { if (assocObj.hasOwnProperty(ak)) newObj[ak] = assocObj[ak]; }
+        }
+        newObj[assocKey] = assocVal;
+        if (n1.t === 'Y') { ctx[n1.v] = newObj; _markDirty(ctx, n1.v); }
+        return newObj;
       case 'in-state?':
         var checkState = seval(n1, ctx);
         if (checkState == null) return false;
@@ -695,9 +723,10 @@
     var scope = makeScope(ctx, state, el, event);
     if (inst) scope.__mnInst = inst;
     seval(parse(str), scope);
-    applyScope(scope, ctx, inst);
-    // Return collected signals for the host to act on
+    // Build new context from original + mutations (immutable — ctx is never modified)
+    var newCtx = newContext(scope, ctx, inst);
     return {
+      context: newCtx,
       to: scope.__mnTo || null,
       emit: scope.__mnEmit || null,
       emitPayload: scope.__mnEmitPayload !== undefined ? scope.__mnEmitPayload : null,
@@ -720,13 +749,22 @@
     return dot === -1 ? name : name.substring(0, dot);
   }
 
-  function applyScope(scope, target, inst) {
+  // Immutable: returns a new context object with scope mutations merged.
+  // The original ctx is never modified.
+  var _frameworkKeys = { '$state':1, '$el':1, '$event':1, '$item':1, '$index':1, '$detail':1 };
+
+  function newContext(scope, ctx, inst) {
+    var result = {};
+    for (var k in ctx) {
+      if (ctx.hasOwnProperty(k)) result[k] = ctx[k];
+    }
     for (var k in scope) {
-      if (scope.hasOwnProperty(k) && k.charAt(0) !== '$' && k.indexOf('__mn') !== 0) {
-        target[k] = scope[k];
+      if (scope.hasOwnProperty(k) && k.indexOf('__mn') !== 0 && !_frameworkKeys[k]) {
+        result[k] = scope[k];
         if (inst) { if (!inst._mnDirty) inst._mnDirty = {}; inst._mnDirty[depKey(k)] = true; }
       }
     }
+    return result;
   }
 
 
@@ -745,6 +783,8 @@
 
   var unsafePaths = { '__proto__': 1, 'constructor': 1, 'prototype': 1 };
 
+  // Mutable set — walks path and assigns in place.
+  // Used by browser.js for DOM-bound context updates.
   function set(obj, path, val) {
     var parts = path.split('.');
     for (var i = 0; i < parts.length; i++) {
@@ -755,6 +795,44 @@
       obj = obj[parts[i]];
     }
     obj[parts[parts.length - 1]] = val;
+  }
+
+  // Immutable set — returns a new root with the path updated.
+  // Creates shallow copies along the path (structural sharing).
+  function _shallowCopy(obj) {
+    if (Array.isArray(obj)) return obj.slice();
+    if (obj && typeof obj === 'object') {
+      var copy = {};
+      for (var k in obj) { if (obj.hasOwnProperty(k)) copy[k] = obj[k]; }
+      return copy;
+    }
+    return obj;
+  }
+
+  function setImmutable(root, path, val) {
+    var parts = path.split('.');
+    for (var i = 0; i < parts.length; i++) {
+      if (unsafePaths[parts[i]]) return root;
+    }
+    if (parts.length === 1) {
+      var copy = _shallowCopy(root);
+      copy[parts[0]] = val;
+      return copy;
+    }
+    // Structural sharing: copy each level along the path.
+    // Arrays at intermediate levels are copied. Numeric keys on arrays
+    // are treated as indices.
+    var newRoot = _shallowCopy(root);
+    var current = newRoot;
+    for (var i = 0; i < parts.length - 1; i++) {
+      var key = parts[i];
+      var child = current[key];
+      var newChild = child != null ? _shallowCopy(child) : {};
+      current[key] = newChild;
+      current = newChild;
+    }
+    current[parts[parts.length - 1]] = val;
+    return newRoot;
   }
 
 
@@ -776,7 +854,7 @@
 
     // Scope
     makeScope: makeScope,
-    applyScope: applyScope,
+    newContext: newContext,
 
     // Dependency tracking
     depKey: depKey,
@@ -797,6 +875,6 @@
     get debug() { return debug; },
     set debug(v) { debug = !!v; },
 
-    version: '0.5.0'
+    version: '0.8.0'
   };
 });

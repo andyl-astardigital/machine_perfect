@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "machine_native DevTools",
+  "version": "0.8.0",
+  "description": "Live machine inspector for machine_native applications",
+  "devtools_page": "devtools.html",
+  "permissions": [],
+  "icons": {
+    "48": "icon.png"
+  }
+}

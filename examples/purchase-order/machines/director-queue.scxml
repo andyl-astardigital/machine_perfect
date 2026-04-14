@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Director queue machine — loads machines awaiting director approval.
+
+  Uses invoke with state filter to load only purchase-order machines
+  at director-approval state. Each renders itself with approve/reject buttons.
+
+  Stamps $user so mn:project on child POs evaluates against director role
+  and returns full context (notes, cost centre, margin, etc).
+-->
+<scxml xmlns:mn="http://machine-native.dev/scxml/1.0"
+       name="director-queue" initial="loading"
+       mn-ctx='{"$user":null}'>
+
+  <state id="loading">
+    <mn:where>(requires 'data')</mn:where>
+    <onentry>
+      <mn:action>(when (some? $store) (set! $user (get $store.session :user)))</mn:action>
+    </onentry>
+    <transition event="load" target="list"/>
+  </state>
+
+  <state id="list">
+    <invoke type="scxml" src="purchase-order" mn-state="director-approval"/>
+  </state>
+</scxml>

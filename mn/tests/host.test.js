@@ -85,15 +85,15 @@ async function runTests() {
   describe('GET /definitions');
   var defsRes = await GET('/definitions');
   eq(defsRes.status, 200, 'status 200');
-  eq(defsRes.body.definitions.length, 2, 'exactly 2 definitions loaded');
-  deepEq(defsRes.body.definitions.map(function (d) { return d.id; }).sort(), ['asset', 'purchase-order'], 'purchase-order and asset loaded');
+  eq(defsRes.body.definitions.length, 5, 'all definitions loaded from fixtures');
+  deepEq(defsRes.body.definitions.map(function (d) { return d.id; }).sort(), ['asset', 'purchase-order', 'test-app', 'test-guards', 'test-widget'], 'all fixtures loaded');
 
   describe('GET /definitions/:id');
   var defRes = await GET('/definitions/purchase-order');
   eq(defRes.status, 200, 'status 200');
   eq(defRes.body.id, 'purchase-order', 'correct id');
   eq(defRes.body.initial, 'draft', 'initial state');
-  deepEq(defRes.body.states.sort(), ['approved', 'draft', 'rejected', 'submitted'], 'all PO states listed');
+  deepEq(defRes.body.states.sort(), ['approved', 'draft', 'error', 'rejected', 'submitted'], 'all PO states listed (includes implicit error)');
 
   describe('GET /definitions/:id — not found');
   var notFoundRes = await GET('/definitions/nonexistent');
@@ -176,7 +176,7 @@ async function runTests() {
   eq(approveRes.body.transitioned, true, 'transitioned');
   eq(approveRes.body.to, 'approved', 'to approved');
   eq(approveRes.body.isFinal, true, 'is final');
-  deepEq(approveRes.body.emits, ['order-approved', 'done.state.approved'], 'emitted event + done.state');
+  deepEq(approveRes.body.emits, [{name: 'order-approved', payload: null}, {name: 'done.state.approved', payload: null}], 'emitted event + done.state as {name,payload}');
 
   describe('POST /instances/:id/events/:event — final state rejects');
   var finalRes = await POST('/instances/test-po-1/events/approve');

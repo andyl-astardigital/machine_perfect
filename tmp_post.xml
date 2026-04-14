@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Session machine — authentication flow.
+
+  login → authenticating (server) → authenticated | failed
+
+  Auth adapter validates credentials against the users table (scrypt hashed),
+  creates a durable session in SQLite, returns $user and $token into context.
+
+  On authenticated: mn-init writes $store.session (browser only, guarded)
+  so ALL machines on the page can read the current user. The machine carries
+  its own auth — $store.session is stamped into context before routing.
+
+  Session resumption: if $token and $user exist from mn-persist,
+  the 'resume' event skips to authenticated and restores $store.
+-->
+<scxml xmlns:mn="http://machine-native.dev/scxml/1.0"
+       name="session" initial="authenticating"
+       mn-ctx='{"username":"alice","password":"a","$user":null,"$token":null,"$authError":null}'>
+
+  <state id="login">
+    <transition event="authenticate" target="authenticating">
+      <mn:guard>(and (not (empty? username)) (not (empty? password)))</mn:guard>
+      <mn:action>(set! $authError nil)</mn:action>
+    </transition>
+
+    <!-- Session resumption from mn-persist -->
+    <transition event="resume" target="authenticated">
+      <mn:guard>(and (some? $token) (some? $user))</mn:guard>
+    </transition>
+  </state>
+
+  <!-- Routes to server for auth.
+       Events in document order: verify fires first (calls adapter),
+       then auth-ok/auth-fail fire from invoke! on-success/on-error. -->
+  <state id="authenticating">
+    <mn:where>(requires 'auth')</mn:where>
+
+    <transition event="verify">
+      <mn:action>(invoke! :type 'auth'
+                   :input (obj :username username :password password)
+                   :on-success 'auth-ok'
+                   :on-error 'auth-fail')</mn:action>
+    </transition>
+
+    <transition event="auth-ok" target="authenticated">
+      <mn:guard>(some? $user)</mn:guard>
+      <mn:action>(set! password nil)</mn:action>
+    </transition>
+
+    <transition event="auth-fail" target="failed">
+      <mn:action>(do
+        (set! password nil)
+        (set! $authError 'Invalid username or password'))</mn:action>
+    </transition>
+  </state>
+
+  <!-- $store write and emit are browser-only (guarded on $store existence).
+       On the server, $store is nil so the init is a no-op and the pipeline
+       stops here cleanly (no logout transition matches). -->
+  <state id="authenticated">
+    <onentry>
+      <mn:action>(when (some? $store)
+        (do
+          (set! $store.session (obj :user $user :token $token))
+          (emit authenticated)))</mn:action>
+    </onentry>
+
+    <transition event="logout" target="login">
+      <mn:guard>(some? $store)</mn:guard>
+      <mn:action>(do
+        (set! $user nil)
+        (set! $token nil)
+        (set! username '')
+        (set! $authError nil)
+        (set! $store.session nil)
+        (emit logged-out))</mn:action>
+    </transition>
+  </state>
+
+  <state id="failed">
+    <transition event="retry" target="login">
+      <mn:action>(set! password '')</mn:action>
+    </transition>
+  </state>
+</scxml>

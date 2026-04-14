@@ -5,11 +5,71 @@
 The framework enforces a structural read/write split:
 
 - `eval` (read path) evaluates an s-expression and returns a value. Rejects all `!` mutation forms by walking the AST before evaluation. Used for guards, bindings, derived values.
-- `exec` (write path) evaluates an s-expression for side effects and copies mutations back to the context. Used for actions, event handlers, init/exit hooks.
+- `exec` (write path) evaluates an s-expression and returns a new context with mutations applied. The original context is never modified. Used for actions, event handlers, init/exit hooks.
 
 This is enforcement, not convention. `(set! x 5)` inside a guard or binding throws an error with the function name and guidance on where to put it.
 
 Both runtimes use the same split. A guard that is pure in the browser is pure on the backend.
+
+## Immutable context
+
+Context is never mutated in place. `engine.exec()` returns `{ context: newCtx }` — a new object built from scope mutations via `newContext()`. The original context is untouched.
+
+This applies at every layer:
+
+- **Engine**: `set!`, `push!`, `inc!`, `dec!`, `toggle!`, `swap!`, `remove-where!`, `splice!`, `assoc!` all create new values in the scope. `newContext(scope, ctx)` merges scope own-properties into a shallow copy of the original context.
+- **Canonical machine**: `sendEvent` threads `result.context` through exit → action → init → auto-transition. Each step receives the previous step's new context.
+- **Browser**: Every `_exec` call threads `result.context` back to `inst.ctx`. The canonical instance's `context` property is a getter/setter linked to `inst.ctx` — replace once, both see it.
+- **$store**: When one machine writes to `$store`, the framework replaces the entire `_store` object and broadcasts the new value to all machines. No shared mutable reference.
+- **Adapters**: Return data. The framework merges it into context. Adapters never receive a mutable context reference.
+
+Structural sharing via `setImmutable(root, path, val)` handles nested path mutations including array indices (`items.0.qty`). Only the path from root to the changed leaf is copied.
+
+## Implicit error state
+
+Every machine gets an implicit `error` state (final) injected by `createDefinition` if none is defined. When any guard, action, or effect throws during `sendEvent`, the catch block:
+
+1. Sets `$error` (the error message) and `$errorSource` (the event that caused it) in context
+2. Transitions the machine to the `error` state
+
+This means no machine silently swallows exceptions. If the author wants recovery, they define their own `error` state with outbound transitions. The implicit one is a dead end — the machine stops, the error is visible.
+
+`validate()` skips the implicit error state in unreachability checks so it doesn't flag as dead code.
+
+## Invoke and machine-as-persistence
+
+Machines are stored as complete SCXML snapshots. The SCXML carries state, context, transitions, guards, and effects — everything needed to resume execution. There is no separate "data model" extracted from the machine. The persistence adapter is pluggable — the framework stores and retrieves SCXML strings via whatever storage engine the host provides.
+
+`<invoke type="scxml" src="machine-name"/>` on a state loads stored machines as live children. The pipeline's invoke resolver:
+
+1. Calls a data adapter to retrieve stored machines by name
+2. Embeds each machine's SCXML as `<invoke><content>SCXML</content></invoke>` in the format string
+3. Computes `_invokeCounts`: `{ total, byState: { ... } }` and merges into context
+
+The browser's `_stampAndEnter` creates child machine DOM elements from invoke content: `<div mn="name" mn-initial="state" mn-ctx="...">`. Each child renders itself using its paired `.mn.html` template.
+
+`mn-state` attribute on invoke filters by machine state: `<invoke type="scxml" src="name" mn-state="state"/>` loads only machines currently in that state.
+
+## Context projection (mn:project)
+
+The machine defines what data travels to different audiences. `mn:project` is an s-expression on the machine's SCXML root, evaluated during invoke resolution on the server. The projected context replaces `mn-ctx` before the SCXML reaches the browser. Fields not in the projection never leave the server.
+
+```xml
+<mn:project when="(!= (get $user :role) 'director')">
+  (obj :title title :amount amount :item_count (count items))
+</mn:project>
+```
+
+The `when` condition evaluates against the **parent machine's context** (who's asking). The body evaluates against the **child machine's context** (the stored machine's data). First matching `when` wins. No match = full context travels.
+
+`mn:project as="machine-name"` derives a completely different machine. The canonical machine declares transforms to other machine types — different SCXML name, different states, different template. Both are complete, independently functioning machines. The invoke resolver builds a minimal SCXML envelope with the derived name, mapped initial state (`$initial`), and projected context.
+
+The reverse path: a derived machine with `$canonical_id` in context routes back to the server. The pipeline loads the canonical by ID, merges user edits from the derived context, runs the canonical through the pipeline, and re-projects the result back to the derived machine format.
+
+This is the third axis of machine self-description:
+- `mn:where` — where does the machine execute
+- `mn:guard` — when can transitions fire
+- `mn:project` — what does the machine look like to different audiences
 
 ## Dependency tracking
 
@@ -50,22 +110,27 @@ Principle: user errors are loud (throw or warn). Framework robustness issues fai
 Both runtimes follow the same lifecycle:
 
 ```
-Definition loaded
+Definition loaded (implicit error state injected if absent)
     ↓
-Instance created (context initialised)
+Instance created (context initialised, immutable)
     ↓
 Initial state entered
     ↓
-    ╔═══════════════════════════════╗
-    ║  Event arrives                ║
-    ║  → Guard evaluated (pure)    ║
-    ║  → Exit hook runs            ║
-    ║  → Action executed           ║
-    ║  → State changed             ║
-    ║  → Entry hook runs           ║
-    ║  → Timers started            ║
-    ║  → Host notified (DOM/HTTP)  ║
-    ╚═══════════════════════════════╝
+    ╔═══════════════════════════════════════════╗
+    ║  Event arrives                            ║
+    ║  → Guard evaluated (pure, new context)    ║
+    ║  → Exit hook runs (new context)           ║
+    ║  → Action executed (new context)          ║
+    ║  → State changed                          ║
+    ║  → mn:where check (route if host lacks    ║
+    ║    capabilities, suppresses emits)         ║
+    ║  → Entry hook runs (new context)          ║
+    ║  → Timers started                         ║
+    ║  → Host notified (DOM/HTTP)               ║
+    ║                                           ║
+    ║  On throw → error state ($error,          ║
+    ║             $errorSource in context)       ║
+    ╚═══════════════════════════════════════════╝
     ↓ (repeats)
 Final state reached → instance complete
 ```
@@ -88,7 +153,7 @@ The shared engine communicates with hosts through an adapter:
 ```
 
 Browser implements these with `setTimeout`, `CustomEvent`, `localStorage`.
-Node implements these with durable timers, event bus, Postgres, effect adapters.
+Node implements these with durable timers, event bus, pluggable persistence adapters, effect adapters.
 
 ## AI verifiability
 
@@ -118,7 +183,7 @@ machine_native exchanges computation: machine documents that describe behaviour.
 
 REST says "here is a resource, here are the verbs." machine_native says "here is a computation unit, here are its legal operations." The machine document is self-describing, self-validating, and executable by any host with the shared engine.
 
-## Capability-based distribution (proposed, ADR-012)
+## Capability-based distribution
 
 Traditional distribution routes by service name. Capability-based distribution routes by which host can fulfil the required effects.
 
@@ -140,3 +205,11 @@ Consequences:
 - Scaling is pool-level. More persistence throughput means adding instances to the persist pool. No API changes.
 - Testing is structural. Mock the adapters, run the full pipeline in one process. The machine does not know the difference.
 - The distributed system is declarative and inspectable. AI can reason about topology because it is not hidden in infrastructure config.
+
+## Fire-and-forget transport
+
+When mn:where routes a machine to a remote node, the browser sends the SCXML via HTTP POST and receives a 202 immediately. The browser does not wait for the pipeline result. This prevents blocking the UI during long-running server pipelines.
+
+Results are pushed back via Server-Sent Events (SSE). The browser opens an EventSource to its server on init, identified by a session ID (`X-MN-Session` header on POST, `/sse/:sessionId` endpoint). When the server finishes pipeline execution, it pushes the result SCXML as a base64-encoded SSE event. The browser decodes, recompiles (to pick up embedded invokes), and updates the machine instance.
+
+This pattern applies uniformly — UI data fetches, approval workflows, and pipeline execution all use the same fire-and-forget POST + SSE push mechanism. There is no separate request/response path for "simple" data loads vs "complex" pipelines.

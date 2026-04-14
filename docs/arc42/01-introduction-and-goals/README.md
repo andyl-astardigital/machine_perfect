@@ -32,7 +32,7 @@ The key insight: today we pass DATA between services and systems (JSON, XML). ma
 | # | Quality | Concrete measure |
 |---|---------|-----------------|
 | Q1 | Performance | Create 1000 keyed rows < 200ms. Targeted update < 5ms. |
-| Q2 | Correctness | 1140+ automated tests across browser and Node. Purity enforcement. Recursion limits. |
+| Q2 | Correctness | 1490 automated tests across browser and Node. Purity enforcement. Recursion limits. |
 | Q3 | Verifiability | Machine definitions inspectable without execution: reachable states, valid targets, guard dependencies, deadlock detection. |
 | Q4 | Portability | Same s-expression evaluates identically in browser and Node. Same machine definition runs in both hosts. |
 | Q5 | Safety | No eval(). Closed expression language. Prototype pollution defense. Bounded caches. |

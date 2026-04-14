@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Order list machine — loads and displays persisted purchase orders.
+
+  Routes to server via mn:where. The list state invokes stored
+  purchase-order machines. The browser renders each as a live child.
+
+  Stamps $user from $store.session before routing so the server's
+  invoke resolver can evaluate mn:project on child machines against
+  the viewer's role. Non-directors get projected context (summary).
+  Directors get full context.
+
+  Explicit error state with retry — overrides the implicit final error.
+  On throw, the machine transitions here with $error and $errorSource
+  in context. The user can retry (back to loading) or dismiss.
+-->
+<scxml xmlns:mn="http://machine-native.dev/scxml/1.0"
+       name="order-list" initial="loading"
+       mn-ctx='{"_orderId":null,"$user":null}'>
+
+  <state id="loading">
+    <mn:where>(requires 'data')</mn:where>
+    <onentry>
+      <mn:action>(when (some? $store) (set! $user (get $store.session :user)))</mn:action>
+    </onentry>
+    <transition event="load" target="list"/>
+  </state>
+
+  <state id="list">
+    <invoke type="scxml" src="purchase-order"/>
+  </state>
+
+  <!-- Explicit error state — not final, allows retry.
+       $error and $errorSource are set by the framework on throw. -->
+  <state id="error">
+    <transition event="retry" target="loading"/>
+  </state>
+</scxml>

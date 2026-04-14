@@ -12,7 +12,7 @@ Quality
 │   └── Delete 500 rows < 100ms
 │
 ├── Correctness
-│   ├── 1140+ automated tests
+│   ├── 1490 automated tests
 │   ├── Purity enforcement (mutations in bindings throw)
 │   ├── Recursion depth limit (512)
 │   ├── Prototype pollution defense

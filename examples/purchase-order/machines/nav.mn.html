@@ -1,0 +1,98 @@
+<!--
+  Navigation — rendering.
+  Pure browser chrome. Paired with nav.scxml.
+
+  The navbar lives at the template root — outside any state.
+  It persists across state transitions. Only the content area changes.
+  Bindings on the navbar ($store.session) re-evaluate via dep tracking.
+  The Sign out button emits 'sign-out' — the session machine receives it.
+-->
+<template mn-define="nav">
+  <!-- Inter-machine event bridge -->
+  <mn-receive event="order-approved"></mn-receive>
+  <mn-receive event="order-rejected"></mn-receive>
+  <mn-receive event="order-cancelled"></mn-receive>
+  <mn-receive event="navigate-orders"></mn-receive>
+  <mn-receive event="authenticated"></mn-receive>
+  <mn-receive event="logged-out"></mn-receive>
+
+  <!-- Shared navbar — at template root, persists across state transitions.
+       Reads $store.session for user info. Dep tracking re-evaluates only
+       changed bindings (name, role badge, director visibility).
+       Sign out emits 'logout' to the session machine via mn-receive. -->
+  <!-- ═══ SHARED NAVBAR — persists across state transitions ═══════ -->
+  <div class="navbar bg-base-100 shadow-md px-4 gap-2 sticky top-0 z-40">
+    <mn-show>(not (= $state 'login'))</mn-show>
+    <button class="btn btn-ghost text-lg font-bold gap-2 normal-case" mn-to="back-to-orders">
+      Purchase Orders
+    </button>
+    <div class="flex-1"></div>
+    <button class="btn btn-ghost btn-sm" mn-to="back-to-orders">Orders</button>
+    <button class="btn btn-ghost btn-sm">
+      <mn-show>(= (get (get $store.session :user) :role) 'director')</mn-show>
+      <mn-on event="click">(to view-pending)</mn-on>
+      Director
+    </button>
+    <button class="btn btn-ghost btn-sm" mn-to="create-order">+ New</button>
+    <button class="btn btn-ghost btn-sm" mn-to="view-dashboard">Dashboard</button>
+    <div class="divider divider-horizontal mx-0"></div>
+    <span class="text-sm text-base-content/60"><mn-text>(get (get $store.session :user) :name)</mn-text></span>
+    <span class="badge badge-sm badge-outline"><mn-text>(get (get $store.session :user) :role)</mn-text></span>
+    <button class="btn btn-ghost btn-xs">
+      <mn-on event="click">(emit logout)</mn-on>
+      Sign out
+    </button>
+  </div>
+
+  <!-- ═══ LOGIN ═══════════════════════════════════════════════════ -->
+  <!-- Empty — session machine owns the login form. Nav just holds the slot. -->
+  <div mn-state="login"></div>
+
+  <!-- ═══ ORDERS ══════════════════════════════════════════════════ -->
+  <!-- Mounts order-list child machine — all data fetching happens there. -->
+  <div mn-state="orders">
+    <div mn="order-list"></div>
+  </div>
+
+  <!-- ═══ CREATE ══════════════════════════════════════════════════ -->
+  <!-- Mounts purchase-order child machine with mn-persist for draft survival. -->
+  <div mn-state="create">
+    <main class="max-w-3xl mx-auto p-6">
+      <div mn="purchase-order" mn-persist="po-draft"></div>
+    </main>
+  </div>
+
+  <!-- ═══ REVIEW ══════════════════════════════════════════════════ -->
+  <!-- Inline result page — reads _orderStatus set by nav transitions. -->
+  <div mn-state="review">
+    <main class="max-w-2xl mx-auto p-6 text-center">
+      <div class="py-8">
+        <mn-show>(= _orderStatus 'fulfilled')</mn-show>
+        <div class="text-6xl mb-4">✓</div>
+        <h2 class="text-2xl font-bold text-success mb-2">Order Fulfilled</h2>
+        <p class="text-base-content/60">The order has been approved, fulfilled, and persisted.</p>
+      </div>
+      <div class="py-8">
+        <mn-show>(= _orderStatus 'rejected')</mn-show>
+        <div class="text-6xl mb-4">✗</div>
+        <h2 class="text-2xl font-bold text-error mb-2">Order Rejected</h2>
+        <p class="text-base-content/60">The order exceeded the approval threshold.</p>
+      </div>
+      <button class="btn btn-primary mt-4" mn-to="acknowledge">Back to Orders</button>
+    </main>
+  </div>
+
+  <!-- ═══ DIRECTOR QUEUE ══════════════════════════════════════════ -->
+  <!-- Mounts director-queue child machine — only visible to directors. -->
+  <div mn-state="director-queue">
+    <div mn="director-queue"></div>
+  </div>
+
+  <!-- ═══ DASHBOARD ═══════════════════════════════════════════════ -->
+  <!-- Mounts dashboard child machine — read-only aggregate view. -->
+  <div mn-state="dashboard">
+    <main class="max-w-5xl mx-auto p-6">
+      <div mn="dashboard"></div>
+    </main>
+  </div>
+</template>

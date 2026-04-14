@@ -61,7 +61,7 @@ var def = machine.createDefinition({
 eq(def.id, 'test', 'preserves id');
 eq(def.initial, 'off', 'preserves initial');
 eq(def.context.count, 0, 'preserves context');
-deepEq(def.stateNames, ['off', 'on'], 'collects state names');
+deepEq(def.stateNames, ['off', 'on', 'error'], 'collects state names (includes implicit error)');
 
 describe('createDefinition — defaults');
 
@@ -114,7 +114,7 @@ var batchDef = machine.createDefinition({
     aborted: { final: true }
   }
 });
-deepEq(Object.keys(batchDef._stateTree).sort(), ['aborted', 'idle', 'running', 'running.done', 'running.filling', 'running.heating'].sort(), 'stateTree has all 6 states');
+deepEq(Object.keys(batchDef._stateTree).sort(), ['aborted', 'error', 'idle', 'running', 'running.done', 'running.filling', 'running.heating'].sort(), 'stateTree has all states (includes implicit error)');
 eq(batchDef._stateTree['running.filling'].parent, 'running', 'filling parent is running');
 eq(batchDef._stateTree['running'].parent, null, 'running parent is null');
 eq(batchDef._stateTree['running.filling'].depth, 1, 'filling depth is 1');
@@ -149,7 +149,7 @@ machine.sendEvent(batch2, 'START');
 machine.sendEvent(batch2, 'FULL');
 var hotResult = machine.sendEvent(batch2, 'HOT');
 eq(batch2.state, 'running.done', 'reached final child');
-deepEq(hotResult.emits, ['done.state.running'], 'done.state.running emitted on final child entry');
+deepEq(hotResult.emits, [{name: 'done.state.running', payload: null}], 'done.state.running emitted on final child entry');
 
 
 describe('hierarchy — inspect walks hierarchy');
@@ -421,7 +421,7 @@ var emitDef = machine.createDefinition({
 
 var emitInst = machine.createInstance(emitDef);
 var er = machine.sendEvent(emitInst, 'go');
-deepEq(er.emits, ['moved'], 'emitted event name in result');
+deepEq(er.emits, [{name: 'moved', payload: null}], 'structural emit in result as {name, payload}');
 
 describe('sendEvent — persist called on transition');
 
@@ -1081,7 +1081,7 @@ var doneDef = machine.createDefinition({
 var doneInst = machine.createInstance(doneDef);
 var doneResult = machine.sendEvent(doneInst, 'finish');
 eq(doneResult.isFinal, true, 'result reports final state');
-deepEq(doneResult.emits, ['done.state.complete'], 'emits exactly done.state.complete on final entry');
+deepEq(doneResult.emits, [{name: 'done.state.complete', payload: null}], 'emits exactly done.state.complete on final entry');
 
 // Non-final transition should NOT emit done
 var nonDoneDef = machine.createDefinition({
@@ -1394,6 +1394,91 @@ eq(noTransResult.instance.state, 'stuck', 'stayed in stuck');
 eq(noTransResult.history.length, 0, 'no history entries');
 
 
+describe('executePipeline — mn:where on state entry blocks mid-pipeline');
+
+// Pipeline: start → advance → blocked (mn:where requires 'gpu')
+// The where check happens when entering the blocked state, not on the transition.
+var pipeWhereEntry = machine.createDefinition({
+  id: 'pipe-where-entry',
+  states: {
+    start: { on: { advance: [{ target: 'needs-gpu' }] } },
+    'needs-gpu': { where: "(list 'gpu')", on: { compute: [{ target: 'done' }] } },
+    done: { final: true }
+  }
+});
+
+var whereEntryResult = machine.executePipeline(pipeWhereEntry, {
+  capabilities: ['cpu']
+});
+
+eq(whereEntryResult.blocked, false, 'not blocked — routed');
+eq(typeof whereEntryResult.route, 'object', 'route signal present');
+deepEq(whereEntryResult.route.requires, ['gpu'], 'route requires gpu');
+eq(whereEntryResult.instance.state, 'needs-gpu', 'transitioned INTO needs-gpu before route signal');
+
+// Same pipeline but host HAS the capability — goes to done
+var whereEntryPass = machine.executePipeline(pipeWhereEntry, {
+  capabilities: ['cpu', 'gpu']
+});
+
+eq(whereEntryPass.instance.state, 'done', 'with gpu capability, pipeline reaches done');
+eq(whereEntryPass.route, undefined, 'no route signal when capability present');
+
+
+describe('executePipeline — resume with injected capability + eventSelector');
+
+// Simulate: pipeline blocked at needs-review, resumed with 'review' capability
+// and forced first event 'approve'
+var pipeResume = machine.createDefinition({
+  id: 'pipe-resume',
+  initial: 'needs-review',
+  states: {
+    'needs-review': {
+      where: "(list 'review')",
+      on: {
+        approve: [{ target: 'approved', action: "(set! verdict 'yes')" }],
+        reject: [{ target: 'rejected', action: "(set! verdict 'no')" }]
+      }
+    },
+    approved: { on: { finalise: [{ target: 'done' }] } },
+    done: { final: true },
+    rejected: { final: true }
+  },
+  context: { verdict: null }
+});
+
+// Without review capability — blocked at initial state
+var resumeBlocked = machine.executePipeline(pipeResume, {
+  capabilities: ['cpu']
+});
+eq(typeof resumeBlocked.route, 'object', 'blocked without review capability');
+eq(resumeBlocked.instance.state, 'needs-review', 'blocked at needs-review');
+
+// Resume with review capability + force 'approve' as first event
+var fired = false;
+var resumeResult = machine.executePipeline(pipeResume, {
+  capabilities: ['cpu', 'review'],
+  eventSelector: function (events) {
+    if (!fired && events.indexOf('approve') !== -1) { fired = true; return 'approve'; }
+    return events[0];
+  }
+});
+eq(resumeResult.instance.state, 'done', 'resumed pipeline reaches done');
+eq(resumeResult.instance.context.verdict, 'yes', 'approve action set verdict to yes');
+
+// Resume with review capability + force 'reject' as first event
+var firedR = false;
+var resumeReject = machine.executePipeline(pipeResume, {
+  capabilities: ['cpu', 'review'],
+  eventSelector: function (events) {
+    if (!firedR && events.indexOf('reject') !== -1) { firedR = true; return 'reject'; }
+    return events[0];
+  }
+});
+eq(resumeReject.instance.state, 'rejected', 'resume with reject reaches rejected');
+eq(resumeReject.instance.context.verdict, 'no', 'reject action set verdict to no');
+
+
 describe('executePipeline — format and formatUpdater');
 
 var pipeFormat = machine.createDefinition({
@@ -1417,6 +1502,200 @@ eq(fmtResult.instance.state, 'b', 'reached final');
 eq(formatCalls.length, 1, 'formatUpdater called once');
 eq(formatCalls[0].state, 'b', 'formatUpdater received new state');
 eq(fmtResult.format, '<scxml initial="b"/>', 'format updated');
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Error state                                                            ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+describe('error state — implicit final error state injected');
+
+var errImplicit = machine.createDefinition({
+  id: 'err-impl', states: { idle: {}, active: {} }
+});
+eq(errImplicit._stateTree.error != null, true, 'error state exists');
+eq(errImplicit._stateTree.error.spec.final, true, 'error state is final');
+
+
+describe('error state — explicit error state not overwritten');
+
+var errExplicit = machine.createDefinition({
+  id: 'err-expl',
+  states: { idle: {}, error: { on: { fix: [{ target: 'idle' }] } } }
+});
+eq(errExplicit._stateTree.error.spec.final, undefined, 'explicit error is not final');
+eq(errExplicit._stateTree.error.spec.on.fix != null, true, 'explicit error has fix transition');
+
+
+describe('error state — action throw transitions to error with $error and $errorSource');
+
+var errThrowDef = machine.createDefinition({
+  id: 'err-throw',
+  states: { idle: { on: { go: [{ target: 'active', action: '(map 5 items)' }] } }, active: {} },
+  context: { items: [1] }
+});
+var errThrowInst = machine.createInstance(errThrowDef);
+var errThrowResult = machine.sendEvent(errThrowInst, 'go');
+eq(errThrowInst.state, 'error', 'machine in error state');
+eq(typeof errThrowInst.context.$error, 'string', '$error is a string');
+eq(errThrowInst.context.$errorSource, 'idle', '$errorSource is idle');
+eq(errThrowResult.transitioned, true, 'result shows transitioned');
+eq(errThrowResult.to, 'error', 'result.to is error');
+
+
+describe('error state — guard throw transitions to error');
+
+var errGuardDef = machine.createDefinition({
+  id: 'err-guard',
+  states: { idle: { on: { go: [{ target: 'active', guard: '(map 5 x)' }] } }, active: {} },
+  context: { x: [1] }
+});
+var errGuardInst = machine.createInstance(errGuardDef);
+machine.sendEvent(errGuardInst, 'go');
+eq(errGuardInst.state, 'error', 'guard throw → error');
+eq(errGuardInst.context.$errorSource, 'idle', '$errorSource is idle');
+
+
+describe('error state — error recorded in history');
+
+eq(errThrowInst.history.length > 0, true, 'history has entries');
+var errLastHist = errThrowInst.history[errThrowInst.history.length - 1];
+eq(errLastHist.from, 'idle', 'history from is idle');
+eq(errLastHist.to, 'error', 'history to is error');
+eq(errLastHist.event, 'go', 'history event is go');
+
+
+describe('error state — explicit error state allows recovery');
+
+var errRecoverDef = machine.createDefinition({
+  id: 'err-recover',
+  states: {
+    idle: { on: { go: [{ target: 'processing' }] } },
+    processing: { on: { compute: [{ target: 'done', action: '(map 5 items)' }] } },
+    done: { final: true },
+    error: { on: { retry: [{ target: 'idle' }] } }
+  },
+  context: { items: [1] }
+});
+var errRecoverInst = machine.createInstance(errRecoverDef);
+machine.sendEvent(errRecoverInst, 'go');
+machine.sendEvent(errRecoverInst, 'compute');
+eq(errRecoverInst.state, 'error', 'action threw, in error');
+eq(errRecoverInst.context.$errorSource, 'processing', '$errorSource is processing');
+machine.sendEvent(errRecoverInst, 'retry');
+eq(errRecoverInst.state, 'idle', 'recovered via retry');
+
+
+describe('executePipeline — sync adapter modifies context');
+
+var pipeAdapterSync = machine.createDefinition({
+  id: 'pipe-adapter-sync',
+  states: {
+    loading: { on: { load: [{ target: 'ready', action: "(invoke! :type 'enrich' :input 'items')" }] } },
+    ready: {}
+  },
+  context: { items: null, count: 0 }
+});
+
+var syncAdapterResult = machine.executePipeline(pipeAdapterSync, {
+  effects: {
+    enrich: function (input, ctx) {
+      ctx.items = ['alpha', 'beta', 'gamma'];
+      ctx.count = 3;
+    }
+  },
+  maxSteps: 5
+});
+
+eq(syncAdapterResult.instance.state, 'ready', 'sync pipeline reached ready');
+deepEq(syncAdapterResult.instance.context.items, ['alpha', 'beta', 'gamma'], 'sync adapter injected items into context');
+eq(syncAdapterResult.instance.context.count, 3, 'sync adapter set count');
+
+
+describe('executePipelineAsync — async adapter modifies context');
+
+(async function () {
+  var pipeAdapterAsync = machine.createDefinition({
+    id: 'pipe-adapter-async',
+    states: {
+      loading: { on: { load: [{ target: 'ready', action: "(invoke! :type 'enrich' :input 'items')" }] } },
+      ready: {}
+    },
+    context: { items: null, count: 0 }
+  });
+
+  var asyncAdapterResult = await machine.executePipelineAsync(pipeAdapterAsync, {
+    effects: {
+      enrich: function (input, ctx) {
+        ctx.items = ['alpha', 'beta', 'gamma'];
+        ctx.count = 3;
+      }
+    },
+    maxSteps: 5
+  });
+
+  eq(asyncAdapterResult.instance.state, 'ready', 'async pipeline reached ready');
+  deepEq(asyncAdapterResult.instance.context.items, ['alpha', 'beta', 'gamma'], 'async adapter injected items into context');
+  eq(asyncAdapterResult.instance.context.count, 3, 'async adapter set count');
+})();
+
+
+describe('executePipelineAsync — async adapter with Promise return modifies context');
+
+(async function () {
+  var pipeAdapterPromise = machine.createDefinition({
+    id: 'pipe-adapter-promise',
+    states: {
+      loading: { on: { load: [{ target: 'ready', action: "(invoke! :type 'fetch' :input 'data')" }] } },
+      ready: {}
+    },
+    context: { data: null }
+  });
+
+  var promiseResult = await machine.executePipelineAsync(pipeAdapterPromise, {
+    effects: {
+      fetch: function (input, ctx) {
+        return new Promise(function (resolve) {
+          ctx.data = { source: 'server', rows: 42 };
+          resolve();
+        });
+      }
+    },
+    maxSteps: 5
+  });
+
+  eq(promiseResult.instance.state, 'ready', 'promise adapter pipeline reached ready');
+  eq(promiseResult.instance.context.data.source, 'server', 'promise adapter injected data.source');
+  eq(promiseResult.instance.context.data.rows, 42, 'promise adapter injected data.rows');
+})();
+
+
+describe('executePipeline — adapter context changes reflected in format output');
+
+var pipeAdapterFormat = machine.createDefinition({
+  id: 'pipe-adapter-fmt',
+  states: {
+    loading: { on: { load: [{ target: 'ready', action: "(invoke! :type 'enrich' :input 'x')" }] } },
+    ready: {}
+  },
+  context: { value: 0 }
+});
+
+var adapterFmtCalls = [];
+var adapterFmtResult = machine.executePipeline(pipeAdapterFormat, {
+  effects: { enrich: function (input, ctx) { ctx.value = 999; } },
+  maxSteps: 5,
+  format: '{"state":"loading","value":0}',
+  formatUpdater: function (fmt, state, ctx) {
+    adapterFmtCalls.push({ state: state, value: ctx.value });
+    return JSON.stringify({ state: state, value: ctx.value });
+  }
+});
+
+eq(adapterFmtResult.instance.context.value, 999, 'adapter set value to 999');
+eq(adapterFmtCalls.length, 1, 'formatUpdater called once');
+eq(adapterFmtCalls[0].value, 999, 'formatUpdater received adapter-modified context');
+eq(adapterFmtResult.format, '{"state":"ready","value":999}', 'format reflects adapter changes');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -2205,6 +2484,616 @@ describe('executePipelineAsync — exists and returns a promise');
     if (safeKeyIssues[ski].type === 'undefined-reference') falsePositives.push(safeKeyIssues[ski]);
   }
   deepEq(falsePositives, [], 'no false positives on $state or stdlib functions');
+
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  Action-level emits collected in sendEvent result                       ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  describe('sendEvent — action-level (emit ...) collected in result.emits');
+
+  var emitActionDef = machine.createDefinition({
+    id: 'emit-action-test',
+    initial: 'idle',
+    context: { val: 42 },
+    states: {
+      idle: { on: { fire: [{ target: 'idle', action: "(emit info (obj :val val))" }] } }
+    }
+  });
+  var emitActionInst = machine.createInstance(emitActionDef, { context: { val: 42 } });
+  var emitActionResult = machine.sendEvent(emitActionInst, 'fire');
+  eq(emitActionResult.transitioned, true, 'self-transition fires');
+  deepEq(emitActionResult.emits, [{name: 'info', payload: {val: 42}}], 'action-level emit with payload');
+
+
+  describe('sendEvent — action-level emit on targetless transition');
+
+  var emitTargetlessDef = machine.createDefinition({
+    id: 'emit-targetless-test',
+    initial: 'idle',
+    context: { n: 0 },
+    states: {
+      idle: { on: { ping: [{ action: "(do (inc! n) (emit pong))" }] } }
+    }
+  });
+  var emitTargetlessInst = machine.createInstance(emitTargetlessDef, { context: { n: 0 } });
+  var emitTargetlessResult = machine.sendEvent(emitTargetlessInst, 'ping');
+  eq(emitTargetlessResult.targetless, true, 'targetless transition');
+  eq(emitTargetlessInst.context.n, 1, 'action ran');
+  deepEq(emitTargetlessResult.emits, [{name: 'pong', payload: null}], 'action-level emit in targetless result');
+
+
+  describe('sendEvent — structural <mn-emit> still works alongside action emit');
+
+  var emitBothDef = machine.createDefinition({
+    id: 'emit-both-test',
+    initial: 'a',
+    context: {},
+    states: {
+      a: { on: { go: [{ target: 'b', action: "(emit from-action)", emit: 'from-structural' }] } },
+      b: {}
+    }
+  });
+  var emitBothInst = machine.createInstance(emitBothDef);
+  var emitBothResult = machine.sendEvent(emitBothInst, 'go');
+  deepEq(emitBothResult.emits, [
+    {name: 'from-action', payload: null},
+    {name: 'from-structural', payload: null}
+  ], 'action emit first, structural second');
+
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  Pipeline event order — document order, not alphabetical                ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  describe('executePipeline — events tried in definition order, not alphabetical');
+
+  // 'zebra' sorts AFTER 'alpha' alphabetically, but is defined FIRST.
+  // If the pipeline respects document order, zebra fires first.
+  var orderDef = machine.createDefinition({
+    id: 'event-order', initial: 'start', context: {},
+    states: {
+      start: { on: {
+        zebra: [{ target: 'z' }],
+        alpha: [{ target: 'a' }]
+      } },
+      z: { final: true },
+      a: { final: true }
+    }
+  });
+
+  var orderResult = machine.executePipeline(orderDef, {});
+  eq(orderResult.instance.state, 'z', 'zebra fires first (document order), not alpha (alphabetical)');
+
+
+  describe('executePipeline — document order with guards: first passing wins');
+
+  // Three events in document order: check (guard fails), process (guard passes), fallback.
+  // Pipeline should try check first, skip it, then fire process.
+  var guardOrderDef = machine.createDefinition({
+    id: 'guard-order', initial: 'start', context: { ready: true },
+    states: {
+      start: { on: {
+        check: [{ target: 'checked', guard: '(not ready)' }],
+        process: [{ target: 'processed', guard: 'ready' }],
+        fallback: [{ target: 'fell-back' }]
+      } },
+      checked: { final: true },
+      processed: { final: true },
+      'fell-back': { final: true }
+    }
+  });
+
+  var guardOrderResult = machine.executePipeline(guardOrderDef, {});
+  eq(guardOrderResult.instance.state, 'processed', 'first passing guard wins in document order');
+
+
+  describe('executePipelineAsync — events tried in definition order');
+
+  var asyncOrderDef = machine.createDefinition({
+    id: 'async-event-order', initial: 'start', context: {},
+    states: {
+      start: { on: {
+        zebra: [{ target: 'z' }],
+        alpha: [{ target: 'a' }]
+      } },
+      z: { final: true },
+      a: { final: true }
+    }
+  });
+
+  var asyncOrderResult = await machine.executePipelineAsync(asyncOrderDef, {});
+  eq(asyncOrderResult.instance.state, 'z', 'async: zebra fires first (document order)');
+
+
+  describe('executePipelineAsync — on-success with document-order events');
+
+  // Simulates auth pattern: verify fires invoke!, callback events follow.
+  // Events in definition order: verify, auth-ok, auth-fail.
+  // verify is targetless with invoke!, auth-ok transitions on success.
+  var authPatternDef = machine.createDefinition({
+    id: 'auth-pattern', initial: 'authenticating',
+    context: { username: 'bob', result: null },
+    states: {
+      authenticating: { on: {
+        verify: [{ action: "(invoke! :type 'auth' :input username :on-success 'auth-ok' :on-error 'auth-fail')" }],
+        'auth-ok': [{ target: 'authenticated', guard: '(some? result)' }],
+        'auth-fail': [{ target: 'failed' }]
+      } },
+      authenticated: { final: true },
+      failed: { final: true }
+    }
+  });
+
+  var authPatternResult = await machine.executePipelineAsync(authPatternDef, {
+    maxSteps: 10,
+    effects: {
+      auth: function (input) {
+        return Promise.resolve({ result: 'valid-user' });
+      }
+    }
+  });
+
+  eq(authPatternResult.instance.state, 'authenticated', 'auth pattern: verify fires first, on-success transitions to authenticated');
+  eq(authPatternResult.instance.context.result, 'valid-user', 'auth pattern: adapter return merged into context');
+
+
+  describe('executePipelineAsync — on-error with document-order events');
+
+  var authFailDef = machine.createDefinition({
+    id: 'auth-fail-pattern', initial: 'authenticating',
+    context: { username: 'bad', errorMsg: null },
+    states: {
+      authenticating: { on: {
+        verify: [{ action: "(invoke! :type 'auth' :input username :on-success 'auth-ok' :on-error 'auth-fail')" }],
+        'auth-ok': [{ target: 'authenticated' }],
+        'auth-fail': [{ target: 'failed', action: "(set! errorMsg 'bad credentials')" }]
+      } },
+      authenticated: { final: true },
+      failed: { final: true }
+    }
+  });
+
+  var authFailResult = await machine.executePipelineAsync(authFailDef, {
+    maxSteps: 10,
+    effects: {
+      auth: function () {
+        return Promise.reject(new Error('invalid'));
+      }
+    }
+  });
+
+  eq(authFailResult.instance.state, 'failed', 'auth fail pattern: on-error transitions to failed');
+  eq(authFailResult.instance.context.errorMsg, 'bad credentials', 'auth fail pattern: error action ran');
+
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  mn:project — context projection during invoke resolution               ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  var scxml = require('../scxml.js');
+  var transforms = require('../transforms.js');
+
+  describe('executePipeline — mn:project strips context for matching viewer');
+
+  // Stored child machine with a projection declaration
+  var childScxml = '<?xml version="1.0"?>' +
+    '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="secret-doc" initial="visible" ' +
+    "mn-ctx='{\"title\":\"Public Title\",\"salary\":99000,\"notes\":\"Internal only\"}'>" +
+    "<mn:project when=\"(!= (get $user :role) 'admin')\">(obj :title title)</mn:project>" +
+    '<state id="visible"/></scxml>';
+
+  // Parent machine invokes child via src
+  var parentScxml = '<?xml version="1.0"?>' +
+    '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="list" initial="loading" ' +
+    "mn-ctx='{\"$user\":{\"role\":\"viewer\"}}'>" +
+    '<state id="loading"><transition event="load" target="items"/></state>' +
+    '<state id="items"><invoke type="scxml" src="secret-doc"/></state>' +
+    '</scxml>';
+
+  var projPipeResult = machine.executePipeline(
+    scxml.compile(parentScxml, {}),
+    {
+      maxSteps: 5,
+      format: parentScxml,
+      formatUpdater: transforms.updateScxmlState,
+      compiler: scxml.compile,
+      effects: {
+        data: function (input) {
+          var r = {};
+          r[input.name] = [{ id: 'doc-1', name: 'secret-doc', state: 'visible', scxml: childScxml }];
+          return r;
+        }
+      }
+    }
+  );
+
+  // The format should contain the child SCXML with projected context (title only)
+  var projCtxMatch = projPipeResult.format.match(/name="secret-doc"[^>]*mn-ctx='([^']*)'/);
+  assert(projCtxMatch !== null, 'child machine present in format');
+  if (projCtxMatch) {
+    var projCtx = JSON.parse(projCtxMatch[1].replace(/&apos;/g, "'"));
+    eq(projCtx.title, 'Public Title', 'projected context has title');
+    eq(projCtx.salary, undefined, 'salary stripped from projected context');
+    eq(projCtx.notes, undefined, 'notes stripped from projected context');
+  }
+
+
+  describe('executePipeline — mn:project no match = full context');
+
+  var adminParentScxml = '<?xml version="1.0"?>' +
+    '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="list" initial="loading" ' +
+    "mn-ctx='{\"$user\":{\"role\":\"admin\"}}'>" +
+    '<state id="loading"><transition event="load" target="items"/></state>' +
+    '<state id="items"><invoke type="scxml" src="secret-doc"/></state>' +
+    '</scxml>';
+
+  var fullPipeResult = machine.executePipeline(
+    scxml.compile(adminParentScxml, {}),
+    {
+      maxSteps: 5,
+      format: adminParentScxml,
+      formatUpdater: transforms.updateScxmlState,
+      compiler: scxml.compile,
+      effects: {
+        data: function (input) {
+          var r = {};
+          r[input.name] = [{ id: 'doc-1', name: 'secret-doc', state: 'visible', scxml: childScxml }];
+          return r;
+        }
+      }
+    }
+  );
+
+  var fullCtxMatch = fullPipeResult.format.match(/name="secret-doc"[^>]*mn-ctx='([^']*)'/);
+  assert(fullCtxMatch !== null, 'child machine present in format (admin)');
+  if (fullCtxMatch) {
+    var fullCtx = JSON.parse(fullCtxMatch[1].replace(/&apos;/g, "'"));
+    eq(fullCtx.title, 'Public Title', 'full context has title');
+    eq(fullCtx.salary, 99000, 'full context has salary (admin sees everything)');
+    eq(fullCtx.notes, 'Internal only', 'full context has notes');
+  }
+
+
+  describe('executePipeline — mn:project computes derived values');
+
+  var computedChild = '<?xml version="1.0"?>' +
+    '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="order" initial="done" ' +
+    "mn-ctx='{\"items\":[{\"name\":\"a\"},{\"name\":\"b\"},{\"name\":\"c\"}],\"amount\":75000}'>" +
+    "<mn:project>(obj :item_count (count items) :amount amount)</mn:project>" +
+    '<state id="done"/></scxml>';
+
+  var computedParent = '<?xml version="1.0"?>' +
+    '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="list" initial="loading" mn-ctx=\'{}\'>' +
+    '<state id="loading"><transition event="load" target="items"/></state>' +
+    '<state id="items"><invoke type="scxml" src="order"/></state></scxml>';
+
+  var computedResult = machine.executePipeline(
+    scxml.compile(computedParent, {}),
+    {
+      maxSteps: 5,
+      format: computedParent,
+      formatUpdater: transforms.updateScxmlState,
+      compiler: scxml.compile,
+      effects: {
+        data: function (input) {
+          var r = {};
+          r[input.name] = [{ id: 'o-1', name: 'order', state: 'done', scxml: computedChild }];
+          return r;
+        }
+      }
+    }
+  );
+
+  var computedMatch = computedResult.format.match(/name="order"[^>]*mn-ctx='([^']*)'/);
+  assert(computedMatch !== null, 'computed child present in format');
+  if (computedMatch) {
+    var computedCtx = JSON.parse(computedMatch[1].replace(/&apos;/g, "'"));
+    eq(computedCtx.item_count, 3, 'computed value: count of items');
+    eq(computedCtx.amount, 75000, 'passed through value: amount');
+    eq(computedCtx.items, undefined, 'raw items array not in projection');
+  }
+
+
+  describe('executePipelineAsync — mn:project works in async pipeline');
+
+  var asyncProjResult = await machine.executePipelineAsync(
+    scxml.compile(parentScxml, {}),
+    {
+      maxSteps: 5,
+      format: parentScxml,
+      formatUpdater: transforms.updateScxmlState,
+      compiler: scxml.compile,
+      effects: {
+        data: function (input) {
+          var r = {};
+          r[input.name] = [{ id: 'doc-1', name: 'secret-doc', state: 'visible', scxml: childScxml }];
+          return r;
+        }
+      }
+    }
+  );
+
+  var asyncProjMatch = asyncProjResult.format.match(/name="secret-doc"[^>]*mn-ctx='([^']*)'/);
+  assert(asyncProjMatch !== null, 'async: child machine in format');
+  if (asyncProjMatch) {
+    var asyncProjCtx = JSON.parse(asyncProjMatch[1].replace(/&apos;/g, "'"));
+    eq(asyncProjCtx.title, 'Public Title', 'async: projected title present');
+    eq(asyncProjCtx.salary, undefined, 'async: salary stripped');
+  }
+
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  mn:project as= — derive a different machine during invoke resolution   ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  describe('executePipeline — mn:project as= produces different machine name');
+
+  // Canonical machine with as= projection and state mapping via $state
+  var canonicalScxml = '<?xml version="1.0"?>' +
+    '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="workflow" initial="done" ' +
+    "mn-ctx='{\"title\":\"Secret Report\",\"items\":[1,2,3],\"internal\":\"classified\"}'>" +
+    "<mn:project as=\"workflow-card\" when=\"(= viewer 'public')\">" +
+    "(obj :title title :count (count items) :$initial (if (= $state 'done') 'complete' 'active'))" +
+    "</mn:project>" +
+    '<state id="processing"/><final id="done"/></scxml>';
+
+  var asParentScxml = '<?xml version="1.0"?>' +
+    '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="list" initial="loading" ' +
+    "mn-ctx='{\"viewer\":\"public\"}'>" +
+    '<state id="loading"><transition event="load" target="items"/></state>' +
+    '<state id="items"><invoke type="scxml" src="workflow"/></state></scxml>';
+
+  var asPipeResult = machine.executePipeline(
+    scxml.compile(asParentScxml, {}),
+    {
+      maxSteps: 5,
+      format: asParentScxml,
+      formatUpdater: transforms.updateScxmlState,
+      compiler: scxml.compile,
+      effects: {
+        data: function (input) {
+          var r = {};
+          r[input.name] = [{ id: 'wf-42', name: 'workflow', state: 'done', scxml: canonicalScxml }];
+          return r;
+        }
+      }
+    }
+  );
+
+  // Should produce workflow-card, NOT workflow
+  var asNameMatch = asPipeResult.format.indexOf('name="workflow-card"') !== -1;
+  var asOrigMatch = asPipeResult.format.indexOf('<scxml name="workflow"') !== -1;
+  assert(asNameMatch, 'derived machine has name="workflow-card"');
+
+  // Check projected context
+  var asCtxMatch = asPipeResult.format.match(/name="workflow-card"[^>]*mn-ctx='([^']*)'/);
+  assert(asCtxMatch !== null, 'derived machine has mn-ctx');
+  if (asCtxMatch) {
+    var asCtx = JSON.parse(asCtxMatch[1].replace(/&apos;/g, "'"));
+    eq(asCtx.title, 'Secret Report', 'projected title present');
+    eq(asCtx.count, 3, 'computed count from items array');
+    eq(asCtx.internal, undefined, 'internal field not in projection');
+    eq(asCtx.items, undefined, 'raw items not in projection');
+    eq(asCtx.$initial, undefined, '$initial removed from context');
+  }
+
+
+  describe('executePipeline — mn:project as= maps $initial to derived initial state');
+
+  var asInitMatch = asPipeResult.format.match(/name="workflow-card"[^>]*initial="([^"]*)"/);
+  assert(asInitMatch !== null, 'derived machine has initial attribute');
+  if (asInitMatch) {
+    eq(asInitMatch[1], 'complete', '$initial mapped done → complete');
+  }
+
+
+  describe('executePipeline — mn:project as= $state and $id available in expression');
+
+  var stateIdScxml = '<?xml version="1.0"?>' +
+    '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="item" initial="active" ' +
+    "mn-ctx='{\"name\":\"test\"}'>" +
+    "<mn:project as=\"item-summary\">" +
+    "(obj :name name :stored_state $state :stored_id $id :$initial 'display')" +
+    "</mn:project>" +
+    '<state id="active"/></scxml>';
+
+  var stateIdParent = '<?xml version="1.0"?>' +
+    '<scxml name="container" initial="loading" mn-ctx=\'{}\'>' +
+    '<state id="loading"><transition event="load" target="list"/></state>' +
+    '<state id="list"><invoke type="scxml" src="item"/></state></scxml>';
+
+  var stateIdResult = machine.executePipeline(
+    scxml.compile(stateIdParent, {}),
+    {
+      maxSteps: 5,
+      format: stateIdParent,
+      formatUpdater: transforms.updateScxmlState,
+      compiler: scxml.compile,
+      effects: {
+        data: function (input) {
+          var r = {};
+          r[input.name] = [{ id: 'itm-99', name: 'item', state: 'active', scxml: stateIdScxml }];
+          return r;
+        }
+      }
+    }
+  );
+
+  var stateIdCtxMatch = stateIdResult.format.match(/name="item-summary"[^>]*mn-ctx='([^']*)'/);
+  assert(stateIdCtxMatch !== null, '$state/$id test: derived machine found');
+  if (stateIdCtxMatch) {
+    var stateIdCtx = JSON.parse(stateIdCtxMatch[1].replace(/&apos;/g, "'"));
+    eq(stateIdCtx.stored_state, 'active', '$state available in projection body');
+    eq(stateIdCtx.stored_id, 'itm-99', '$id available in projection body');
+    eq(stateIdCtx.name, 'test', 'child context still accessible');
+  }
+
+
+  describe('executePipeline — mn:project without as= unchanged (regression)');
+
+  // Use the existing childScxml from the earlier projection test (no as= attribute)
+  // Verify it still replaces mn-ctx on the same machine, doesn't produce a different name
+  var regressionResult = machine.executePipeline(
+    scxml.compile(parentScxml, {}),
+    {
+      maxSteps: 5,
+      format: parentScxml,
+      formatUpdater: transforms.updateScxmlState,
+      compiler: scxml.compile,
+      effects: {
+        data: function (input) {
+          var r = {};
+          r[input.name] = [{ id: 'doc-1', name: 'secret-doc', state: 'visible', scxml: childScxml }];
+          return r;
+        }
+      }
+    }
+  );
+
+  var regressionName = regressionResult.format.indexOf('name="secret-doc"') !== -1;
+  assert(regressionName, 'regression: same machine name preserved (no as=)');
+  var regressionCtxMatch = regressionResult.format.match(/name="secret-doc"[^>]*mn-ctx='([^']*)'/);
+  if (regressionCtxMatch) {
+    var regrCtx = JSON.parse(regressionCtxMatch[1].replace(/&apos;/g, "'"));
+    eq(regrCtx.title, 'Public Title', 'regression: projected title');
+    eq(regrCtx.salary, undefined, 'regression: salary still stripped');
+  }
+
+
+  describe('executePipelineAsync — mn:project as= works in async pipeline');
+
+  var asyncAsResult = await machine.executePipelineAsync(
+    scxml.compile(asParentScxml, {}),
+    {
+      maxSteps: 5,
+      format: asParentScxml,
+      formatUpdater: transforms.updateScxmlState,
+      compiler: scxml.compile,
+      effects: {
+        data: function (input) {
+          var r = {};
+          r[input.name] = [{ id: 'wf-42', name: 'workflow', state: 'done', scxml: canonicalScxml }];
+          return r;
+        }
+      }
+    }
+  );
+
+  var asyncAsName = asyncAsResult.format.indexOf('name="workflow-card"') !== -1;
+  assert(asyncAsName, 'async: derived machine has name="workflow-card"');
+  var asyncAsInit = asyncAsResult.format.match(/name="workflow-card"[^>]*initial="([^"]*)"/);
+  if (asyncAsInit) {
+    eq(asyncAsInit[1], 'complete', 'async: $initial mapped correctly');
+  }
+
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  mn:project as= — reverse path (derived → canonical → re-project)       ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  describe('executePipelineAsync — reverse: derived machine event applied to canonical');
+
+  // Canonical machine stored in "DB" — at state "pending" with full context
+  var reverseCanonicalScxml = '<?xml version="1.0"?>' +
+    '<scxml xmlns:mn="http://machine-native.dev/scxml/1.0" name="task" initial="pending" ' +
+    "mn-ctx='{\"title\":\"Secret Task\",\"secret\":\"classified\",\"items\":[1,2],\"cancelled_by\":null}'>" +
+    "<mn:project as=\"task-card\" when=\"(= viewer 'public')\">" +
+    "(obj :title title :count (count items) :$initial (if (= $state 'cancelled') 'cancelled' 'active'))" +
+    "</mn:project>" +
+    '<state id="pending">' +
+    '<transition event="cancel" target="cancelled">' +
+    '<mn:action>(set! cancelled_by canceller)</mn:action>' +
+    '</transition>' +
+    '</state>' +
+    '<final id="cancelled"/>' +
+    '</scxml>';
+
+  // Derived machine arrives at server — it was a task-card, carries $canonical_id
+  var derivedScxml = '<?xml version="1.0"?>' +
+    '<scxml name="task-card" initial="active" ' +
+    "mn-ctx='{\"title\":\"Secret Task\",\"count\":2,\"$canonical_id\":\"task-001\",\"canceller\":\"Alice\"}'>" +
+    '<state id="active">' +
+    '<transition event="cancel" target="cancelling"/>' +
+    '</state>' +
+    '<state id="cancelling"/>' +
+    '<state id="cancelled"/>' +
+    '</scxml>';
+
+  // Mock DB: stores the canonical, returns it by ID
+  var reverseDb = {};
+  reverseDb['task-001'] = { id: 'task-001', name: 'task', state: 'pending', scxml: reverseCanonicalScxml };
+
+  var reverseResult = await machine.executePipelineAsync(
+    scxml.compile(derivedScxml, {}),
+    {
+      maxSteps: 10,
+      format: derivedScxml,
+      formatUpdater: transforms.updateScxmlState,
+      compiler: scxml.compile,
+      effects: {
+        data: function (input) {
+          if (input.id) {
+            var row = reverseDb[input.id];
+            return row ? { [input.id]: [row] } : {};
+          }
+          var r = {};
+          r[input.name] = Object.values(reverseDb).filter(function(r) { return r.name === input.name; });
+          return r;
+        }
+      },
+      // The pipeline needs to know how to resolve $canonical_id → canonical machine
+      canonicalResolver: function (canonicalId) {
+        return reverseDb[canonicalId] || null;
+      }
+    }
+  );
+
+  // The pipeline should have:
+  // 1. Detected $canonical_id in the derived machine's context
+  // 2. Loaded the canonical task from the resolver
+  // 3. Merged the derived context's "canceller" into canonical context
+  // 4. Applied the "cancel" event to the canonical
+  // 5. Re-projected back to task-card
+  var revFormat = reverseResult.format || '';
+  var revName = revFormat.match(/name="([^"]+)"/);
+  var revInit = revFormat.match(/initial="([^"]+)"/);
+  var revCtxMatch = revFormat.match(/mn-ctx='([^']*)'/);
+
+  if (revName) eq(revName[1], 'task-card', 'reverse: result is re-projected as task-card');
+  if (revInit) eq(revInit[1], 'cancelled', 'reverse: state mapped to cancelled');
+  if (revCtxMatch) {
+    var revCtx = JSON.parse(revCtxMatch[1].replace(/&apos;/g, "'"));
+    eq(revCtx.title, 'Secret Task', 'reverse: title in projected context');
+    eq(revCtx.count, 2, 'reverse: count in projected context');
+    eq(revCtx.secret, undefined, 'reverse: secret NOT in projected context');
+  }
+
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  Bug fixes from quality audit                                           ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  describe('Bug — emits is an array (not undefined) when mn:where blocks mid-transition');
+
+  var emitRouteDef = machine.createDefinition({
+    id: 'emit-route', initial: 'local',
+    context: {},
+    states: {
+      local: { on: {
+        go: [{ target: 'remote', action: "(emit went)", emit: 'structural-emit' }]
+      } },
+      remote: { where: "(requires 'gpu')" },
+      done: { final: true }
+    }
+  });
+
+  var emitRouteInst = machine.createInstance(emitRouteDef, {
+    host: { now: Date.now, capabilities: [], emit: function(){} }
+  });
+  var emitRouteResult = machine.sendEvent(emitRouteInst, 'go');
+  assert(emitRouteResult.route !== null, 'route signal present');
+  assert(Array.isArray(emitRouteResult.emits), 'emits is an array, not undefined');
 
 
   // ── Summary ──

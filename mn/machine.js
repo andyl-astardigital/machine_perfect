@@ -5,7 +5,7 @@
  * no platform dependencies. Both browser and Node hosts compile their
  * markup into canonical definitions and execute through this module.
  *
- * @version 0.5.0
+ * @version 0.8.0
  * @license MIT
  */
 (function (root, factory) {
@@ -149,11 +149,19 @@
       }
     }
 
+    // Inject implicit error state if not defined.
+    if (!stateTree['error']) {
+      stateTree['error'] = { parent: null, spec: { final: true } };
+      states.error = { final: true };
+      stateNames.push('error');
+    }
+
     return {
       id: spec.id,
       initial: initial,
       context: spec.context || {},
       maxHistory: spec.maxHistory != null ? spec.maxHistory : 200,
+      projects: spec.projects || null,
       states: states,
       stateNames: stateNames,
       _stateTree: stateTree
@@ -207,7 +215,8 @@
     for (var ii = 0; ii < initAncestors.length; ii++) {
       var initSpec = tree[initAncestors[ii]].spec;
       if (initSpec.init) {
-        engine.exec(initSpec.init, context, instance.state, null, null, instance);
+        var initExecResult = engine.exec(initSpec.init, context, instance.state, null, null, instance);
+        if (initExecResult && initExecResult.context) { context = initExecResult.context; instance.context = context; }
       }
       setupTimers(instance, initSpec, initAncestors[ii]);
     }
@@ -299,9 +308,14 @@
       var oldCtxTargetless = instance._watchers && instance._watchers.length > 0 ? deepCopy(instance.context) : null;
       instance._mnDirty = {};
       var targetlessEffects = [];
+      var targetlessActionEmit = null;
       if (taken.action) {
         var targetlessResult = engine.exec(taken.action, instance.context, fromState, null, null, instance);
-        if (targetlessResult && targetlessResult.effects) targetlessEffects = targetlessResult.effects;
+        if (targetlessResult) {
+          if (targetlessResult.context) instance.context = targetlessResult.context;
+          if (targetlessResult.effects) targetlessEffects = targetlessResult.effects;
+          if (targetlessResult.emit) targetlessActionEmit = { name: targetlessResult.emit, payload: targetlessResult.emitPayload };
+        }
       }
       var dirty = instance._mnDirty;
       instance._mnDirty = null;
@@ -309,7 +323,10 @@
       result.targetless = true;
       result.changed = Object.keys(dirty);
       result.effects = targetlessEffects;
-      result.emits = taken.emit ? [taken.emit] : [];
+      var targetlessEmits = [];
+      if (targetlessActionEmit) targetlessEmits.push(targetlessActionEmit);
+      if (taken.emit) targetlessEmits.push({ name: taken.emit, payload: null });
+      result.emits = targetlessEmits;
       instance.history.push({ timestamp: instance._host.now(), event: eventName, data: eventData != null ? eventData : null, from: fromState, to: fromState, changed: result.changed });
       var maxHistTargetless = definition.maxHistory;
       if (instance.history.length > maxHistTargetless) instance.history.shift();
@@ -346,14 +363,22 @@
       clearTimersForState(instance, exitPath[ei]);
       if (exitSpec.exit) {
         var exitResult = engine.exec(exitSpec.exit, instance.context, exitPath[ei], null, null, instance);
-        if (exitResult && exitResult.effects) effects = effects.concat(exitResult.effects);
+        if (exitResult) {
+          if (exitResult.context) instance.context = exitResult.context;
+          if (exitResult.effects) effects = effects.concat(exitResult.effects);
+        }
       }
     }
 
     // ── Execute transition action ──
+    var actionEmit = null;
     if (taken.action) {
       var actionResult = engine.exec(taken.action, instance.context, fromState, null, null, instance);
-      if (actionResult && actionResult.effects) effects = effects.concat(actionResult.effects);
+      if (actionResult) {
+        if (actionResult.context) instance.context = actionResult.context;
+        if (actionResult.effects) effects = effects.concat(actionResult.effects);
+        if (actionResult.emit) actionEmit = { name: actionResult.emit, payload: actionResult.emitPayload };
+      }
     }
 
     // ── Enter states (outermost first) ──
@@ -361,7 +386,10 @@
       var enterSpec = tree[enterAncestors[ni]].spec;
       if (enterSpec.init) {
         var initResult = engine.exec(enterSpec.init, instance.context, enterAncestors[ni], null, null, instance);
-        if (initResult && initResult.effects) effects = effects.concat(initResult.effects);
+        if (initResult) {
+          if (initResult.context) instance.context = initResult.context;
+          if (initResult.effects) effects = effects.concat(initResult.effects);
+        }
       }
       setupTimers(instance, enterSpec, enterAncestors[ni]);
     }
@@ -369,6 +397,29 @@
     // ── Change state ──
     instance.state = atomicTarget;
     toState = atomicTarget;
+
+    // ── Collect action-level emit (before mn:where check, so route signals carry emits) ──
+    var emits = [];
+    if (actionEmit) emits.push(actionEmit);
+    if (taken.emit) emits.push({ name: taken.emit, payload: null });
+
+    // ── mn:where on the new state — stop if host lacks capabilities ──
+    var targetSpec = tree[atomicTarget] ? tree[atomicTarget].spec : null;
+    if (targetSpec && targetSpec.where) {
+      var whereReq = engine.eval(targetSpec.where, instance.context, instance.state, null) || [];
+      var hostCaps = instance._host.capabilities || [];
+      var canSatisfy = true;
+      for (var wci = 0; wci < whereReq.length; wci++) {
+        if (hostCaps.indexOf(whereReq[wci]) === -1) { canSatisfy = false; break; }
+      }
+      if (!canSatisfy) {
+        var routeResult = createResult(instance, fromState, atomicTarget, eventName, true, 'routed');
+        routeResult.route = { requires: whereReq, state: atomicTarget, where: targetSpec.where };
+        routeResult.effects = effects;
+        routeResult.emits = emits;
+        return routeResult;
+      }
+    }
 
     // ── Eventless transitions on the final atomic state ──
     var emitsAuto;
@@ -404,37 +455,54 @@
       for (var aei = 0; aei < autoExit.length; aei++) {
         var aeSpec = tree[autoExit[aei]].spec;
         clearTimersForState(instance, autoExit[aei]);
-        if (aeSpec.exit) { var aeResult = engine.exec(aeSpec.exit, instance.context, autoExit[aei], null, null, instance); if (aeResult && aeResult.effects) effects = effects.concat(aeResult.effects); }
+        if (aeSpec.exit) {
+          var aeResult = engine.exec(aeSpec.exit, instance.context, autoExit[aei], null, null, instance);
+          if (aeResult) {
+            if (aeResult.context) instance.context = aeResult.context;
+            if (aeResult.effects) effects = effects.concat(aeResult.effects);
+          }
+        }
       }
       if (autoTaken.action) {
         var aar = engine.exec(autoTaken.action, instance.context, instance.state, null, null, instance);
-        if (aar && aar.effects) effects = effects.concat(aar.effects);
+        if (aar) {
+          if (aar.context) instance.context = aar.context;
+          if (aar.effects) effects = effects.concat(aar.effects);
+        }
       }
       for (var ani = 0; ani < autoEnter.length; ani++) {
         var anSpec = tree[autoEnter[ani]].spec;
         if (anSpec.init) {
           var anir = engine.exec(anSpec.init, instance.context, autoEnter[ani], null, null, instance);
-          if (anir && anir.effects) effects = effects.concat(anir.effects);
+          if (anir) {
+            if (anir.context) instance.context = anir.context;
+            if (anir.effects) effects = effects.concat(anir.effects);
+          }
         }
         setupTimers(instance, anSpec, autoEnter[ani]);
       }
       instance.state = autoAtomicTo;
       toState = autoAtomicTo;
-      if (autoTaken.emit) { if (!emitsAuto) emitsAuto = []; emitsAuto.push(autoTaken.emit); }
+      if (autoTaken.emit) { if (!emitsAuto) emitsAuto = []; emitsAuto.push({ name: autoTaken.emit, payload: null }); }
     }
     if (autoLimit < 0) console.warn('[mn] eventless transition loop limit reached in "' + definition.id + '" at state "' + instance.state + '"');
 
-    // ── Collect emitted events ──
-    var emits = [];
-    if (taken.emit) emits.push(taken.emit);
-    if (emitsAuto) emits = emits.concat(emitsAuto);
+    // ── Collect auto-transition emits ──
+    // Action-level emits already collected before mn:where check.
+    // Append any emits from eventless auto-transitions.
+    if (emitsAuto) {
+      for (var emi = 0; emi < emitsAuto.length; emi++) {
+        var ea = emitsAuto[emi];
+        emits.push(typeof ea === 'string' ? { name: ea, payload: null } : ea);
+      }
+    }
 
     // ── done.state.* on final state entry ──
     var finalSpec = tree[instance.state] ? tree[instance.state].spec : null;
     if (finalSpec && finalSpec.final) {
       var doneParent = tree[instance.state].parent;
-      if (doneParent) emits.push('done.state.' + doneParent);
-      else emits.push('done.state.' + instance.state);
+      if (doneParent) emits.push({ name: 'done.state.' + doneParent, payload: null });
+      else emits.push({ name: 'done.state.' + instance.state, payload: null });
     }
 
     // ── Build result ──
@@ -471,6 +539,17 @@
 
     return result;
 
+    } catch (err) {
+      var errMsg = err && err.message ? err.message : String(err);
+      var fromStateErr = instance.state;
+      instance.state = 'error';
+      var errCtx = {};
+      for (var ek in instance.context) { if (instance.context.hasOwnProperty(ek)) errCtx[ek] = instance.context[ek]; }
+      errCtx.$error = errMsg;
+      errCtx.$errorSource = fromStateErr;
+      instance.context = errCtx;
+      instance.history.push({ timestamp: instance._host.now(), event: eventName, data: null, from: fromStateErr, to: 'error', changed: [] });
+      return createResult(instance, fromStateErr, 'error', eventName, true, 'error: ' + errMsg);
     } finally { instance._processing = false; }
   }
 
@@ -599,7 +678,8 @@
           (function (action, statePath) {
             var id = host.scheduleEvery(timer.ms, function () {
               if (action) {
-                engine.exec(action, instance.context, instance.state, null, null, instance);
+                var timerResult = engine.exec(action, instance.context, instance.state, null, null, instance);
+                if (timerResult && timerResult.context) instance.context = timerResult.context;
                 if (host.persist) host.persist(snapshot(instance));
               }
             });
@@ -667,6 +747,7 @@
       }
     }
     for (var si = 0; si < allNames.length; si++) {
+      if (allNames[si] === 'error' && !reachable['error']) continue;
       if (!reachable[allNames[si]]) {
         issues.push({ type: 'unreachable', state: allNames[si], message: 'State "' + allNames[si] + '" is not reachable from initial state "' + definition.initial + '"' });
       }
@@ -819,6 +900,15 @@
     }
   }
 
+  // Copy context for results, skipping framework $ properties (DOM refs, shared store)
+  function _copyContext(ctx) {
+    var copy = {};
+    for (var k in ctx) {
+      if (ctx.hasOwnProperty(k) && k.charAt(0) !== '$') copy[k] = deepCopy(ctx[k]);
+    }
+    return copy;
+  }
+
   function createResult(instance, fromState, toState, eventName, transitioned, reason) {
     var definition = instance._definition;
     var tree = definition._stateTree;
@@ -857,7 +947,7 @@
       effects: [],
       enabled: enabled,
       isFinal: !!(currentSpec && currentSpec.final),
-      context: deepCopy(instance.context),
+      context: _copyContext(instance.context),
       route: null
     };
   }
@@ -906,7 +996,8 @@
 
       var intervalId = host.scheduleEvery(stateSpec.every.ms, function () {
         if (stateSpec.every.action) {
-          engine.exec(stateSpec.every.action, instance.context, instance.state, null, null, instance);
+          var everyResult = engine.exec(stateSpec.every.action, instance.context, instance.state, null, null, instance);
+          if (everyResult && everyResult.context) instance.context = everyResult.context;
           if (instance._host.persist) {
             instance._host.persist(snapshot(instance));
           }
@@ -927,6 +1018,8 @@
 
   function deepCopy(obj) {
     if (obj === null || typeof obj !== 'object') return obj;
+    // Skip DOM elements and other host objects that can't be cloned
+    if (typeof obj.nodeType === 'number') return obj;
     if (Array.isArray(obj)) {
       var arr = [];
       for (var i = 0; i < obj.length; i++) arr.push(deepCopy(obj[i]));
@@ -981,30 +1074,15 @@
   }
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  Pipeline execution                                                     ║
+  // ║  Pipeline helpers — shared between sync and async pipelines             ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
-  //
-  // Advance a machine from its initial state to a final state (or until
-  // blocked). This is the server-side pipeline pattern extracted from
-  // application code: compile, create instance, loop sendEvent + dispatch
-  // effects, stop at final/route/block.
-  //
-  // The machine routes itself. The executor is domain-agnostic.
-  //   - effects:        { typeName: function(input, context) }
-  //   - eventSelector:  function(events, context, state) → eventName
-  //   - format:         optional markup string (SCXML/HTML) being processed
-  //   - formatUpdater:  function(format, newState, newContext) → updatedFormat
 
-  function executePipeline(definition, options) {
-    options = options || {};
-    var maxSteps = options.maxSteps || 10;
-    var effectAdapters = options.effects || {};
-    var eventSelector = options.eventSelector || function (events) { return events[0]; };
-    var formatUpdater = options.formatUpdater || null;
-    var format = options.format || null;
-    var effectLog = [];
 
-    var host = {
+  // Build the host adapter for pipeline execution. Pipelines don't need
+  // real DOM timers or emit — just enough to satisfy the host interface.
+
+  function _makePipelineHost(options, effectAdapters) {
+    return {
       now: function () { return Date.now(); },
       scheduleAfter: function (ms, cb) { return setTimeout(cb, ms); },
       scheduleEvery: function (ms, cb) { return setInterval(cb, ms); },
@@ -1014,16 +1092,172 @@
       log: function () {},
       capabilities: options.capabilities || Object.keys(effectAdapters)
     };
+  }
 
+
+  // Collect events from a state and all ancestors. Definition order preserved.
+  // Skips internal events (., __timeout, __auto). Child events shadow parent.
+
+  function _collectEvents(tree, stateName) {
+    var seen = {};
+    var events = [];
+    var walk = stateName;
+    while (walk && tree[walk]) {
+      var spec = tree[walk].spec;
+      if (spec.on) {
+        for (var ev in spec.on) {
+          if (!seen[ev] && ev !== '.' && ev !== '__timeout' && ev !== '__auto') {
+            seen[ev] = true;
+            events.push(ev);
+          }
+        }
+      }
+      walk = tree[walk].parent;
+    }
+    return events;
+  }
+
+
+  // Evaluate mn:project declarations on a child machine loaded from storage.
+  // Returns the (possibly transformed) child SCXML string.
+
+  function _applyProjection(childScxml, row, compiler, parentContext) {
+    if (!compiler) return childScxml;
+    try {
+      var childDef = compiler(childScxml, {});
+      if (!childDef.projects) return childScxml;
+      var childCtx = childDef.context || {};
+      var evalCtx = {};
+      for (var ck in childCtx) { if (childCtx.hasOwnProperty(ck)) evalCtx[ck] = childCtx[ck]; }
+      evalCtx.$id = row.id;
+      for (var pi = 0; pi < childDef.projects.length; pi++) {
+        var proj = childDef.projects[pi];
+        if (!proj.when || engine.eval(proj.when, parentContext)) {
+          var projected = engine.eval(proj.expr, evalCtx, row.state);
+          if (projected && typeof projected === 'object') {
+            if (proj.as) {
+              var derivedInitial = projected.$initial || row.state;
+              delete projected.$initial;
+              return '<scxml name="' + proj.as + '" initial="' + derivedInitial +
+                '" mn-ctx=\'' + JSON.stringify(projected).replace(/'/g, '&apos;') + '\'/>';
+            } else {
+              return childScxml.replace(
+                /mn-ctx='[^']*'/,
+                "mn-ctx='" + JSON.stringify(projected).replace(/'/g, '&apos;') + "'"
+              );
+            }
+          }
+          break;
+        }
+      }
+    } catch (err) {
+      console.warn('[mn] projection error: ' + err.message);
+    }
+    return childScxml;
+  }
+
+
+  // Resolve invoke src references on the current state. Loads child machines
+  // from the data adapter, applies projections, embeds as invoke content,
+  // computes _invokeCounts. Returns updated format string.
+
+  function _resolveInvokes(tree, inst, format, effectAdapters, compiler, formatUpdater) {
+    var spec = tree[inst.state] ? tree[inst.state].spec : null;
+    if (!spec || !spec.invokes || !format || !effectAdapters.data) return format;
+
+    var invokeXml = '';
+    for (var ivi = 0; ivi < spec.invokes.length; ivi++) {
+      var inv = spec.invokes[ivi];
+      if (!inv.src) continue;
+      var dataInput = { name: inv.src };
+      if (inv.state) dataInput.state = inv.state;
+      var loaded = effectAdapters.data(dataInput, inst.context);
+      var loadedList = loaded[inv.src] || [];
+      for (var li = 0; li < loadedList.length; li++) {
+        var row = loadedList[li];
+        var childScxml = _applyProjection(row.scxml, row, compiler, inst.context);
+        invokeXml += '<invoke type="scxml" id="' + (row.id || 'inv-' + li) + '"><content>' + childScxml + '</content></invoke>';
+      }
+      var byState = {};
+      for (var ci = 0; ci < loadedList.length; ci++) {
+        var cs = loadedList[ci].state;
+        byState[cs] = (byState[cs] || 0) + 1;
+      }
+      inst.context._invokeCounts = { total: loadedList.length, byState: byState };
+    }
+
+    if (invokeXml) {
+      var stateTag = '<state id="' + inst.state + '"';
+      var stateIdx = format.indexOf(stateTag);
+      if (stateIdx !== -1) {
+        var insertIdx = format.indexOf('>', stateIdx) + 1;
+        format = format.substring(0, insertIdx) + invokeXml + format.substring(insertIdx);
+      }
+    }
+
+    if (formatUpdater) format = formatUpdater(format, inst.state, inst.context);
+    return format;
+  }
+
+
+  // Check mn:where on a state. Returns { route: {...} } if the host lacks
+  // required capabilities, or null if the host can satisfy.
+
+  function _checkWhere(tree, inst, host) {
+    var spec = tree[inst.state] ? tree[inst.state].spec : null;
+    if (!spec || !spec.where) return null;
+    var required = engine.eval(spec.where, inst.context, inst.state, null) || [];
+    var caps = host.capabilities || [];
+    for (var wi = 0; wi < required.length; wi++) {
+      if (caps.indexOf(required[wi]) === -1) {
+        return { requires: required, state: inst.state, where: spec.where };
+      }
+    }
+    return null;
+  }
+
+
+  // Build the standard pipeline result object.
+
+  function _pipelineResult(inst, format, effectLog, extra) {
+    var result = {
+      instance: inst, format: format, history: inst.history,
+      effects: effectLog, blocked: false, reason: null
+    };
+    if (extra) {
+      for (var k in extra) { if (extra.hasOwnProperty(k)) result[k] = extra[k]; }
+    }
+    return result;
+  }
+
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  Pipeline execution                                                     ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+  //
+  // Advance a machine from its initial state to a final state (or until
+  // blocked). The machine routes itself. The executor is domain-agnostic.
+  //
+  // executePipeline dispatches effects synchronously.
+  // executePipelineAsync awaits each adapter, supports on-success/on-error,
+  // reverse path ($canonical_id), and re-projection.
+
+  function executePipeline(definition, options) {
+    options = options || {};
+    var maxSteps = options.maxSteps || 10;
+    var effectAdapters = options.effects || {};
+    var eventSelector = options.eventSelector || function (events) { return events[0]; };
+    var formatUpdater = options.formatUpdater || null;
+    var format = options.format || null;
+    var compiler = options.compiler || null;
+    var effectLog = [];
+
+    var host = _makePipelineHost(options, effectAdapters);
     var inst = createInstance(definition, { host: host, context: options.context });
 
-    // Initial state may require routing (mn-where on initial state)
     if (inst.route) {
       clearTimers(inst);
-      return {
-        instance: inst, format: format, history: inst.history,
-        effects: effectLog, route: inst.route, blocked: false
-      };
+      return _pipelineResult(inst, format, effectLog, { route: inst.route });
     }
 
     var step = 0;
@@ -1037,26 +1271,7 @@
       var currentSpec = tree[inst.state] ? tree[inst.state].spec : null;
       if (!currentSpec || currentSpec.final) break;
 
-      // Collect events from current state AND all ancestor states (hierarchy
-      // means child inherits parent events). Skip internal events. Child takes
-      // priority over parent — duplicates from ancestors are ignored.
-      // Sorted alphabetically for deterministic execution order.
-      var seenEvents = {};
-      var events = [];
-      var walkPath = inst.state;
-      while (walkPath && tree[walkPath]) {
-        var walkSpec = tree[walkPath].spec;
-        if (walkSpec.on) {
-          for (var ev in walkSpec.on) {
-            if (!seenEvents[ev] && ev !== '.' && ev !== '__timeout' && ev !== '__auto') {
-              seenEvents[ev] = true;
-              events.push(ev);
-            }
-          }
-        }
-        walkPath = tree[walkPath].parent;
-      }
-      events.sort();
+      var events = _collectEvents(tree, inst.state);
       if (events.length === 0) break;
 
       var eventToSend = eventSelector(events, inst.context, inst.state);
@@ -1064,16 +1279,11 @@
 
       var result = sendEvent(inst, eventToSend);
 
-      // Route signal — transition needs capabilities this host lacks
       if (result.route) {
         if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
-        return {
-          instance: inst, format: format, history: inst.history,
-          effects: effectLog, route: result.route, blocked: false
-        };
+        return _pipelineResult(inst, format, effectLog, { route: result.route });
       }
 
-      // Targetless transition — action ran, context mutated, continue pipeline
       if (result.targetless) {
         if (result.effects && result.effects.length > 0) effectLog = effectLog.concat(result.effects);
         continue;
@@ -1087,28 +1297,31 @@
           result = sendEvent(inst, events[ri]);
           if (result.route) {
             if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
-            return {
-              instance: inst, format: format, history: inst.history,
-              effects: effectLog, route: result.route, blocked: false
-            };
+            return _pipelineResult(inst, format, effectLog, { route: result.route });
           }
           if (result.transitioned || result.targetless) { advanced = true; break; }
         }
         if (!advanced) {
-          return {
-            instance: inst, format: format, history: inst.history,
-            effects: effectLog, blocked: true, reason: 'no matching transition'
-          };
+          return _pipelineResult(inst, format, effectLog, { blocked: true, reason: 'no matching transition' });
         }
       }
 
-      // Dispatch effects through adapters
+      // Dispatch effects synchronously
       if (result.effects) {
         for (var fi = 0; fi < result.effects.length; fi++) {
           var effect = result.effects[fi];
           var adapter = effectAdapters[effect.type];
           if (adapter) {
-            adapter(effect.input, inst.context);
+            var effectInput = effect.input;
+            if (effect.type === 'persist' && formatUpdater && format) {
+              effectInput = formatUpdater(format, inst.state, inst.context);
+            }
+            var adapterResult = adapter(effectInput, inst.context);
+            if (adapterResult && typeof adapterResult === 'object') {
+              for (var ak in adapterResult) {
+                if (adapterResult.hasOwnProperty(ak)) inst.context[ak] = adapterResult[ak];
+              }
+            }
             effectLog.push({ type: effect.type, input: effect.input, service: 'host' });
           } else {
             effectLog.push({ type: effect.type, input: effect.input, service: 'no-adapter' });
@@ -1117,15 +1330,17 @@
       }
 
       if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
+      format = _resolveInvokes(tree, inst, format, effectAdapters, compiler, formatUpdater);
+
+      var whereRoute = _checkWhere(tree, inst, host);
+      if (whereRoute) return _pipelineResult(inst, format, effectLog, { route: whereRoute });
     }
 
     var inFinalState = definition._stateTree[inst.state] && definition._stateTree[inst.state].spec.final;
     var exhausted = step >= maxSteps && !inFinalState;
-    return {
-      instance: inst, format: format, history: inst.history,
-      effects: effectLog, blocked: exhausted,
-      reason: exhausted ? 'maxSteps exceeded' : null
-    };
+    return _pipelineResult(inst, format, effectLog, {
+      blocked: exhausted, reason: exhausted ? 'maxSteps exceeded' : null
+    });
 
     } finally { clearTimers(inst); }
   }
@@ -1153,27 +1368,43 @@
     var formatUpdater = options.formatUpdater || null;
     var format = options.format || null;
     var effectTimeout = options.effectTimeout || 0;
+    var compiler = options.compiler || null;
     var effectLog = [];
 
-    var host = {
-      now: function () { return Date.now(); },
-      scheduleAfter: function (ms, cb) { return setTimeout(cb, ms); },
-      scheduleEvery: function (ms, cb) { return setInterval(cb, ms); },
-      cancelTimer: function (id) { clearTimeout(id); clearInterval(id); },
-      emit: function () {},
-      persist: null,
-      log: function () {},
-      capabilities: options.capabilities || Object.keys(effectAdapters)
-    };
-
+    var host = _makePipelineHost(options, effectAdapters);
     var inst = createInstance(definition, { host: host, context: options.context });
+
+    // ── Reverse path: derived machine carries $canonical_id ─────────
+    // Load the canonical, merge user edits, run the canonical instead.
+    var canonicalResolver = options.canonicalResolver || null;
+    var reverseDerivedName = null;
+    if (inst.context.$canonical_id && canonicalResolver && compiler) {
+      var canonicalRow = canonicalResolver(inst.context.$canonical_id);
+      if (canonicalRow) {
+        reverseDerivedName = definition.id;
+        var derivedCtx = inst.context;
+        var canonicalDef = compiler(canonicalRow.scxml, {});
+        // Canonical context first, then overlay derived edits. $canonical_id stripped.
+        var mergedCtx = {};
+        var cCtx = canonicalDef.context || {};
+        for (var mck in cCtx) { if (cCtx.hasOwnProperty(mck)) mergedCtx[mck] = cCtx[mck]; }
+        for (var mdk in derivedCtx) {
+          if (derivedCtx.hasOwnProperty(mdk) && mdk !== '$canonical_id') {
+            mergedCtx[mdk] = derivedCtx[mdk];
+          }
+        }
+        definition = canonicalDef;
+        format = canonicalRow.scxml;
+        clearTimers(inst);
+        inst = createInstance(definition, { host: host, context: mergedCtx });
+        // User initiated this — skip mn:where on initial state
+        inst.route = null;
+      }
+    }
 
     if (inst.route) {
       clearTimers(inst);
-      return {
-        instance: inst, format: format, history: inst.history,
-        effects: effectLog, route: inst.route, blocked: false
-      };
+      return _pipelineResult(inst, format, effectLog, { route: inst.route });
     }
 
     var step = 0;
@@ -1187,22 +1418,7 @@
       var currentSpec = tree[inst.state] ? tree[inst.state].spec : null;
       if (!currentSpec || currentSpec.final) break;
 
-      var seenEvents = {};
-      var events = [];
-      var walkPath = inst.state;
-      while (walkPath && tree[walkPath]) {
-        var walkSpec = tree[walkPath].spec;
-        if (walkSpec.on) {
-          for (var ev in walkSpec.on) {
-            if (!seenEvents[ev] && ev !== '.' && ev !== '__timeout' && ev !== '__auto') {
-              seenEvents[ev] = true;
-              events.push(ev);
-            }
-          }
-        }
-        walkPath = tree[walkPath].parent;
-      }
-      events.sort();
+      var events = _collectEvents(tree, inst.state);
       if (events.length === 0) break;
 
       var eventToSend = eventSelector(events, inst.context, inst.state);
@@ -1212,19 +1428,18 @@
 
       if (result.route) {
         if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
-        return {
-          instance: inst, format: format, history: inst.history,
-          effects: effectLog, route: result.route, blocked: false
-        };
+        return _pipelineResult(inst, format, effectLog, { route: result.route });
       }
 
       if (result.targetless) {
         if (result.effects && result.effects.length > 0) {
           await _dispatchEffectsAsync(result.effects, effectAdapters, inst, effectLog, 0, effectTimeout);
         }
+        if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
         continue;
       }
 
+      // Guard blocked — try remaining events
       if (!result.transitioned) {
         var advanced = false;
         for (var ri = 0; ri < events.length; ri++) {
@@ -1232,41 +1447,56 @@
           result = sendEvent(inst, events[ri]);
           if (result.route) {
             if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
-            return {
-              instance: inst, format: format, history: inst.history,
-              effects: effectLog, route: result.route, blocked: false
-            };
+            return _pipelineResult(inst, format, effectLog, { route: result.route });
           }
           if (result.transitioned || result.targetless) { advanced = true; break; }
         }
         if (!advanced) {
-          return {
-            instance: inst, format: format, history: inst.history,
-            effects: effectLog, blocked: true, reason: 'no matching transition'
-          };
+          return _pipelineResult(inst, format, effectLog, { blocked: true, reason: 'no matching transition' });
         }
       }
 
-      // Await each effect adapter — inject results into context via bind
+      // Await effects — inject results into context via bind, fire on-success/on-error
       if (result.effects) {
-        await _dispatchEffectsAsync(result.effects, effectAdapters, inst, effectLog, 0, effectTimeout);
+        var persistSnapshot = (formatUpdater && format) ? formatUpdater(format, inst.state, inst.context) : format;
+        await _dispatchEffectsAsync(result.effects, effectAdapters, inst, effectLog, 0, effectTimeout, persistSnapshot);
       }
 
       if (formatUpdater && format) format = formatUpdater(format, inst.state, inst.context);
+      format = _resolveInvokes(tree, inst, format, effectAdapters, compiler, formatUpdater);
+
+      var whereRoute = _checkWhere(tree, inst, host);
+      if (whereRoute) return _pipelineResult(inst, format, effectLog, { route: whereRoute });
     }
 
     var inFinalState = definition._stateTree[inst.state] && definition._stateTree[inst.state].spec.final;
     var exhausted = step >= maxSteps && !inFinalState;
-    return {
-      instance: inst, format: format, history: inst.history,
-      effects: effectLog, blocked: exhausted,
-      reason: exhausted ? 'maxSteps exceeded' : null
-    };
+
+    // ── Re-project: reverse path produces result in derived format ──
+    if (reverseDerivedName && definition.projects) {
+      for (var rpi = 0; rpi < definition.projects.length; rpi++) {
+        var rproj = definition.projects[rpi];
+        if (rproj.as === reverseDerivedName) {
+          var rprojected = engine.eval(rproj.expr, inst.context, inst.state);
+          if (rprojected && typeof rprojected === 'object') {
+            var rInitial = rprojected.$initial || inst.state;
+            delete rprojected.$initial;
+            format = '<scxml name="' + rproj.as + '" initial="' + rInitial +
+              '" mn-ctx=\'' + JSON.stringify(rprojected).replace(/'/g, '&apos;') + '\'/>';
+          }
+          break;
+        }
+      }
+    }
+
+    return _pipelineResult(inst, format, effectLog, {
+      blocked: exhausted, reason: exhausted ? 'maxSteps exceeded' : null
+    });
 
     } finally { clearTimers(inst); }
   }
 
-  async function _dispatchEffectsAsync(effects, adapters, inst, effectLog, depth, timeout) {
+  async function _dispatchEffectsAsync(effects, adapters, inst, effectLog, depth, timeout, format) {
     if (!depth) depth = 0;
     if (depth > 8) return; // prevent infinite effect chains
     for (var i = 0; i < effects.length; i++) {
@@ -1277,7 +1507,11 @@
         continue;
       }
       try {
-        var adapterPromise = adapter(effect.input, deepCopy(inst.context));
+        var asyncEffectInput = effect.input;
+        if (effect.type === 'persist' && format) {
+          asyncEffectInput = format;
+        }
+        var adapterPromise = adapter(asyncEffectInput, inst.context);
         // Wrap with timeout if configured
         if (timeout > 0) {
           adapterPromise = Promise.race([
@@ -1288,6 +1522,12 @@
           ]);
         }
         var value = await adapterPromise;
+        // Merge adapter result into context (immutable — adapter returns data)
+        if (value && typeof value === 'object' && !effect.bind) {
+          for (var ak in value) {
+            if (value.hasOwnProperty(ak)) inst.context[ak] = value[ak];
+          }
+        }
         if (effect.bind) inst.context[effect.bind] = value;
         effectLog.push({ type: effect.type, input: effect.input, service: 'host' });
         if (effect['on-success']) {
@@ -1321,6 +1561,6 @@
     unwatch: unwatch,
     executePipeline: executePipeline,
     executePipelineAsync: executePipelineAsync,
-    version: '0.5.0'
+    version: '0.8.0'
   };
 });

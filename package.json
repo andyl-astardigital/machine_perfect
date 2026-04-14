@@ -1,6 +1,6 @@
 {
   "name": "machine-native",
-  "version": "0.5.0",
+  "version": "0.8.0",
   "description": "Application platform where state machines are the unit of definition, execution, and exchange. S-expressions for logic. Markup as substrate.",
   "main": "mn/engine.js",
   "browser": "mn/browser.js",
@@ -28,9 +28,13 @@
     "README.md",
     "REFERENCE.md"
   ],
+  "bin": {
+    "mn-repl": "mn/repl.js"
+  },
   "scripts": {
     "dev": "npx serve .",
     "test": "node mn/tests/engine.test.js && node mn/tests/machine.test.js && node mn/tests/transforms.test.js && node mn/tests/scxml.test.js && node mn/tests/host.test.js && node mn/tests/adapters.test.js && node mn/tests/registry.test.js",
+    "repl": "node mn/repl.js",
     "start": "node mn/host.js"
   },
   "keywords": [
@@ -57,7 +61,9 @@
   },
   "homepage": "https://github.com/andyl-astardigital/machine_native",
   "devDependencies": {
-    "ejs": "^5.0.1",
     "puppeteer": "^24.40.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0"
   }
 }

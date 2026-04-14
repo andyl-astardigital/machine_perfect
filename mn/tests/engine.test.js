@@ -28,7 +28,7 @@ function throws(fn, substring, message) {
   catch (err) { assert(err.message.indexOf(substring) !== -1, message); }
 }
 function evalExpr(expr, ctx) { return engine.eval(expr, ctx || {}, null, null); }
-function execExpr(expr, ctx) { engine.exec(expr, ctx, null, null, null, null); return ctx; }
+function execExpr(expr, ctx, state, el, event, inst) { return engine.exec(expr, ctx, state || null, el || null, event || null, inst || null); }
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -109,10 +109,11 @@ eq(evalExpr('(and 1 false 3)'), false, 'and short-circuits on false');
 eq(evalExpr('(or false nil 42)'), 42, 'or returns first truthy');
 eq(evalExpr('(or false nil)'), null, 'or returns last falsy');
 
-describe('special — do');
+describe('special — do (immutable)');
 var doCtx = { x: 0 };
-execExpr('(do (inc! x) (inc! x) (inc! x))', doCtx);
-eq(doCtx.x, 3, 'do runs all expressions sequentially');
+var doResult = execExpr('(do (inc! x) (inc! x) (inc! x))', doCtx);
+eq(doCtx.x, 0, 'do does not mutate original context');
+eq(doResult.context.x, 3, 'do runs all expressions sequentially on new context');
 
 describe('special — let');
 eq(evalExpr('(let [x 10 y 20] (+ x y))'), 30, 'let binds and evaluates body');
@@ -125,62 +126,65 @@ describe('special — threading');
 eq(evalExpr('(-> 5 (+ 3) (* 2))'), 16, '-> threads as first arg: (* (+ 5 3) 2)');
 eq(evalExpr('(->> [1 2 3 4] (filter #(> % 2)) (count))'), 2, '->> threads as last arg');
 
-describe('special — set!');
+describe('special — set! (immutable)');
 var setCtx = { x: 0 };
-execExpr('(set! x 42)', setCtx);
-eq(setCtx.x, 42, 'set! mutates context');
+var setResult = execExpr('(set! x 42)', setCtx);
+eq(setCtx.x, 0, 'set! does not mutate original context');
+eq(setResult.context.x, 42, 'set! returns new context with x=42');
 
-describe('special — set! dotted path');
+describe('special — set! dotted path (immutable)');
 var dotCtx = { user: { name: 'old' } };
-execExpr("(set! user.name 'new')", dotCtx);
-eq(dotCtx.user.name, 'new', 'set! mutates nested path');
+var dotResult = execExpr("(set! user.name 'new')", dotCtx);
+eq(dotCtx.user.name, 'old', 'set! does not mutate original nested path');
+eq(dotResult.context.user.name, 'new', 'set! returns new context with user.name=new');
 
-describe('special — inc! / dec! / toggle!');
+describe('special — inc! / dec! / toggle! (immutable)');
 var mutCtx = { n: 0, flag: false };
-execExpr('(inc! n)', mutCtx);
-eq(mutCtx.n, 1, 'inc!');
-execExpr('(dec! n)', mutCtx);
-eq(mutCtx.n, 0, 'dec!');
-execExpr('(toggle! flag)', mutCtx);
-eq(mutCtx.flag, true, 'toggle!');
+var incResult = execExpr('(inc! n)', mutCtx);
+eq(mutCtx.n, 0, 'inc! does not mutate original');
+eq(incResult.context.n, 1, 'inc! returns new context with n=1');
+var decResult = execExpr('(dec! n)', mutCtx);
+eq(decResult.context.n, -1, 'dec! returns new context with n=-1');
+var togResult = execExpr('(toggle! flag)', mutCtx);
+eq(mutCtx.flag, false, 'toggle! does not mutate original');
+eq(togResult.context.flag, true, 'toggle! returns new context with flag=true');
 
-describe('special — inc!/dec!/toggle! with dot-paths');
+describe('special — inc!/dec!/toggle! with dot-paths (immutable)');
 var dotMutCtx = { player: { score: 10, active: true } };
-execExpr('(inc! player.score)', dotMutCtx);
-eq(dotMutCtx.player.score, 11, 'inc! on dot-path');
-execExpr('(dec! player.score)', dotMutCtx);
-eq(dotMutCtx.player.score, 10, 'dec! on dot-path');
-execExpr('(toggle! player.active)', dotMutCtx);
-eq(dotMutCtx.player.active, false, 'toggle! on dot-path');
+var incDotResult = execExpr('(inc! player.score)', dotMutCtx);
+eq(dotMutCtx.player.score, 10, 'inc! does not mutate original nested');
+eq(incDotResult.context.player.score, 11, 'inc! returns new context with score=11');
+var decDotResult = execExpr('(dec! player.score)', dotMutCtx);
+eq(decDotResult.context.player.score, 9, 'dec! returns new context with score=9');
+var togDotResult = execExpr('(toggle! player.active)', dotMutCtx);
+eq(dotMutCtx.player.active, true, 'toggle! does not mutate original nested');
+eq(togDotResult.context.player.active, false, 'toggle! returns new context with active=false');
 
-describe('special — inc!/dec!/toggle! record dirty keys');
-var dirtyMutCtx = { count: 0, __mnInst: { _mnDirty: {} } };
-execExpr('(inc! count)', dirtyMutCtx);
-eq(dirtyMutCtx.count, 1, 'inc! mutated');
-eq(dirtyMutCtx.__mnInst._mnDirty['count'], true, 'inc! recorded dirty key');
-dirtyMutCtx.__mnInst._mnDirty = {};
-execExpr('(dec! count)', dirtyMutCtx);
-eq(dirtyMutCtx.__mnInst._mnDirty['count'], true, 'dec! recorded dirty key');
-dirtyMutCtx.__mnInst._mnDirty = {};
-dirtyMutCtx.flag = true;
-execExpr('(toggle! flag)', dirtyMutCtx);
-eq(dirtyMutCtx.__mnInst._mnDirty['flag'], true, 'toggle! recorded dirty key');
+describe('special — dirty key tracking with immutable context');
+var dirtyInst = { _mnDirty: {} };
+var dirtyCtx = { count: 0 };
+var dirtyResult = execExpr('(inc! count)', dirtyCtx, null, null, null, dirtyInst);
+eq(dirtyResult.context.count, 1, 'inc! returned new context');
+eq(dirtyInst._mnDirty['count'], true, 'inc! recorded dirty key on inst');
 
-describe('special — push!');
+describe('special — push! (immutable)');
 var pushCtx = { items: [1, 2] };
-execExpr('(push! items 3)', pushCtx);
-deepEq(pushCtx.items, [1, 2, 3], 'push! appends');
+var pushResult = execExpr('(push! items 3)', pushCtx);
+deepEq(pushCtx.items, [1, 2], 'push! does not mutate original array');
+deepEq(pushResult.context.items, [1, 2, 3], 'push! returns new context with appended array');
 
-describe('special — remove-where!');
+describe('special — remove-where! (immutable)');
 var rmCtx = { items: [{ id: 1 }, { id: 2 }, { id: 3 }] };
-execExpr("(remove-where! items :id 2)", rmCtx);
-eq(rmCtx.items.length, 2, 'remove-where! removes matching');
-eq(rmCtx.items[1].id, 3, 'correct item remains');
+var rmResult = execExpr("(remove-where! items :id 2)", rmCtx);
+eq(rmCtx.items.length, 3, 'remove-where! does not mutate original');
+eq(rmResult.context.items.length, 2, 'remove-where! returns filtered array');
+eq(rmResult.context.items[1].id, 3, 'correct item remains');
 
-describe('special — splice!');
+describe('special — splice! (immutable)');
 var spliceCtx = { items: ['a', 'b', 'c', 'd'] };
-execExpr('(splice! items 1 2)', spliceCtx);
-deepEq(spliceCtx.items, ['a', 'd'], 'splice! removes by index');
+var spliceResult = execExpr('(splice! items 1 2)', spliceCtx);
+deepEq(spliceCtx.items, ['a', 'b', 'c', 'd'], 'splice! does not mutate original');
+deepEq(spliceResult.context.items, ['a', 'd'], 'splice! returns new array');
 
 describe('special — to / emit signals');
 var scope = engine.makeScope({}, 'idle', null);
@@ -194,6 +198,23 @@ engine.seval(engine.parse("(emit info (obj :id 42 :name 'test'))"), scope);
 eq(scope.__mnEmit, 'info', 'emit with payload sets __mnEmit');
 eq(scope.__mnEmitPayload.id, 42, 'emit payload .id');
 eq(scope.__mnEmitPayload.name, 'test', 'emit payload .name');
+
+describe('special — set! array index path (immutable)');
+var arrIdxCtx = { items: [{ name: 'Pen', qty: 1 }, { name: 'Paper', qty: 10 }] };
+var arrIdxResult = execExpr("(set! items.0.qty 5)", arrIdxCtx);
+eq(arrIdxCtx.items[0].qty, 1, 'original array item unchanged');
+eq(arrIdxResult.context.items[0].qty, 5, 'array index 0 qty set to 5');
+eq(arrIdxResult.context.items[1].qty, 10, 'array index 1 unchanged');
+eq(Array.isArray(arrIdxResult.context.items), true, 'items is still an array');
+eq(arrIdxResult.context.items.length, 2, 'array length preserved');
+eq(arrIdxResult.context.items !== arrIdxCtx.items, true, 'new array created (immutable)');
+eq(arrIdxResult.context.items[0] !== arrIdxCtx.items[0], true, 'new item object created (immutable)');
+
+describe('special — set! nested array index');
+var deepArrCtx = { orders: [{ items: [{ name: 'A' }, { name: 'B' }] }] };
+var deepArrResult = execExpr("(set! orders.0.items.1.name 'C')", deepArrCtx);
+eq(deepArrResult.context.orders[0].items[1].name, 'C', 'deep nested array index set');
+eq(deepArrCtx.orders[0].items[1].name, 'B', 'original deep nested unchanged');
 
 describe('emit payload — exec() returns emitPayload');
 var emitResult = engine.exec("(emit saved (obj :x 99))", { x: 99 }, null, null, null, null);
@@ -365,10 +386,11 @@ throws(function () { evalExpr('(inc! x)', { x: 0 }); }, 'not allowed', 'inc! in 
 throws(function () { evalExpr('(toggle! x)', { x: false }); }, 'not allowed', 'toggle! in eval throws');
 throws(function () { evalExpr('(do (set! x 1) x)', { x: 0 }); }, 'not allowed', 'nested set! in eval throws');
 
-describe('purity — exec allows mutations');
+describe('purity — exec allows mutations (immutable return)');
 var pureCtx = { x: 0 };
-execExpr('(set! x 42)', pureCtx);
-eq(pureCtx.x, 42, 'set! in exec works');
+var pureResult = execExpr('(set! x 42)', pureCtx);
+eq(pureCtx.x, 0, 'set! does not mutate original');
+eq(pureResult.context.x, 42, 'set! in exec works via returned context');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -422,10 +444,10 @@ execExpr("(assoc! obj '__proto__' 'hacked')", assocTarget);
 eq(({}).hacked, undefined, 'assoc! rejects __proto__ — Object.prototype clean');
 execExpr("(assoc! obj 'constructor' 'bad')", assocTarget);
 eq(typeof assocTarget.obj.constructor, 'function', 'assoc! rejects constructor — still a function');
-execExpr("(assoc! obj 'prototype' 'bad')", assocTarget);
-eq(assocTarget.obj.prototype, undefined, 'assoc! rejects prototype');
-execExpr("(assoc! obj 'safe' 42)", assocTarget);
-eq(assocTarget.obj.safe, 42, 'assoc! allows safe keys');
+var assocBadResult = execExpr("(assoc! obj 'prototype' 'bad')", assocTarget);
+eq(assocBadResult.context.obj.prototype, undefined, 'assoc! rejects prototype');
+var assocGoodResult = execExpr("(assoc! obj 'safe' 42)", assocTarget);
+eq(assocGoodResult.context.obj.safe, 42, 'assoc! allows safe keys');
 
 describe('mutation forms — prototype pollution blocked on simple keys');
 var ppCtx = { safe: 0 };
@@ -441,10 +463,10 @@ execExpr("(toggle! __proto__)", ppCtx);
 eq(({}).hacked, undefined, 'toggle! rejects __proto__ — Object.prototype clean');
 execExpr("(swap! __proto__ inc)", ppCtx);
 eq(({}).hacked, undefined, 'swap! rejects __proto__ — Object.prototype clean');
-execExpr("(set! safe 42)", ppCtx);
-eq(ppCtx.safe, 42, 'set! allows safe keys');
-execExpr("(inc! safe)", ppCtx);
-eq(ppCtx.safe, 43, 'inc! allows safe keys');
+var ppSafeResult = execExpr("(set! safe 42)", ppCtx);
+eq(ppSafeResult.context.safe, 42, 'set! allows safe keys');
+var ppIncResult = execExpr("(inc! safe)", ppSafeResult.context);
+eq(ppIncResult.context.safe, 43, 'inc! allows safe keys');
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -555,10 +577,10 @@ describe('fix — concat is variadic');
 deepEq(evalExpr('(concat [1] [2] [3])'), [1,2,3], '(concat [1] [2] [3])');
 
 describe('fix — inc!/dec!/toggle! record dirty keys');
-var dirtyCtx = { n: 5, flag: true, __mnInst: { _mnDirty: null } };
-engine.exec('(inc! n)', dirtyCtx, null, null, null, { _mnDirty: null });
-// inc! should have recorded dirty key — check ctx was mutated
-eq(dirtyCtx.n, 6, 'inc! mutated value');
+var dirtyCtx = { n: 5, flag: true };
+var dirtyExecResult = engine.exec('(inc! n)', dirtyCtx, null, null, null, { _mnDirty: null });
+eq(dirtyCtx.n, 5, 'inc! does not mutate original');
+eq(dirtyExecResult.context.n, 6, 'inc! returned new context with n=6');
 
 describe('fix — sevalPure catches mutations inside let');
 throws(function () { evalExpr('(let [x 1] (set! x 2))', { x: 0 }); }, 'not allowed', 'set! inside let blocked in pure eval');
@@ -644,15 +666,18 @@ describe('stdlib — comp / partial');
 eq(evalExpr('((comp inc inc) 0)'), 2, 'comp chains');
 eq(evalExpr('((partial + 10) 5)'), 15, 'partial applies');
 
-describe('mutation — swap!');
-var swapCtx = { count: 5, items: [1, 2], __mnInst: { _mnDirty: {} } };
-engine.exec("(swap! count inc)", swapCtx, 'test', null, null, swapCtx.__mnInst);
-eq(swapCtx.count, 6, 'swap! applies inc to count');
-eq(swapCtx.__mnInst._mnDirty.count, true, 'swap! marks dirty');
-swapCtx.__mnInst._mnDirty = {};
-engine.exec("(swap! items conj 3)", swapCtx, 'test', null, null, swapCtx.__mnInst);
-deepEq(swapCtx.items, [1, 2, 3], 'swap! with conj appends');
-eq(swapCtx.__mnInst._mnDirty.items, true, 'swap! conj marks dirty');
+describe('mutation — swap! (immutable)');
+var swapInst = { _mnDirty: {} };
+var swapCtx = { count: 5, items: [1, 2] };
+var swapResult1 = engine.exec("(swap! count inc)", swapCtx, 'test', null, null, swapInst);
+eq(swapCtx.count, 5, 'swap! does not mutate original');
+eq(swapResult1.context.count, 6, 'swap! applies inc to count');
+eq(swapInst._mnDirty.count, true, 'swap! marks dirty');
+swapInst._mnDirty = {};
+var swapResult2 = engine.exec("(swap! items conj 3)", swapCtx, 'test', null, null, swapInst);
+deepEq(swapCtx.items, [1, 2], 'swap! does not mutate original array');
+deepEq(swapResult2.context.items, [1, 2, 3], 'swap! with conj appends');
+eq(swapInst._mnDirty.items, true, 'swap! conj marks dirty');
 
 describe('mutation — dirty tracking');
 var dirtyInst = { _mnDirty: {} };

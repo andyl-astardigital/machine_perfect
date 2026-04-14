@@ -10,7 +10,7 @@
 | TC4 | S-expressions are the only expression language | No JavaScript expressions, no template literals, no ad-hoc mini-languages. One syntax everywhere. |
 | TC5 | Backend uses Node.js | Same language as the engine. No cross-language port to maintain. |
 | TC6 | SCXML as backend markup format | W3C standard. Established state chart semantics. XML tooling exists. |
-| TC7 | Postgres for backend persistence | JSONB for flexible datamodels. Mature, reliable, widely deployed. |
+| TC7 | Persistence via pluggable effect adapters | The framework provides the adapter interface. The host chooses the storage engine (SQLite, Postgres, flat files, etc.). |
 
 ## Organisational constraints
 

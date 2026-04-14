@@ -35,7 +35,7 @@ tests/
 `mn-model`, `mn-each`, `mn-key`, `mn-persist`, `mn-ref`, `mn-url`, `mn-loading`, `mn-store`, `mn-define`, `mn-slot`, `mn-import`
 
 **Structural child elements (all s-expression logic):**
-`<mn-text>`, `<mn-show>`, `<mn-class>`, `<mn-bind>`, `<mn-on>`, `<mn-let>`, `<mn-transition>`, `<mn-guard>`, `<mn-action>`, `<mn-emit>`, `<mn-init>`, `<mn-exit>`, `<mn-temporal>`, `<mn-receive>`, `<mn-where>`, `<mn-each>`, `<mn-ctx>`
+`<mn-text>`, `<mn-show>`, `<mn-class>`, `<mn-bind>`, `<mn-on>`, `<mn-let>`, `<mn-transition>`, `<mn-guard>`, `<mn-action>`, `<mn-emit>`, `<mn-init>`, `<mn-exit>`, `<mn-temporal>`, `<mn-receive>`, `<mn-where>`, `<mn-each>`, `<mn-ctx>`, `<mn-project>`
 
 **2 JS methods, 2 JS properties:**
 `init(config)`, `fn(name, func)`, `store`, `debug`

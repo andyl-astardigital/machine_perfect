@@ -1,0 +1,113 @@
+<!--
+  Purchase order status — summary card for non-director viewers.
+  Paired with purchase-order-status.scxml.
+  Derived from canonical purchase-order via mn:project.
+  No sensitive fields ever reach this machine.
+-->
+<template mn-define="purchase-order-status">
+
+  <div mn-state="pending">
+    <mn-temporal>(animate)</mn-temporal>
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body p-4 gap-2">
+        <div class="flex items-center gap-4">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-bold text-sm truncate"><mn-text>title</mn-text></h3>
+            <p class="text-xs text-base-content/50">
+              <mn-text>(str '£' amount ' — ' item_count ' items')</mn-text>
+            </p>
+          </div>
+          <div class="badge badge-warning badge-sm">pending</div>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-base-content/40"><mn-text>submitted_by</mn-text></span>
+          <button mn-to="cancel" class="btn btn-ghost btn-xs text-error">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div mn-state="cancelling">
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body p-4 flex-row items-center gap-4">
+        <span class="loading loading-spinner loading-xs"></span>
+        <span class="text-sm text-base-content/50">Cancelling...</span>
+      </div>
+    </div>
+  </div>
+
+  <div mn-state="fulfilled" mn-final>
+    <mn-temporal>(animate)</mn-temporal>
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body p-4 gap-2">
+        <div class="flex items-center gap-4">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-bold text-sm truncate"><mn-text>title</mn-text></h3>
+            <p class="text-xs text-base-content/50">
+              <mn-text>(str '£' amount ' — ' item_count ' items')</mn-text>
+            </p>
+          </div>
+          <div class="badge badge-success badge-sm">fulfilled</div>
+        </div>
+        <div class="text-xs text-base-content/40"><mn-text>submitted_by</mn-text></div>
+      </div>
+    </div>
+  </div>
+
+  <div mn-state="rejected">
+    <mn-temporal>(animate)</mn-temporal>
+    <div class="card bg-base-100 border border-error/30 shadow-sm">
+      <div class="card-body p-4 gap-3">
+        <div class="flex items-center gap-4">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-bold text-sm truncate"><mn-text>title</mn-text></h3>
+            <p class="text-xs text-base-content/50">
+              <mn-text>(str '£' amount ' — ' item_count ' items')</mn-text>
+            </p>
+          </div>
+          <div class="badge badge-error badge-sm">rejected</div>
+        </div>
+        <div class="text-xs text-base-content/40"><mn-text>submitted_by</mn-text></div>
+        <div class="divider my-0"></div>
+        <p class="text-xs text-base-content/60">Update and resubmit:</p>
+        <div class="form-control">
+          <label class="label py-0"><span class="label-text text-xs">Title</span></label>
+          <input mn-model="title" type="text" class="input input-bordered input-sm" />
+        </div>
+        <div class="form-control">
+          <label class="label py-0"><span class="label-text text-xs">Amount (£)</span></label>
+          <input mn-model="amount" type="number" class="input input-bordered input-sm" />
+        </div>
+        <button mn-to="resubmit" class="btn btn-primary btn-sm">Resubmit</button>
+      </div>
+    </div>
+  </div>
+
+  <div mn-state="resubmitting">
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body p-4 flex-row items-center gap-4">
+        <span class="loading loading-spinner loading-xs"></span>
+        <span class="text-sm text-base-content/50">Resubmitting...</span>
+      </div>
+    </div>
+  </div>
+
+  <div mn-state="cancelled" mn-final>
+    <mn-temporal>(animate)</mn-temporal>
+    <div class="card bg-base-100 border border-base-300 shadow-sm opacity-60">
+      <div class="card-body p-4 gap-2">
+        <div class="flex items-center gap-4">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-bold text-sm truncate line-through"><mn-text>title</mn-text></h3>
+            <p class="text-xs text-base-content/50">
+              <mn-text>(str '£' amount ' — ' item_count ' items')</mn-text>
+            </p>
+          </div>
+          <div class="badge badge-ghost badge-sm">cancelled</div>
+        </div>
+        <div class="text-xs text-base-content/40"><mn-text>submitted_by</mn-text></div>
+      </div>
+    </div>
+  </div>
+
+</template>

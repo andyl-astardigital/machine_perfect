@@ -1,0 +1,76 @@
+<!--
+  Dashboard — order statistics with Chart.js.
+  Paired with dashboard.scxml.
+
+  Uses MachineNative.fn('renderChart') to draw charts from machine context.
+  Third-party JS integration via the escape hatch — the machine carries
+  the data, Chart.js renders it. Proves MN isn't a walled garden.
+-->
+<template mn-define="dashboard">
+
+  <div mn-state="loading">
+    <div class="flex items-center justify-center py-16">
+      <span class="loading loading-spinner loading-lg"></span>
+    </div>
+  </div>
+
+  <div mn-state="ready">
+    <mn-temporal>(animate)</mn-temporal>
+    <mn-init>(do
+      (renderChart $refs.statusChart 'doughnut'
+        (obj
+          :labels (list 'Fulfilled' 'Rejected' 'Pending' 'Cancelled')
+          :data (list
+            (or (get (get _invokeCounts :byState) :fulfilled) 0)
+            (or (get (get _invokeCounts :byState) :rejected) 0)
+            (or (get (get _invokeCounts :byState) :director-approval) 0)
+            (or (get (get _invokeCounts :byState) :cancelled) 0))
+          :colors (list '#22c55e' '#ef4444' '#eab308' '#6b7280'))
+        (str 'Total: ' (get _invokeCounts :total)))
+      (renderChart $refs.stateChart 'bar'
+        (obj
+          :labels (list 'Fulfilled' 'Rejected' 'Pending' 'Cancelled')
+          :data (list
+            (or (get (get _invokeCounts :byState) :fulfilled) 0)
+            (or (get (get _invokeCounts :byState) :rejected) 0)
+            (or (get (get _invokeCounts :byState) :director-approval) 0)
+            (or (get (get _invokeCounts :byState) :cancelled) 0))
+          :colors (list '#22c55e' '#ef4444' '#eab308' '#6b7280'))
+        'Orders by Status'))</mn-init>
+
+    <div class="grid md:grid-cols-4 gap-4 mb-6">
+      <div class="stat bg-base-100 rounded-xl shadow-sm">
+        <div class="stat-title">Total</div>
+        <div class="stat-value"><mn-text>(or (get _invokeCounts :total) 0)</mn-text></div>
+      </div>
+      <div class="stat bg-base-100 rounded-xl shadow-sm">
+        <div class="stat-title">Fulfilled</div>
+        <div class="stat-value text-success"><mn-text>(or (get (get _invokeCounts :byState) :fulfilled) 0)</mn-text></div>
+      </div>
+      <div class="stat bg-base-100 rounded-xl shadow-sm">
+        <div class="stat-title">Rejected</div>
+        <div class="stat-value text-error"><mn-text>(or (get (get _invokeCounts :byState) :rejected) 0)</mn-text></div>
+      </div>
+      <div class="stat bg-base-100 rounded-xl shadow-sm">
+        <div class="stat-title">Pending</div>
+        <div class="stat-value text-warning"><mn-text>(or (get (get _invokeCounts :byState) :director-approval) 0)</mn-text></div>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6">
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body p-4">
+          <h3 class="font-bold text-sm mb-2">Status Distribution</h3>
+          <canvas mn-ref="statusChart" height="200"></canvas>
+        </div>
+      </div>
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body p-4">
+          <h3 class="font-bold text-sm mb-2">Orders by Status</h3>
+          <canvas mn-ref="stateChart" height="200"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</template>

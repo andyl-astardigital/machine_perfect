@@ -96,15 +96,14 @@ function createServer(options) {
 
         // Set context fields, then send event — same as the browser pattern
         registry.context.id = data.id || null;
-        registry.context.address = data.address || null;
         registry.context.capabilities = data.capabilities || null;
-        registry.context.formats = data.formats || null;
+        registry.context.transport = data.transport || null;
 
         var result = machine.sendEvent(registry, 'register');
 
         // register is a targetless transition — check targetless, not transitioned
         if (result.transitioned || result.targetless) {
-          console.log('[registry] registered: ' + data.id + ' at ' + data.address + ' caps=' + (data.capabilities || []).join(','));
+          console.log('[registry] registered: ' + data.id + ' transport=' + (data.transport ? data.transport.type : 'none') + ' caps=' + (data.capabilities || []).join(','));
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ registered: true, nodes: registry.context.nodes.length }));
         } else {

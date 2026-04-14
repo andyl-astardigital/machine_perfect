@@ -13,4 +13,4 @@
 | [009](009-es5.md) | ES5 throughout (no transpilation) | Accepted |
 | [010](010-single-file.md) | Single-file distribution for frontend | Accepted |
 | [011](011-computation-formats.md) | Machine documents as portable computation formats | Accepted |
-| [012](012-capability-hosting.md) | Capability-based hosting and distributed transition execution | Proposed |
+| [012](012-capability-hosting.md) | Capability-based hosting and distributed transition execution | Accepted |

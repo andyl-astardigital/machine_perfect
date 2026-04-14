@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml name="test-app" initial="home">
+  <datamodel>
+    <data id="ctx" expr='{"page":"home"}'/>
+  </datamodel>
+  <state id="home">
+    <transition event="go-about" target="about"/>
+  </state>
+  <state id="about">
+    <transition event="go-home" target="home"/>
+  </state>
+</scxml>

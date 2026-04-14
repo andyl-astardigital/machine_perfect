@@ -1,58 +1,86 @@
 # Roadmap
 
-## v0.5 (current)
+## v0.6 (current)
 
-1,359 tests. The framework works end-to-end: browser machines, server pipelines, capability routing, URL routing, emit payloads, computed bindings, auto loading states, 24-lesson interactive guide, purchase order reference app.
+Immutable context everywhere. Decomposed machine architecture. SCXML is the only wire format — one endpoint, one pipeline path, no REST. Implicit error state with `$error` and `$errorSource`.
 
-## v1.1: Production server
+Done in v0.6:
+- Immutable context throughout engine, machine, and browser layers
+- mn:where checked on state entry mid-pipeline (capability-based blocking)
+- Decomposed app → small focused machines (nav, order-list, director-queue, purchase-order, toast)
+- Data adapter as effect (no separate data request path)
+- Server has zero business logic — one pipeline path, adapters only
+- mn-initial for starting machines at any state
+- Canonical context getter/setter (no desync between browser and canonical instances)
+- $store immutable broadcast across machines
+- Implicit error state with $error and $errorSource in context
+- Array index paths in setImmutable (items.0.qty works correctly)
 
-Async executePipeline. The current pipeline calls effect adapters synchronously. Production adapters (Postgres, SendGrid, S3) return promises. `executePipelineAsync` awaits each effect result sequentially and injects the return value back into context.
+Done in v0.7:
+- Transport-as-capability: registry stores `{ id, capabilities, transport: { type, address } }` instead of flat address
+- Fire-and-forget POST: browser sends machine, gets 202 back immediately, result pushed via SSE
+- SSE: browser opens EventSource to server on init, receives machine results as base64 SCXML events
+- `_sendMachineToNode` dispatches by `node.transport.type` — extensible for MQTT, WebSocket, etc.
+- `<invoke type="scxml" src="name"/>` — stored machines loaded from SQLite as live child machines
+- `<invoke type="scxml" src="name" mn-state="state"/>` — filter invoked machines by state
+- `_invokeCounts` computed by pipeline invoke resolver: `{ total, byState: { fulfilled: N, ... } }`
+- Machine-as-persistence: SQLite stores entire SCXML snapshots, not extracted JSON
+- `_receiveMachine` recompiles response SCXML to pick up embedded invokes
+- `_stampAndEnter` creates child machine DOM elements from invoke content
+- Emit suppression on route signals (no premature emits mid-flight)
+- `_transitionTo` reentrancy guard prevents stack overflow during nested transitions
+- `_mnBoundInst` tracks which instance bound DOM events, prevents stale handlers
 
-Context validation. The browser sends `mn-ctx` to the server. The server trusts it. A `validate` option on `executePipeline` lets the host declare which context fields are trusted and which must be re-derived from server-side data before the pipeline runs.
+Done in v0.8:
+- Pipeline event ordering: definition order, not alphabetical. The author controls priority.
+- Format update after targetless effect dispatch (SSE receives correct state after on-success/on-error)
+- `mn:project` — context projection at the transport boundary. S-expression builds projected context. Evaluated during invoke resolution. Sensitive fields never leave the server.
+- `mn:project as="machine-name"` — derive a different machine for different audiences. The canonical machine declares transforms to other machine types. Different SCXML name, states, template. Both canonical and derived are complete, functioning machines.
+- `$state` and `$id` available in projection expressions for state mapping and canonical reference
+- `$initial` reserved key in projection for mapping canonical states to derived states
+- Reverse path: derived machine with `$canonical_id` routes to server. Pipeline loads canonical, merges user edits, runs canonical pipeline, re-projects back to derived format.
+- Authentication pattern: session machine routes to server for auth adapter. SQLite users table with scrypt hashing. Durable sessions with 24h TTL. `$user` and `$token` returned via effect adapter return merge.
+- Authorization: guards on machine transitions check `$user.role` from `$store.session`. The machine defines its own access control.
+- Data privacy: `mn:project as=` transforms canonical machines for different audiences. Non-directors get safe summary machines. Directors get full context. Sensitive fields never reach unauthorized browsers.
+- Explicit error states: machines define their own `error` state with recovery transitions, overriding the implicit final error.
+- Dashboard with Chart.js: `MachineNative.fn('renderChart')` proves third-party JS integration. Machine carries data, escape hatch renders it.
+- Browser runtime fixes (found via real e2e testing with Puppeteer):
+  - Key modifier filtering: `keydown.enter` only fires on Enter, not every keystroke
+  - Static AST dep tracking: short-circuit evaluation (`or`, `and`, `if`) no longer defeats binding dependency discovery
+  - Synchronous mn-init: `$store` writes from init are visible to bindings in the same transition (no more setTimeout deferral)
+  - State hiding on mn:where route: previous state DOM hidden before routing, not left visible
+  - Null guard on `extractContext`/`extractMachine`: src invokes without inline SCXML no longer crash `_stampAndEnter`
+  - `$store` broadcast triggers `update()` on other machines so cross-machine bindings re-render
+  - `_stampAndEnter` clears state content before re-stamping from template
+- Decomposition patterns proven by e2e testing:
+  - Shared navbar at template root — persists across state transitions, no re-render on navigation
+  - Session machine as sibling, not nested — survives nav transitions, communicates via `$store` + `emit`
+  - Cross-machine Sign out: navbar emits `logout`, session receives via `mn-receive`, SCXML brain handles the transition
+- Chrome DevTools extension: live machine inspector panel with state list, context viewer, transition log, REPL
+- 6 Puppeteer e2e tests that type into real inputs and click real buttons
 
-Server-derived SPA routes. The server currently hardcodes SPA fallback routes. With `mn-url` on state elements, the server can parse the machine definition at startup and derive its route table from the markup. The machine is the single source of truth for both browser and server routing.
+## v0.9: Browser-side effects
 
-## v2.0: Distributed compilation
+1. **Browser invoke! dispatch.** Today only server pipelines dispatch effects via `invoke!`. Browser-side effect adapters (file upload, local storage, camera, geolocation) need the same dispatch mechanism. The machine says `(invoke! :type 'upload' :input $fileBlob :bind uri)`, the browser's upload adapter handles it.
 
-Capability-driven machine assembly. The machine travels between hosts for construction, not just execution. Each host on the route contributes states, guards, and transitions based on its domain knowledge and the machine's context. The final host in the chain executes the fully assembled machine.
+## v1.0: Performance and polish
 
-The browser sends a partial machine: "I need approval, fulfilment, and persistence." The approval host inspects the context, adds approval states with guards derived from its own business rules (two approvers for amounts over 50k, different thresholds per department). The fulfilment host adds its states (backordered, split shipment). The persist host is last in line, executes the complete machine, and returns the result.
-
-No host needs to know about the others. Each contributes its expertise as markup. The final machine is the complete, auditable record of every decision every host made.
-
-Formally: runtime partial evaluation of an open statechart, where each capable host closes a subset of underspecified transitions using domain-local context and appends its contribution as serialised markup. The document is simultaneously its own assembly history and its executable definition.
-
-### Why the groundwork is done
-
-The v1.0 architecture was not designed for this, but it supports it:
-
-- `executePipeline` already produces route signals when a state requires capabilities the current host lacks.
-- `_sendMachineToNode` already serialises the full machine as HTML and POSTs it to a remote host.
-- Markup-as-definition means the accumulated state is the wire format. A JavaScript object graph cannot survive serialisation the same way. Markup is human-readable, diffable, and auditable at every hop.
-- The s-expression guard language is sandboxed and serialisable. A contributing host's guards travel with the machine and execute identically on the final host.
-
-The engine itself needs no changes. The work is in the contribution protocol.
-
-### Open problems
-
-Contribution protocol. `mn-where` currently means "execute this state on a capable host." v2.0 needs it to also mean "a capable host should contribute states to this machine." These are different contracts. A new host endpoint mode (`contribute` vs `execute`) and a way to express assembly intent in the markup are needed.
-
-Context trust across hops. Each intermediate host trusts the machine it receives. A malformed or malicious machine can inject states that subsequent hosts execute. Context validation (v1.1) must be mandatory and verifiable at each hop before distributed assembly is viable. Cryptographic signing of host contributions would prevent tampering after assembly.
-
-Partial assembly failure. If host 3 of 5 fails mid-contribution, the machine is partially assembled. The assembled-so-far document is a valid statechart (it can be inspected and diffed), but it is incomplete. Rollback or compensation semantics are needed: either undo the partial assembly or mark the machine as incomplete with a clear failure state.
-
-Contribution conflicts. Two hosts may add states that reference the same context keys with different assumptions. The assembly protocol needs conflict detection (two hosts adding a state with the same name) and clear rules for context key ownership.
-
-Distributed tracing. Trace IDs attached to machine transport. Each host logs its contributions and execution steps. A trace viewer reconstructs the full journey: browser session, routing decisions, host contributions, guard evaluations, state transitions, effect dispatch, across every host the machine visited. Without tracing, debugging an assembled machine is worse than debugging microservices.
-
-## v2.1: Statechart extensions
-
-Parallel states and history states. Completeness features for SCXML conformance. Parallel states allow two child states active simultaneously. History states resume the last active child on re-entry. The workaround today is sibling machines with emit/receive, which covers most cases. Worth doing for credibility against XState but not blocking any real application pattern.
+2. **Large context patterns.** Pagination in data adapters. Machine tracks cursor. Context holds one page. Pattern documentation, not framework change.
 
 ## Not planned
 
-TypeScript types. The framework is ES5 with no build step. TypeScript definitions could be provided as a separate `.d.ts` file for consumers who want them, but the framework itself will not be rewritten in TypeScript.
+3. **SCXML `<parallel>` states.** One machine with multiple regions all active simultaneously. Solves a composition problem by adding complexity to the engine when machine_native already solves it through decomposition — three child machines, each routing independently, parent tracks completions via mn-receive. Composition over complexity.
 
-Virtual DOM. The framework operates on real DOM nodes. State content is created and destroyed, not diffed. The state machine model means only one state's content exists at a time, so there is nothing to diff.
+4. **Implicit error recovery.** The framework provides an implicit error state that catches throws. It does NOT provide auto-retry, recovery transitions, or browser error UI. If the author wants recovery, they define their own error state with transitions. Error handling is machine authoring, not framework magic.
 
-Plugin system. The framework is extensible through effect adapters, user functions (`MachineNative.fn()`), and the host adapter interface. A formal plugin API would add abstraction without adding capability.
+5. **Parent-child context injection.** Already solved by $store and emit/mn-receive.
+
+6. **Conditional machine composition.** Already works with mn-show on child machine elements.
+
+7. **User context ($user).** Inject via host adapter at the transport boundary. Pattern, not framework.
+
+8. **TypeScript types.** ES5 with no build step.
+
+9. **Virtual DOM.** State machine model means only one state's content exists at a time.
+
+10. **Plugin system.** Effect adapters, user functions, and host adapters cover all extension points.
